@@ -9,12 +9,13 @@ export async function extractFramesAuto(
   config: CollageRequest,
   onProgress: ExtractionProgress | undefined,
   layout: GridLayout | undefined,
+  keyframeSampling?: boolean,
 ): Promise<ExtractedFrame[]> {
   if (typeof VideoDecoder !== "undefined") {
     try {
       const { looksLikeIsoBmff, extractFramesWebCodecs } = await import("./webcodecsExtractor");
       if (looksLikeIsoBmff(config.videoFile)) {
-        const frames = await extractFramesWebCodecs(config, layout, onProgress);
+        const frames = await extractFramesWebCodecs(config, layout, onProgress, keyframeSampling);
         if (frames) return frames;
       }
     } catch {

@@ -12,7 +12,7 @@
         <h1>vid2grid</h1>
         <p class="caption">
           Turn a video into optimally packed, watermarked frame-grid collages for downstream AI
-          vision processing. Runs entirely in your browser &mdash; your video is never uploaded
+          vision processing. Runs entirely in your browser, your video is never uploaded
           anywhere.
         </p>
 
@@ -34,7 +34,23 @@
           </div>
         </div>
 
-        <label class="field">
+        <div class="field toggle-field">
+          <label class="toggle-row">
+            <input type="checkbox" id="keyframeMode" />
+            <span class="toggle-text">
+              <span class="toggle-title">Keyframe fast mode</span>
+              <span class="toggle-desc">
+                Grab only the video&rsquo;s keyframes &mdash; near-instant. The video decides how
+                many frames you get, not Target FPS.
+              </span>
+            </span>
+          </label>
+          <p class="toggle-note" id="keyframeModeCaption" hidden>
+            Each frame lands on the nearest keyframe rather than an exact time.
+          </p>
+        </div>
+
+        <label class="field" id="targetFpsField">
           Target FPS
           <input type="number" id="targetFps" min="0.1" step="0.5" value="1" />
         </label>

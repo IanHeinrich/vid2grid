@@ -7,4 +7,6 @@ export const state = {
   jpegBlobs: [] as Blob[],
   galleryUrls: [] as string[],
   cachedSuggestions: [] as FramesPerGridSuggestion[],
+  keyframeCount: null as number | null,
+  keyframeCounting: false,
 };

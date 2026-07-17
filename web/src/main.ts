@@ -3,7 +3,7 @@ import { els } from "./dom";
 import { state } from "./state";
 import { MODEL_RESOLUTION_PRESETS, CUSTOM_OPTION } from "./modelProfiles";
 import { getVideoMetadata } from "./extractor";
-import { generateCollages, canvasToJpegBlob, type GenerationPhase } from "./core";
+import { generateCollages, type GenerationPhase } from "./core";
 import { validateCollageRequest, type CollageRequest } from "./types";
 import { updateFramePlanningUi } from "./ui/framePlanning";
 import { resetGallery, renderGallery, initLightbox } from "./ui/gallery";
@@ -78,17 +78,28 @@ async function handleVideoSelected(): Promise<void> {
   els.startTimeInput.value = "0";
   els.endTimeInput.value = String(Math.max(roundedDuration, 0.1));
   els.generateButton.disabled = false;
+  applyKeyframeModeAvailability(file);
   updateFramePlanningUi();
+  void refreshKeyframeCount();
 }
 
-[els.startTimeInput, els.endTimeInput, els.targetFpsInput, els.framesPerGridInput].forEach(
-  (input) => {
-    input.addEventListener("input", () => updateFramePlanningUi({ recomputeSuggestions: true }));
-  },
+[els.startTimeInput, els.endTimeInput].forEach((input) =>
+  input.addEventListener("input", () => {
+    if (els.keyframeModeInput.checked) void refreshKeyframeCount();
+    else updateFramePlanningUi({ recomputeSuggestions: true });
+  }),
+);
+[els.targetFpsInput, els.framesPerGridInput].forEach((input) =>
+  input.addEventListener("input", () => updateFramePlanningUi({ recomputeSuggestions: true })),
 );
 els.outputResolutionInput.addEventListener("input", () =>
   updateFramePlanningUi({ recomputeSuggestions: true }),
 );
+els.keyframeModeInput.addEventListener("change", () => {
+  updateKeyframeModeUi();
+  void refreshKeyframeCount();
+});
+updateKeyframeModeUi();
 
 function resetResults(): void {
   resetGallery();
@@ -107,6 +118,72 @@ function hideProgress(): void {
 
 function progressLabel(phase: GenerationPhase): string {
   return phase === "extracting" ? "Extracting frames..." : "Rendering collage sheets...";
+}
+
+// Keyframe fast mode ignores Target FPS (the video's keyframes decide the frame
+// count), so hide that field and surface the explanation while it's on.
+function updateKeyframeModeUi(): void {
+  const on = els.keyframeModeInput.checked;
+  els.targetFpsField.style.display = on ? "none" : "";
+  els.keyframeModeCaption.hidden = !on;
+}
+
+// Keyframe mode only runs on the WebCodecs (ISO-BMFF) path, so it's offered only
+// for MP4/MOV. Mirrors looksLikeIsoBmff without importing webcodecsExtractor here
+// (which would pull mp4box into the main bundle).
+function fileSupportsKeyframeMode(file: File): boolean {
+  if (typeof VideoDecoder === "undefined") return false;
+  const name = file.name.toLowerCase();
+  return (
+    file.type === "video/mp4" ||
+    file.type === "video/quicktime" ||
+    name.endsWith(".mp4") ||
+    name.endsWith(".m4v") ||
+    name.endsWith(".mov")
+  );
+}
+
+function applyKeyframeModeAvailability(file: File): void {
+  const supported = fileSupportsKeyframeMode(file);
+  els.keyframeModeInput.disabled = !supported;
+  if (!supported) els.keyframeModeInput.checked = false;
+  els.keyframeModeInput.title = supported ? "" : "Keyframe fast mode is only available for MP4/MOV videos.";
+  updateKeyframeModeUi();
+}
+
+// Demuxes (cached) to count the selected range's keyframes so the planning UI can
+// show the real frame/grid count and warn on keyframe-dense videos. The token
+// guards against out-of-order resolutions when the file or range changes quickly.
+let keyframeCountToken = 0;
+async function refreshKeyframeCount(): Promise<void> {
+  const token = ++keyframeCountToken;
+  if (!els.keyframeModeInput.checked || !state.videoFile) {
+    state.keyframeCounting = false;
+    state.keyframeCount = null;
+    updateFramePlanningUi({ recomputeSuggestions: true });
+    return;
+  }
+
+  const file = state.videoFile;
+  const start = Number(els.startTimeInput.value);
+  const end = Number(els.endTimeInput.value);
+
+  state.keyframeCounting = true;
+  state.keyframeCount = null;
+  updateFramePlanningUi({ recomputeSuggestions: false });
+
+  let count: number | null = null;
+  try {
+    const { countKeyframesInRange } = await import("./webcodecsExtractor");
+    count = await countKeyframesInRange(file, start, end);
+  } catch {
+    count = null;
+  }
+
+  if (token !== keyframeCountToken) return;
+  state.keyframeCounting = false;
+  state.keyframeCount = count;
+  updateFramePlanningUi({ recomputeSuggestions: true });
 }
 
 els.generateButton.addEventListener("click", () => {
@@ -138,17 +215,18 @@ async function handleGenerateClicked(): Promise<void> {
   }
 
   try {
-    const collages = await generateCollages(config, {
+    const blobs = await generateCollages(config, {
+      sourceAspect: state.sourceAspect || undefined,
+      keyframeSampling: els.keyframeModeInput.checked,
       onProgress: (phase, done, total) => {
         const phaseWeight = phase === "extracting" ? 0.7 : 0.3;
         const phaseStart = phase === "extracting" ? 0 : 0.7;
         setProgress(phaseStart + (done / total) * phaseWeight, progressLabel(phase));
       },
+      onTiming: (timings) => console.info("[vid2grid] timings", timings),
     });
 
-    state.jpegBlobs = await Promise.all(
-      collages.map((canvas) => canvasToJpegBlob(canvas, config.jpegQuality)),
-    );
+    state.jpegBlobs = blobs;
     renderGallery();
     els.saveToFolderButton.hidden = !isFolderSaveSupported();
   } catch (err) {

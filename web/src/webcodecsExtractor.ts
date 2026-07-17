@@ -177,6 +177,37 @@ function findDecodeEndIndex(samples: Sample[], endTime: number): number {
   return samples.length - 1;
 }
 
+
+export function selectKeyframeIndices(
+  samples: Sample[],
+  startTime: number,
+  endTime: number,
+): number[] {
+  const indices: number[] = [];
+  for (let i = 0; i < samples.length; i++) {
+    const time = samples[i].cts / samples[i].timescale;
+    if (samples[i].is_sync && time >= startTime && time <= endTime) {
+      indices.push(i);
+    }
+  }
+  return indices;
+}
+
+export async function countKeyframesInRange(
+  file: File,
+  startTime: number,
+  endTime: number,
+): Promise<number | null> {
+  if (typeof VideoDecoder === "undefined" || !looksLikeIsoBmff(file)) return null;
+  try {
+    const demuxed = await demuxCached(file);
+    if (!demuxed) return null;
+    return selectKeyframeIndices(demuxed.samples, startTime, endTime).length;
+  } catch {
+    return null;
+  }
+}
+
 // A tiny wrapper so TS doesn't (incorrectly) carry "state !== closed" narrowing
 // across the `await` between the two closed-state checks in the feed loop below.
 function isDecoderClosed(decoder: VideoDecoder): boolean {
@@ -359,10 +390,97 @@ async function decodeSampleRange(
   }
 }
 
+async function feedKeyframes(
+  decoder: VideoDecoder,
+  samples: Sample[],
+  indices: number[],
+): Promise<void> {
+  for (const index of indices) {
+    if (isDecoderClosed(decoder)) break;
+    const chunk = toEncodedVideoChunk(samples[index]);
+    if (!chunk) continue;
+    if (decoder.decodeQueueSize > MAX_DECODE_QUEUE_SIZE) {
+      await new Promise<void>((resolve) => decoder.addEventListener("dequeue", () => resolve(), { once: true }));
+    }
+    if (isDecoderClosed(decoder)) break;
+    decoder.decode(chunk);
+  }
+  if (!isDecoderClosed(decoder)) await decoder.flush();
+}
+
+/**
+ * Fast path: decodes ONLY the given keyframe samples (each an independently
+ * decodable sync sample) instead of every frame in the range, skipping the P/B
+ * frames the sparse sampling would throw away anyway. Each decoded frame maps
+ * 1:1 to a wanted slot, timestamped at the keyframe's own composition time.
+ */
+async function decodeKeyframes(
+  decoderConfig: VideoDecoderConfig,
+  samples: Sample[],
+  indices: number[],
+  cellW: number,
+  cellH: number,
+  rotation: number,
+  onProgress?: ExtractionProgress,
+): Promise<ExtractedFrame[]> {
+  const cell = createCellCanvas(cellW, cellH);
+  if (!cell) return [];
+
+  const frames: (ExtractedFrame | undefined)[] = new Array(indices.length);
+  const pendingCaptures: Promise<void>[] = [];
+  let outputIndex = 0;
+  let capturedCount = 0;
+
+  let onDecoderError!: (error: DOMException) => void;
+  const failed = new Promise<never>((_, reject) => {
+    onDecoderError = reject;
+  });
+
+  const decoder = new VideoDecoder({
+    output: (frame) => {
+      const captureIndex = outputIndex++;
+      try {
+        drawRotated(cell.ctx, frame, cellW, cellH, rotation);
+        pendingCaptures.push(
+          createImageBitmap(cell.canvas).then((bitmap) => {
+            const sample = samples[indices[captureIndex]];
+            frames[captureIndex] = {
+              timestamp: sample.cts / sample.timescale,
+              frameIndex: captureIndex,
+              bitmap,
+            };
+            capturedCount++;
+            onProgress?.(capturedCount, indices.length);
+          }),
+        );
+      } finally {
+        frame.close();
+      }
+    },
+    error: onDecoderError,
+  });
+  decoder.configure(decoderConfig);
+
+  try {
+    await Promise.race([feedKeyframes(decoder, samples, indices), failed]);
+  } finally {
+    if (!isDecoderClosed(decoder)) decoder.close();
+  }
+
+  await Promise.all(pendingCaptures);
+  const contiguous: ExtractedFrame[] = [];
+  for (const frame of frames) {
+    if (!frame) break;
+    contiguous.push(frame);
+  }
+  return contiguous;
+}
+
 export async function extractFramesWebCodecs(
   config: CollageRequest,
   layout: GridLayout | undefined,
   onProgress?: ExtractionProgress,
+  keyframeSampling?: boolean,
 ): Promise<ExtractedFrame[] | null> {
   if (typeof VideoDecoder === "undefined") return null;
 
@@ -383,9 +501,6 @@ export async function extractFramesWebCodecs(
   const support = await VideoDecoder.isConfigSupported(decoderConfig);
   if (!support.supported) return null;
 
-  const wanted = buildWantedTimestamps(config, durationSeconds);
-  if (wanted.length === 0) return [];
-
   // When no layout is supplied the cell defaults to the frame's own size, which
   // is the *display* size - so swap coded dims for 90/270 rotations.
   const swapsDimensions = rotation === 90 || rotation === 270;
@@ -393,14 +508,24 @@ export async function extractFramesWebCodecs(
   const fallbackH = swapsDimensions ? codedWidth : codedHeight;
   const cellW = layout?.cellW ?? fallbackW;
   const cellH = layout?.cellH ?? fallbackH;
+
+  // Fast mode: decode only the keyframes within the selected range, skipping every
+  // inter-frame. Frame count is whatever the video provides, not the requested FPS.
+  if (keyframeSampling) {
+    const keyframeIndices = selectKeyframeIndices(samples, config.startTime, config.endTime);
+    if (keyframeIndices.length > 0) {
+      return decodeKeyframes(decoderConfig, samples, keyframeIndices, cellW, cellH, rotation, onProgress);
+    }
+  }
+
+  const wanted = buildWantedTimestamps(config, durationSeconds);
+  if (wanted.length === 0) return [];
+
   const cell = createCellCanvas(cellW, cellH);
   if (!cell) return null;
-
   const collector = createFrameCollector(wanted, cell.canvas, cell.ctx, cellW, cellH, rotation, onProgress);
   const startIndex = findDecodeStartIndex(samples, config.startTime);
   const endIndex = findDecodeEndIndex(samples, config.endTime);
-
   await decodeSampleRange(decoderConfig, samples, startIndex, endIndex, collector);
-
   return collector.settle();
 }

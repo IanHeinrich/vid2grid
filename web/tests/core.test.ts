@@ -42,24 +42,25 @@ function baseConfig(overrides: Partial<CollageRequest> = {}): CollageRequest {
 }
 
 describe("generateCollages", () => {
-  it("splits extracted frames into ceil(count / framesPerGrid) sized collage sheets", async () => {
+  it("splits extracted frames into ceil(count / framesPerGrid) JPEG sheets", async () => {
     const frames = stubExtractedFrames(10);
-    const collages = await generateCollages(baseConfig(), {
+    const blobs = await generateCollages(baseConfig(), {
       extractFramesImpl: async () => frames,
     });
 
-    expect(collages).toHaveLength(3); // ceil(10 / 4)
-    for (const collage of collages) {
-      expect(collage.width).toBe(256);
-      expect(collage.height).toBe(256);
+    expect(blobs).toHaveLength(3); // ceil(10 / 4)
+    for (const blob of blobs) {
+      expect(blob).toBeInstanceOf(Blob);
+      expect(blob.type).toBe("image/jpeg");
+      expect(blob.size).toBeGreaterThan(0);
     }
   });
 
   it("returns an empty array when no frames are extracted", async () => {
-    const collages = await generateCollages(baseConfig(), {
+    const blobs = await generateCollages(baseConfig(), {
       extractFramesImpl: async () => [],
     });
-    expect(collages).toEqual([]);
+    expect(blobs).toEqual([]);
   });
 
   it("reports extracting then rendering progress phases in order", async () => {

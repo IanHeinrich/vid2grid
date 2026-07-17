@@ -11,12 +11,6 @@ export interface TimestampFormat {
   showMilliseconds: boolean;
 }
 
-const DEFAULT_TIMESTAMP_FORMAT: TimestampFormat = {
-  showHours: false,
-  showMinutes: true,
-  showMilliseconds: false,
-};
-
 function formatTimestamp(seconds: number, format: TimestampFormat): string {
   const totalMs = Math.round(seconds * 1000);
   const hours = Math.floor(totalMs / 3_600_000);
@@ -39,43 +33,81 @@ function formatTimestamp(seconds: number, format: TimestampFormat): string {
   return secondsText;
 }
 
-export function resizeToCell(
-  bitmap: ImageBitmap,
-  cellW: number,
-  cellH: number,
-): HTMLCanvasElement {
-  const canvas = document.createElement("canvas");
-  canvas.width = cellW;
-  canvas.height = cellH;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas 2D context unavailable");
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(bitmap, 0, 0, cellW, cellH);
-  return canvas;
+type SheetContext2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+
+/**
+ * A single collage sheet's worth of frames plus the geometry needed to paint it.
+ *
+ * Transfer friendly (its `bitmaps` are Transferable) so the whole sheet can be
+ * shipped to a render worker unchanged.
+ */
+export interface CollageSheetInput {
+  bitmaps: ImageBitmap[];
+  timestamps: number[];
+  frameIndices: number[];
+  layout: GridLayout;
+  outputResolution: number;
+  gutterPx: number;
+  timestampFormat: TimestampFormat;
 }
 
 /**
- * Draws a timestamp (top-left) and frame index (top-right): black text, white stroke.
+ * Paints a whole collage sheet onto an already-created 2D context, working with
+ * both a main-thread `HTMLCanvasElement` and a worker `OffscreenCanvas`.
  *
- * Expects `cell` to already be resized to its final collage cell size, so the
- * font scales with the frame's actual rendered resolution rather than its
- * original capture resolution.
+ * Each frame is drawn straight into its final cell position and watermarked in
+ * place - no per-frame intermediate cell canvas - and cells past the supplied
+ * frames stay the black background, which is what a trailing under-full sheet
+ * wants.
+ */
+export function paintCollageSheet(ctx: SheetContext2D, input: CollageSheetInput): void {
+  const { layout, outputResolution, gutterPx } = input;
+
+  ctx.fillStyle = "black";
+  ctx.fillRect(0, 0, outputResolution, outputResolution);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+
+  input.bitmaps.forEach((bitmap, i) => {
+    const row = Math.floor(i / layout.cols);
+    const col = i % layout.cols;
+    if (row >= layout.rows) return;
+    const x = layout.offsetX + gutterPx + col * (layout.cellW + gutterPx);
+    const y = layout.offsetY + gutterPx + row * (layout.cellH + gutterPx);
+    ctx.drawImage(bitmap, x, y, layout.cellW, layout.cellH);
+    watermarkCell(
+      ctx,
+      x,
+      y,
+      layout.cellW,
+      layout.cellH,
+      input.timestamps[i],
+      input.frameIndices[i],
+      input.timestampFormat,
+    );
+  });
+}
+
+/**
+ * Draws a timestamp (top-left) and frame index (top-right) inside the cell at
+ * (offsetX, offsetY): black text with a white stroke. Font scales with the
+ * cell's final rendered height.
  *
  * `format` drops components (hours, minutes, milliseconds) that are redundant
  * for the whole batch this frame belongs to, e.g. a short clip sampled at 1fps
  * or slower gets a plain `SS` timestamp instead of `00:SS.000`.
  */
-export function watermarkFrame(
-  cell: HTMLCanvasElement,
+function watermarkCell(
+  ctx: SheetContext2D,
+  offsetX: number,
+  offsetY: number,
+  cellW: number,
+  cellH: number,
   timestamp: number,
   frameIndex: number,
-  format: TimestampFormat = DEFAULT_TIMESTAMP_FORMAT,
-): HTMLCanvasElement {
-  const ctx = cell.getContext("2d");
-  if (!ctx) throw new Error("Canvas 2D context unavailable");
-
-  const fontSize = Math.max(MIN_FONT_SIZE, Math.floor(cell.height / FONT_HEIGHT_DIVISOR));
+  format: TimestampFormat,
+): void {
+  const fontSize = Math.max(MIN_FONT_SIZE, Math.floor(cellH / FONT_HEIGHT_DIVISOR));
   const strokeWidth = Math.max(1, Math.floor(fontSize / 8));
 
   ctx.font = `${fontSize}px sans-serif`;
@@ -85,16 +117,14 @@ export function watermarkFrame(
   const timestampText = formatTimestamp(timestamp, format);
   const indexText = String(frameIndex);
 
-  drawStrokedText(ctx, timestampText, 4, 4, strokeWidth);
+  drawStrokedText(ctx, timestampText, offsetX + 4, offsetY + 4, strokeWidth);
 
   const indexWidth = ctx.measureText(indexText).width;
-  drawStrokedText(ctx, indexText, cell.width - indexWidth - 4, 4, strokeWidth);
-
-  return cell;
+  drawStrokedText(ctx, indexText, offsetX + cellW - indexWidth - 4, offsetY + 4, strokeWidth);
 }
 
 function drawStrokedText(
-  ctx: CanvasRenderingContext2D,
+  ctx: SheetContext2D,
   text: string,
   x: number,
   y: number,
@@ -105,38 +135,6 @@ function drawStrokedText(
   ctx.strokeText(text, x, y);
   ctx.fillStyle = "black";
   ctx.fillText(text, x, y);
-}
-
-/**
- * Pastes already cell-sized frames onto a black outputResolution x outputResolution canvas.
- *
- * Cells beyond cells.length (i.e. a trailing, under-full collage) are left
- * untouched, which is pure black since the canvas is black-initialized.
- */
-export function assembleCollage(
-  cells: HTMLCanvasElement[],
-  layout: GridLayout,
-  outputResolution: number,
-  gutterPx: number = GUTTER_PX,
-): HTMLCanvasElement {
-  const canvas = document.createElement("canvas");
-  canvas.width = outputResolution;
-  canvas.height = outputResolution;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas 2D context unavailable");
-  ctx.fillStyle = "black";
-  ctx.fillRect(0, 0, outputResolution, outputResolution);
-
-  cells.forEach((cell, i) => {
-    const row = Math.floor(i / layout.cols);
-    const col = i % layout.cols;
-    if (row >= layout.rows) return;
-    const x = layout.offsetX + gutterPx + col * (layout.cellW + gutterPx);
-    const y = layout.offsetY + gutterPx + row * (layout.cellH + gutterPx);
-    ctx.drawImage(cell, x, y);
-  });
-
-  return canvas;
 }
 
 /** Encodes a collage canvas as a JPEG Blob at the given quality (1-100). */
