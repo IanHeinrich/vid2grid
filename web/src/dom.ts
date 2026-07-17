@@ -1,0 +1,34 @@
+function requireElement<T extends Element>(selector: string): T {
+  const el = document.querySelector<T>(selector);
+  if (!el) throw new Error(`Missing required element: ${selector}`);
+  return el;
+}
+
+export const els = {
+  videoFileInput: requireElement<HTMLInputElement>("#videoFile"),
+  startTimeInput: requireElement<HTMLInputElement>("#startTime"),
+  endTimeInput: requireElement<HTMLInputElement>("#endTime"),
+  targetFpsInput: requireElement<HTMLInputElement>("#targetFps"),
+  framesPerGridInput: requireElement<HTMLInputElement>("#framesPerGrid"),
+  framesPerGridHint: requireElement<HTMLElement>("#framesPerGridHint"),
+  targetModelSelect: requireElement<HTMLSelectElement>("#targetModel"),
+  customResolutionField: requireElement<HTMLElement>("#customResolutionField"),
+  outputResolutionInput: requireElement<HTMLInputElement>("#outputResolution"),
+  resolutionCaption: requireElement<HTMLElement>("#resolutionCaption"),
+  jpegQualityInput: requireElement<HTMLInputElement>("#jpegQuality"),
+  jpegQualityValue: requireElement<HTMLElement>("#jpegQualityValue"),
+  generateButton: requireElement<HTMLButtonElement>("#generateButton"),
+  statusEl: requireElement<HTMLElement>("#status"),
+  progressContainer: requireElement<HTMLElement>("#progressContainer"),
+  progressBar: requireElement<HTMLElement>("#progressBar"),
+  progressText: requireElement<HTMLElement>("#progressText"),
+  emptyState: requireElement<HTMLElement>("#emptyState"),
+  resultsHeader: requireElement<HTMLElement>("#resultsHeader"),
+  resultsCount: requireElement<HTMLElement>("#resultsCount"),
+  downloadAllButton: requireElement<HTMLButtonElement>("#downloadAllButton"),
+  saveToFolderButton: requireElement<HTMLButtonElement>("#saveToFolderButton"),
+  gallery: requireElement<HTMLElement>("#gallery"),
+  lightbox: requireElement<HTMLElement>("#lightbox"),
+  lightboxImage: requireElement<HTMLImageElement>("#lightboxImage"),
+  lightboxClose: requireElement<HTMLButtonElement>("#lightboxClose"),
+};

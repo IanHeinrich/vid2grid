@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/vid2grid_logo.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>vid2grid</title>
+  </head>
+  <body>
+    <div id="app">
+      <aside class="sidebar">
+        <h1>vid2grid</h1>
+        <p class="caption">
+          Turn a video into optimally packed, watermarked frame-grid collages for downstream AI
+          vision processing. Runs entirely in your browser &mdash; your video is never uploaded
+          anywhere.
+        </p>
+
+        <label class="field">
+          Video file
+          <input
+            type="file"
+            id="videoFile"
+            accept="video/mp4,video/quicktime,video/x-msvideo,video/x-matroska,video/webm"
+          />
+        </label>
+
+        <div class="field">
+          <label>Time range (seconds)</label>
+          <div class="range-row">
+            <input type="number" id="startTime" min="0" step="0.1" value="0" disabled />
+            <span>to</span>
+            <input type="number" id="endTime" min="0" step="0.1" value="0" disabled />
+          </div>
+        </div>
+
+        <label class="field">
+          Target FPS
+          <input type="number" id="targetFps" min="0.1" step="0.5" value="1" />
+        </label>
+
+        <label class="field">
+          Frames per grid
+          <input type="number" id="framesPerGrid" min="1" step="1" value="9" />
+        </label>
+        <div class="frames-hint" id="framesPerGridHint" hidden></div>
+
+        <label class="field">
+          Target model / service
+          <select id="targetModel"></select>
+        </label>
+
+        <label class="field" id="customResolutionField" style="display: none">
+          Output resolution (px, square)
+          <input type="number" id="outputResolution" min="64" step="64" value="1024" />
+        </label>
+        <p class="caption" id="resolutionCaption"></p>
+
+        <label class="field">
+          <span class="field-label">JPEG quality: <span id="jpegQualityValue">80</span></span>
+          <input type="range" id="jpegQuality" min="1" max="100" value="80" />
+        </label>
+
+        <button id="generateButton" disabled>Generate Grid Images</button>
+      </aside>
+
+      <main class="content">
+        <div id="status" class="caption"></div>
+        <div id="progressContainer" class="progress-container" hidden>
+          <div class="progress-bar-track"><div id="progressBar" class="progress-bar"></div></div>
+          <span id="progressText" class="caption"></span>
+        </div>
+        <div id="emptyState" class="empty-state">Upload a video in the sidebar to get started.</div>
+        <div id="resultsHeader" class="results-header" hidden>
+          <h2 id="resultsCount"></h2>
+          <div class="results-actions">
+            <button id="saveToFolderButton" hidden>Save All to Folder</button>
+            <button id="downloadAllButton">Download All as .ZIP</button>
+          </div>
+        </div>
+        <div id="gallery" class="gallery"></div>
+      </main>
+    </div>
+
+    <div id="lightbox" class="lightbox" hidden>
+      <button id="lightboxClose" class="lightbox-close" aria-label="Close">&times;</button>
+      <img id="lightboxImage" alt="" />
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

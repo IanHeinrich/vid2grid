@@ -1,0 +1,23 @@
+{
+  "name": "vid2grid-web",
+  "private": true,
+  "version": "1.0.2",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1",
+    "mp4box": "^2.4.1"
+  },
+  "devDependencies": {
+    "jsdom": "^25.0.1",
+    "typescript": "^5.6.2",
+    "vite": "^6.4.3",
+    "vitest": "^3.2.7",
+    "vitest-canvas-mock": "^0.3.3"
+  }
+}
