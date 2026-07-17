@@ -6,15 +6,15 @@
 
 [![Deploy to GitHub Pages](https://github.com/IanHeinrich/vid2grid/actions/workflows/pages.yml/badge.svg)](https://github.com/IanHeinrich/vid2grid/actions/workflows/pages.yml)
 
-Parse a video into a grid of frames, smartly optimising the layout of each frame into one or more grid image files, with timestamps and order. Customise the number of frames per grid, output resolution of final images and more!
+Parse a video into a grid of frames, optimising the layout of each frame into one or more grid image files, with timestamps and order. Customise the number of frames per grid, output resolution of final images and more.
 
-Runs entirely in your browser — your video is never uploaded anywhere.
+Runs entirely in your browser, your video is never uploaded anywhere.
 
 ### [ianheinrich.github.io/vid2grid](https://ianheinrich.github.io/vid2grid/)
 
 ## Screenshots
 
-The grid packing adapts to the source video's aspect ratio — landscape and
+The grid packing adapts to the source video's aspect ratio: landscape and
 portrait clips each get a layout that maximises every frame's size within the
 square sheet:
 
@@ -23,16 +23,19 @@ square sheet:
 | <img src="docs/images/ui-horizontal-video.png" alt="vid2grid generating grids from a landscape video" width="460"> | <img src="docs/images/ui-vertical-video.png" alt="vid2grid generating grids from a portrait video" width="460"> |
 
 Click any collage in the gallery to view it full-size, with a timestamp and
-frame index burned into every cell:
+frame index burned into every cell. For a quick, near-instant preview (or
+when exact timestamps don't matter), **Keyframe fast mode** decodes only the
+video's keyframes instead of sampling by Target FPS. The sidebar shows the
+real frame/grid count and suggestions update live as you toggle it:
 
-<p align="center">
-  <img src="docs/images/example-grid.png" alt="A single collage sheet with per-frame timestamps and indices" width="440">
-</p>
+| Collage sheet | Keyframe fast mode |
+| :---: | :---: |
+| <img src="docs/images/example-grid.png" alt="A single collage sheet with per-frame timestamps and indices" width="380"> | <img src="docs/images/keyframe-fast-mode.png" alt="The Keyframe fast mode toggle enabled in the sidebar, showing the resulting frame and grid count" width="380"> |
 
 ## What it does
 
-vid2grid turns a video into one or more **collage sheets** — square grid images
-packing many timestamped frames into a single file — sized and shaped for
+vid2grid turns a video into one or more **collage sheets**: square grid images
+that pack many timestamped frames into a single file, sized and shaped for
 feeding into AI vision models (OpenAI, Gemini, Claude, Grok, Venice.ai, etc.)
 instead of uploading hundreds of individual frames.
 
@@ -47,7 +50,7 @@ instead of uploading hundreds of individual frames.
   divide the sampled frame count evenly, so the trailing sheet doesn't end up
   with wasted black filler cells.
 - **Watermarking**: every frame gets a timestamp (top-left) and its global
-  frame index (top-right) burned in — black text with a white stroke, sized
+  frame index (top-right) burned in as black text with a white stroke, sized
   relative to that frame's actual rendered resolution in the grid.
 - **Clean padding**: a black gutter separates every cell (and the outer edge),
   and any left-over cells in a trailing, under-full sheet are filled solid
@@ -55,39 +58,49 @@ instead of uploading hundreds of individual frames.
 - **Model-aware sizing**: a quick-select in the sidebar sets the output
   resolution just below the known image-input ceiling of popular vision
   models/services, or you can enter a custom resolution.
+- **Keyframe fast mode**: an opt-in toggle that decodes only the video's
+  keyframes instead of sampling by Target FPS, trading exact frame timing and
+  a caller-chosen frame count for a near-instant preview.
 - Results are shown in a gallery (click any collage to view it full-size) and
   downloadable as a single `.zip` of JPEGs at a configurable quality.
 
 ## How it works
 
 Everything runs client-side via the `<video>`/`<canvas>` (and, where
-supported, WebCodecs) APIs — no server, no upload. See [web/](web/) for the
-full source:
+supported, WebCodecs and Web Workers) APIs. No server, no upload. See
+[web/](web/) for the full source:
 
 1. [web/src/frameExtraction.ts](web/src/frameExtraction.ts) picks the fastest
-   available extraction strategy: for supported browsers and ISO-BMFF files
+   available extraction strategy. For supported browsers and ISO-BMFF files
    (mp4/mov/m4v) it demuxes the file with mp4box.js and decodes the wanted
    sample range in one pass with a WebCodecs `VideoDecoder`
-   ([web/src/webcodecsExtractor.ts](web/src/webcodecsExtractor.ts)); otherwise
-   it falls back to [web/src/extractor.ts](web/src/extractor.ts), which seeks
-   an in-memory `<video>` element to a fixed time-step between the requested
+   ([web/src/webcodecsExtractor.ts](web/src/webcodecsExtractor.ts)), including
+   an optional keyframe-only fast path for Keyframe fast mode. Otherwise it
+   falls back to [web/src/extractor.ts](web/src/extractor.ts), which seeks an
+   in-memory `<video>` element to a fixed time-step between the requested
    start/end time and draws each sampled frame to an offscreen `<canvas>`.
    Either way, frames are captured directly at their final collage cell size.
 2. [web/src/gridMaths.ts](web/src/gridMaths.ts) computes the optimal
    `(rows, cols, cell size)` layout once per batch, from the requested frames
    per collage and the source frame's aspect ratio.
-3. [web/src/renderer.ts](web/src/renderer.ts) resizes each sampled frame to
-   its final cell size, draws the timestamp/frame-index watermark at that
-   resolution, and pastes every cell onto a black canvas with gutters —
-   repeating for as many collage sheets as the extracted frames require.
+3. [web/src/renderer.ts](web/src/renderer.ts) draws each sampled frame into
+   its final cell position on a collage sheet, watermarks it with its
+   timestamp/frame index, and fills any left-over cells with black.
+   [web/src/sheetRenderer.ts](web/src/sheetRenderer.ts) parallelises this
+   across a pool of Web Workers
+   ([web/src/renderWorker.ts](web/src/renderWorker.ts) +
+   [web/src/workerPool.ts](web/src/workerPool.ts)) that draw onto an
+   `OffscreenCanvas` and JPEG-encode each sheet directly, falling back to
+   synchronous main-thread rendering when Workers or `OffscreenCanvas` aren't
+   available.
 4. [web/src/core.ts](web/src/core.ts) is the facade (`generateCollages`)
-   tying the above together, returning in-memory `HTMLCanvasElement`s that
-   [web/src/main.ts](web/src/main.ts) JPEG-encodes and renders into the
-   gallery / zips up for download.
+   tying the above together, returning ready-to-use JPEG `Blob`s that
+   [web/src/main.ts](web/src/main.ts) renders into the gallery and zips up
+   for download.
 
 ## Use it
 
-- **Hosted**: **[ianheinrich.github.io/vid2grid](https://ianheinrich.github.io/vid2grid/)** — no install required.
+- **Hosted**: **[ianheinrich.github.io/vid2grid](https://ianheinrich.github.io/vid2grid/)**, no install required.
 - **Locally**: see [Development](#development) below for setup.
 
 ### Known limitations
@@ -115,18 +128,17 @@ npm install
 | `npm run build` | Type-check (`tsc -b`) and produce a production build in `web/dist`. |
 | `npm run preview` | Serve the `web/dist` production build locally. |
 
-There's no separate lint step — `npm run build`'s `tsc -b` is the type-check
+There's no separate lint step. `npm run build`'s `tsc -b` is the type-check
 gate, and `npm test` is the correctness gate. Both should pass before opening
 a PR.
 
 The [pages.yml](.github/workflows/pages.yml) workflow runs `npm test` on
-every push/PR touching `web/**`, and — only on `main`, and only when
-`web/package.json`'s `version` has changed to a value with no existing
-`vX.Y.Z` git tag — tags the release, publishes a GitHub Release, and deploys
-`web/dist` to GitHub Pages.
+every push/PR touching `web/**`. On `main`, if `web/package.json`'s `version`
+has changed to a value with no existing `vX.Y.Z` git tag, it also tags the
+release, publishes a GitHub Release, and deploys `web/dist` to GitHub Pages.
 
 ## Contributing
 
-Contributions are welcome — bug reports, feature ideas, and PRs. See
+Contributions are welcome: bug reports, feature ideas, and PRs. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and merge requirements.
 
