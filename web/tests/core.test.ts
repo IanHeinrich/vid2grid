@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { generateCollages } from "../src/core";
-import type { ExtractedFrame } from "../src/extractor";
-import type { TranscriptCue } from "../src/transcription";
+import type { ExtractedFrame } from "../src/extraction/extractor";
+import type { TranscriptCue } from "../src/transcription/transcription";
 import type { CollageRequest } from "../src/types";
 
 /**

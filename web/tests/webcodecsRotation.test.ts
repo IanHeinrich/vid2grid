@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { drawRotated, rotationFromMatrix } from "../src/webcodecsExtractor";
+import { drawRotated, rotationFromMatrix } from "../src/extraction/webcodecsExtractor";
 
 // 16.16 fixed-point unit, as stored in the tkhd display matrix.
 const FP = 65536;

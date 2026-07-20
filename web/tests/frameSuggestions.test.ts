@@ -5,7 +5,7 @@ import {
   estimateExtractedFrameCount,
   estimateSheetCount,
   suggestFramesPerGrid,
-} from "../src/frameSuggestions";
+} from "../src/grid/frameSuggestions";
 
 const OUTPUT_RESOLUTION = 1024;
 const GUTTER_PX = 8;

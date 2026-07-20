@@ -1,5 +1,5 @@
 import JSZip from "jszip";
-import { gridFileName } from "./gridFileName";
+import { gridFileName } from "./grid/gridFileName";
 import type { TranscriptFile } from "./core";
 
 export function isFolderSaveSupported(): boolean {

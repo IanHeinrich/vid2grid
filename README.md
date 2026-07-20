@@ -91,34 +91,34 @@ instead of uploading hundreds of individual frames.
 
 See [web/](web/) for the full source:
 
-1. [web/src/frameExtraction.ts](web/src/frameExtraction.ts) picks the fastest
-   available extraction strategy. For supported browsers and ISO-BMFF files
+1. [web/src/extraction/frameExtraction.ts](web/src/extraction/frameExtraction.ts) picks
+   the fastest available extraction strategy. For supported browsers and ISO-BMFF files
    (mp4/mov/m4v) it demuxes the file with mp4box.js and decodes the wanted
    sample range in one pass with a WebCodecs `VideoDecoder`
-   ([web/src/webcodecsExtractor.ts](web/src/webcodecsExtractor.ts)), including
+   ([web/src/extraction/webcodecsExtractor.ts](web/src/extraction/webcodecsExtractor.ts)), including
    an optional keyframe-only fast path for Keyframe fast mode. Otherwise it
-   falls back to [web/src/extractor.ts](web/src/extractor.ts), which seeks an
+   falls back to [web/src/extraction/extractor.ts](web/src/extraction/extractor.ts), which seeks an
    in-memory `<video>` element to a fixed time-step between the requested
    start/end time and draws each sampled frame to an offscreen `<canvas>`.
    Either way, frames are captured directly at their final collage cell size.
-2. [web/src/gridMaths.ts](web/src/gridMaths.ts) computes the optimal
+2. [web/src/grid/gridMaths.ts](web/src/grid/gridMaths.ts) computes the optimal
    `(rows, cols, cell size)` layout once per batch, from the requested frames
    per collage and the source frame's aspect ratio.
-3. [web/src/renderer.ts](web/src/renderer.ts) draws each sampled frame into
+3. [web/src/rendering/renderer.ts](web/src/rendering/renderer.ts) draws each sampled frame into
    its final cell position on a collage sheet, watermarks it with its
    timestamp/frame index, and fills any left-over cells with black.
-   [web/src/sheetRenderer.ts](web/src/sheetRenderer.ts) parallelises this
+   [web/src/rendering/sheetRenderer.ts](web/src/rendering/sheetRenderer.ts) parallelises this
    across a pool of Web Workers
-   ([web/src/renderWorker.ts](web/src/renderWorker.ts) +
-   [web/src/workerPool.ts](web/src/workerPool.ts)) that draw onto an
+   ([web/src/rendering/renderWorker.ts](web/src/rendering/renderWorker.ts) +
+   [web/src/rendering/workerPool.ts](web/src/rendering/workerPool.ts)) that draw onto an
    `OffscreenCanvas` and JPEG-encode each sheet directly, falling back to
    synchronous main-thread rendering when Workers or `OffscreenCanvas` aren't
    available.
 4. When Generate transcript is on,
-   [web/src/audioExtraction.ts](web/src/audioExtraction.ts) decodes the
+   [web/src/extraction/audioExtraction.ts](web/src/extraction/audioExtraction.ts) decodes the
    video's audio track to mono 16kHz PCM via the Web Audio API, and
-   [web/src/transcription.ts](web/src/transcription.ts) runs it through a
-   Whisper model in [web/src/transcriptionWorker.ts](web/src/transcriptionWorker.ts)
+   [web/src/transcription/transcription.ts](web/src/transcription/transcription.ts) runs it through a
+   Whisper model in [web/src/transcription/transcriptionWorker.ts](web/src/transcription/transcriptionWorker.ts)
    (transformers.js, off the main thread), turning the model's chunk-level
    timestamps into WebVTT cues.
 5. [web/src/core.ts](web/src/core.ts) is the facade (`generateCollages`)

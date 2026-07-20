@@ -1,13 +1,13 @@
 import { els } from "../dom";
 import { state } from "../state";
-import { GUTTER_PX } from "../renderer";
+import { GUTTER_PX } from "../rendering/renderer";
 import {
   countGridPackingBlanks,
   estimateExtractedFrameCount,
   estimateSheetCount,
   suggestFramesPerGrid,
   type FramesPerGridSuggestion,
-} from "../frameSuggestions";
+} from "../grid/frameSuggestions";
 
 // Above this keyframe density (keyframes per second) the "fast" mode stops being
 // meaningfully faster and starts producing far more grids than the user expects,

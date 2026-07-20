@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { selectKeyframeIndices } from "../src/webcodecsExtractor";
+import { selectKeyframeIndices } from "../src/extraction/webcodecsExtractor";
 import type { Sample } from "mp4box";
 
 /**

@@ -1,8 +1,8 @@
 import "./style.css";
 import { els } from "./dom";
 import { state } from "./state";
-import { MODEL_RESOLUTION_PRESETS, CUSTOM_OPTION } from "./modelProfiles";
-import { getVideoMetadata } from "./extractor";
+import { MODEL_RESOLUTION_PRESETS, CUSTOM_OPTION } from "./grid/modelProfiles";
+import { getVideoMetadata } from "./extraction/extractor";
 import { generateCollages, type GenerationPhase } from "./core";
 import { validateCollageRequest, type CollageRequest } from "./types";
 import { updateFramePlanningUi } from "./ui/framePlanning";
@@ -307,7 +307,7 @@ async function refreshKeyframeCount(): Promise<void> {
 
   let count: number | null = null;
   try {
-    const { countKeyframesInRange } = await import("./webcodecsExtractor");
+    const { countKeyframesInRange } = await import("./extraction/webcodecsExtractor");
     count = await countKeyframesInRange(file, start, end);
   } catch {
     count = null;

@@ -24,8 +24,8 @@ import {
   type Track,
   type VisualSampleEntry,
 } from "mp4box";
-import type { CollageRequest } from "./types";
-import type { GridLayout } from "./gridMaths";
+import type { CollageRequest } from "../types";
+import type { GridLayout } from "../grid/gridMaths";
 import type { ExtractedFrame, ExtractionProgress } from "./extractor";
 
 // Generous upper bound on B-frame reorder depth: how many extra samples (in

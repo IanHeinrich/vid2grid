@@ -1,6 +1,6 @@
-import type { CollageRequest } from "./types";
+import type { CollageRequest } from "../types";
 import { extractFrames, type ExtractedFrame, type ExtractionProgress } from "./extractor";
-import type { GridLayout } from "./gridMaths";
+import type { GridLayout } from "../grid/gridMaths";
 
 /**
  * Picks the fastest available frame-extraction strategy.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeOptimalGrid } from "../src/gridMaths";
+import { computeOptimalGrid } from "../src/grid/gridMaths";
 
 describe("computeOptimalGrid", () => {
   it("picks a 3x3 layout for 9 square-ish frames and centers it", () => {

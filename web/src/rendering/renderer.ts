@@ -1,4 +1,4 @@
-import type { GridLayout } from "./gridMaths";
+import type { GridLayout } from "../grid/gridMaths";
 
 export const GUTTER_PX = 8;
 const FONT_HEIGHT_DIVISOR = 16; // font size = cell height / this; smaller cells get smaller text

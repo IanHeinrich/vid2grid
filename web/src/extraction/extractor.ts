@@ -1,6 +1,6 @@
 
-import type { CollageRequest } from "./types";
-import type { GridLayout } from "./gridMaths";
+import type { CollageRequest } from "../types";
+import type { GridLayout } from "../grid/gridMaths";
 
 export interface ExtractedFrame {
   timestamp: number;

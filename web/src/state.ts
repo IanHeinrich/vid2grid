@@ -1,4 +1,4 @@
-import type { FramesPerGridSuggestion } from "./frameSuggestions";
+import type { FramesPerGridSuggestion } from "./grid/frameSuggestions";
 import type { TranscriptFile } from "./core";
 
 export const state = {

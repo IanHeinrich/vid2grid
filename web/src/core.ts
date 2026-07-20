@@ -1,12 +1,12 @@
 import type { CollageRequest } from "./types";
-import { getVideoMetadata, type ExtractedFrame, type ExtractionProgress } from "./extractor";
-import { extractFramesAuto } from "./frameExtraction";
-import { computeOptimalGrid, type GridLayout } from "./gridMaths";
-import { GUTTER_PX, type CollageSheetInput, type TimestampFormat } from "./renderer";
-import { renderSheetsToBlobs } from "./sheetRenderer";
-import { decodeAudioForTranscription } from "./audioExtraction";
-import { transcribeAudio, cuesToVtt, type TranscriptCue, type TranscribeStage } from "./transcription";
-import { gridTranscriptFileName, combinedTranscriptFileName } from "./gridFileName";
+import { getVideoMetadata, type ExtractedFrame, type ExtractionProgress } from "./extraction/extractor";
+import { extractFramesAuto } from "./extraction/frameExtraction";
+import { computeOptimalGrid, type GridLayout } from "./grid/gridMaths";
+import { GUTTER_PX, type CollageSheetInput, type TimestampFormat } from "./rendering/renderer";
+import { renderSheetsToBlobs } from "./rendering/sheetRenderer";
+import { decodeAudioForTranscription } from "./extraction/audioExtraction";
+import { transcribeAudio, cuesToVtt, type TranscriptCue, type TranscribeStage } from "./transcription/transcription";
+import { gridTranscriptFileName, combinedTranscriptFileName } from "./grid/gridFileName";
 
 export type GenerationPhase = "extracting" | "rendering" | "transcribing";
 

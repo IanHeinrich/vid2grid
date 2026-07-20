@@ -4,8 +4,8 @@
  */
 import { els } from "../dom";
 import { state } from "../state";
-import { gridFileName, gridTranscriptFileName } from "../gridFileName";
-import { vttToPlainText } from "../transcription";
+import { gridFileName, gridTranscriptFileName } from "../grid/gridFileName";
+import { vttToPlainText } from "../transcription/transcription";
 import type { TranscriptFile } from "../core";
 
 type PreviewSlot = { el: HTMLElement; file: TranscriptFile } | null;
