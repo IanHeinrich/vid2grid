@@ -1,10 +1,7 @@
 <p align="center">
-  <img src="docs/images/logo.png" alt="vid2grid logo" width="180">
+  <img src="docs/images/logo.png" alt="vid2grid logo" width="140"><br>
+  <a href="https://github.com/IanHeinrich/vid2grid/actions/workflows/pages.yml"><img src="https://github.com/IanHeinrich/vid2grid/actions/workflows/pages.yml/badge.svg" alt="Deploy to GitHub Pages"></a>
 </p>
-
-# vid2grid
-
-[![Deploy to GitHub Pages](https://github.com/IanHeinrich/vid2grid/actions/workflows/pages.yml/badge.svg)](https://github.com/IanHeinrich/vid2grid/actions/workflows/pages.yml)
 
 Parse a video into a grid of frames, optimising the layout of each frame into one or more grid image files, with timestamps and order. Customise the number of frames per grid, output resolution of final images and more.
 
