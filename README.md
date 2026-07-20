@@ -12,6 +12,15 @@ Runs entirely in your browser, your video is never uploaded anywhere.
 
 ### [ianheinrich.github.io/vid2grid](https://ianheinrich.github.io/vid2grid/)
 
+## Contents
+
+- [Screenshots](#screenshots)
+- [What it does](#what-it-does)
+- [How it works](#how-it-works)
+- [Use it](#use-it)
+- [Development](#development)
+- [Contributing](#contributing)
+
 ## Screenshots
 
 The grid packing adapts to the source video's aspect ratio: landscape and
@@ -80,9 +89,10 @@ instead of uploading hundreds of individual frames.
 
 ## How it works
 
-Everything runs client-side via the `<video>`/`<canvas>` (and, where
-supported, WebCodecs and Web Workers) APIs. No server, no upload. See
-[web/](web/) for the full source:
+<details>
+<summary>Everything runs client-side via the <code>&lt;video&gt;</code>/<code>&lt;canvas&gt;</code> (and, where supported, WebCodecs and Web Workers) APIs — no server, no upload. Click to expand the pipeline.</summary>
+
+See [web/](web/) for the full source:
 
 1. [web/src/frameExtraction.ts](web/src/frameExtraction.ts) picks the fastest
    available extraction strategy. For supported browsers and ISO-BMFF files
@@ -119,12 +129,15 @@ supported, WebCodecs and Web Workers) APIs. No server, no upload. See
    transcript files) that [web/src/main.ts](web/src/main.ts) renders into the
    gallery and zips up for download.
 
+</details>
+
 ## Use it
 
 - **Hosted**: **[ianheinrich.github.io/vid2grid](https://ianheinrich.github.io/vid2grid/)**, no install required.
 - **Locally**: see [Development](#development) below for setup.
 
-### Known limitations
+<details>
+<summary>Known limitations</summary>
 
 - No native-FPS clamping: browsers don't expose a video's native frame rate,
   so sampling is purely time-based (`video.currentTime` seeks to the nearest
@@ -137,6 +150,8 @@ supported, WebCodecs and Web Workers) APIs. No server, no upload. See
   and is noticeably slower without WebGPU. Per-sheet transcripts are a
   best-effort split of the recognized speech by frame time window and may
   divide a sentence across two sheets.
+
+</details>
 
 ## Development
 
