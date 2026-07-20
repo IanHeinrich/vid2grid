@@ -9,84 +9,141 @@
   <body>
     <div id="app">
       <aside class="sidebar">
-        <h1>vid2grid</h1>
-        <p class="caption">
-          Turn a video into optimally packed, watermarked frame-grid collages for downstream AI
-          vision processing. Runs entirely in your browser, your video is never uploaded
-          anywhere.
-        </p>
-
-        <label class="field">
-          Video file
-          <input
-            type="file"
-            id="videoFile"
-            accept="video/mp4,video/quicktime,video/x-msvideo,video/x-matroska,video/webm"
-          />
-        </label>
-
-        <div class="field">
-          <label>Time range (seconds)</label>
-          <div class="range-row">
-            <input type="number" id="startTime" min="0" step="0.1" value="0" disabled />
-            <span>to</span>
-            <input type="number" id="endTime" min="0" step="0.1" value="0" disabled />
-          </div>
-        </div>
-
-        <div class="field toggle-field">
-          <label class="toggle-row">
-            <input type="checkbox" id="keyframeMode" />
-            <span class="toggle-text">
-              <span class="toggle-title">Keyframe fast mode</span>
-              <span class="toggle-desc">
-                Grab only the video&rsquo;s keyframes &mdash; near-instant. The video decides how
-                many frames you get, not Target FPS.
-              </span>
-            </span>
-          </label>
-          <p class="toggle-note" id="keyframeModeCaption" hidden>
-            Each frame lands on the nearest keyframe rather than an exact time.
+        <div class="sidebar-header">
+          <h1>vid2grid</h1>
+          <p class="caption">
+            Turn a video into optimally packed, watermarked frame-grid collages for downstream AI
+            vision processing. Runs entirely in your browser, your video is never uploaded
+            anywhere.
           </p>
         </div>
 
-        <label class="field" id="targetFpsField">
-          Target FPS
-          <input type="number" id="targetFps" min="0.1" step="0.5" value="1" />
-        </label>
+        <div class="sidebar-fields">
+          <div class="field">
+            <label class="dropzone" id="dropzone" for="videoFile">
+              <input
+                type="file"
+                id="videoFile"
+                accept="video/mp4,video/quicktime,video/x-msvideo,video/x-matroska,video/webm"
+              />
+              <span class="dropzone-prompt">Drop a video here, or click to browse</span>
+              <span class="dropzone-filename" id="dropzoneFilename" hidden></span>
+            </label>
+          </div>
 
-        <label class="field">
-          Frames per grid
-          <input type="number" id="framesPerGrid" min="1" step="1" value="9" />
-        </label>
-        <div class="frames-hint" id="framesPerGridHint" hidden></div>
+          <div class="field">
+            <label>Time range (seconds)</label>
+            <div class="range-slider" id="rangeSlider">
+              <div class="range-slider-track"><div class="range-slider-fill" id="rangeFill"></div></div>
+              <input
+                type="range"
+                id="startRange"
+                class="range-slider-input"
+                min="0"
+                max="0"
+                step="0.1"
+                value="0"
+                disabled
+                aria-label="Range start"
+              />
+              <input
+                type="range"
+                id="endRange"
+                class="range-slider-input"
+                min="0"
+                max="0"
+                step="0.1"
+                value="0"
+                disabled
+                aria-label="Range end"
+              />
+            </div>
+            <div class="range-slider-labels">
+              <span id="rangeMinLabel">0:00</span>
+              <span id="rangeMaxLabel">0:00</span>
+            </div>
+            <div class="range-row">
+              <input type="number" id="startTime" min="0" step="0.1" value="0" disabled />
+              <span>to</span>
+              <input type="number" id="endTime" min="0" step="0.1" value="0" disabled />
+            </div>
+          </div>
 
-        <label class="field">
-          Target model / service
-          <select id="targetModel"></select>
-        </label>
+          <div class="field-row">
+            <label class="field" id="targetFpsField">
+              Target FPS
+              <input type="number" id="targetFps" min="0.1" step="0.5" value="1" />
+            </label>
 
-        <label class="field" id="customResolutionField" style="display: none">
-          Output resolution (px, square)
-          <input type="number" id="outputResolution" min="64" step="64" value="1024" />
-        </label>
-        <p class="caption" id="resolutionCaption"></p>
+            <label class="field">
+              Frames per grid
+              <input type="number" id="framesPerGrid" min="1" step="1" value="9" />
+            </label>
+          </div>
+          <div class="frames-hint" id="framesPerGridHint" hidden></div>
 
-        <label class="field">
-          <span class="field-label">JPEG quality: <span id="jpegQualityValue">80</span></span>
-          <input type="range" id="jpegQuality" min="1" max="100" value="80" />
-        </label>
+          <label class="field">
+            Target model / service
+            <select id="targetModel"></select>
+          </label>
 
-        <button id="generateButton" disabled>Generate Grid Images</button>
+          <label class="field" id="customResolutionField" style="display: none">
+            Output resolution (px, square)
+            <input type="number" id="outputResolution" min="64" step="64" value="1024" />
+          </label>
+          <p class="caption" id="resolutionCaption"></p>
+
+          <details class="advanced-options" open>
+            <summary>Advanced options</summary>
+            <div class="advanced-options-body">
+              <div class="field toggle-field">
+                <label class="toggle-row">
+                  <input type="checkbox" id="keyframeMode" />
+                  <span class="toggle-text">
+                    <span class="toggle-title">Keyframe fast mode</span>
+                    <span class="toggle-desc">
+                      Only decode keyframes, for a near-instant preview (ignores Target FPS).
+                    </span>
+                  </span>
+                </label>
+                <p class="toggle-note" id="keyframeModeCaption" hidden>
+                  Frames land on the nearest keyframe, not an exact time.
+                </p>
+              </div>
+
+              <div class="field toggle-field">
+                <label class="toggle-row">
+                  <input type="checkbox" id="transcriptMode" />
+                  <span class="toggle-text">
+                    <span class="toggle-title">Generate transcript</span>
+                    <span class="toggle-desc">
+                      In-browser speech-to-text, nothing uploaded. ~60MB one-time download; needs
+                      an audio track.
+                    </span>
+                  </span>
+                </label>
+                <label class="toggle-row toggle-note" id="transcriptCombinedField" hidden>
+                  <input type="checkbox" id="transcriptCombinedMode" />
+                  One combined transcript instead of per-sheet files
+                </label>
+              </div>
+
+              <label class="field">
+                <span class="field-label">JPEG quality: <span id="jpegQualityValue">80</span></span>
+                <input type="range" id="jpegQuality" min="1" max="100" value="80" />
+              </label>
+            </div>
+          </details>
+        </div>
+
+        <div class="sidebar-footer">
+          <button id="generateButton" disabled>Generate Grid Images</button>
+        </div>
       </aside>
 
       <main class="content">
-        <div id="status" class="caption"></div>
-        <div id="progressContainer" class="progress-container" hidden>
-          <div class="progress-bar-track"><div id="progressBar" class="progress-bar"></div></div>
-          <span id="progressText" class="caption"></span>
-        </div>
-        <div id="emptyState" class="empty-state">Upload a video in the sidebar to get started.</div>
+        <div id="status" class="caption" role="status" aria-live="polite"></div>
+        <div id="emptyState" class="empty-state">Select a video in the sidebar to get started.</div>
         <div id="resultsHeader" class="results-header" hidden>
           <h2 id="resultsCount"></h2>
           <div class="results-actions">
@@ -98,7 +155,23 @@
       </main>
     </div>
 
-    <div id="lightbox" class="lightbox" hidden>
+    <video id="videoPreview" class="scrub-preview" muted playsinline></video>
+
+    <div id="progressContainer" class="progress-overlay" hidden>
+      <div class="progress-panel" role="status" aria-live="polite">
+        <span id="progressText" class="progress-panel-label"></span>
+        <div class="progress-bar-track"><div id="progressBar" class="progress-bar"></div></div>
+      </div>
+    </div>
+
+    <div
+      id="lightbox"
+      class="lightbox"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Grid image preview"
+      hidden
+    >
       <button id="lightboxClose" class="lightbox-close" aria-label="Close">&times;</button>
       <img id="lightboxImage" alt="" />
     </div>

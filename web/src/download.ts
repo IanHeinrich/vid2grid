@@ -1,13 +1,15 @@
 import JSZip from "jszip";
 import { gridFileName } from "./gridFileName";
+import type { TranscriptFile } from "./core";
 
 export function isFolderSaveSupported(): boolean {
   return typeof window.showDirectoryPicker === "function";
 }
 
-export async function downloadAllAsZip(blobs: Blob[]): Promise<void> {
+export async function downloadAllAsZip(blobs: Blob[], transcriptFiles: TranscriptFile[] = []): Promise<void> {
   const zip = new JSZip();
   blobs.forEach((blob, i) => zip.file(gridFileName(i), blob));
+  transcriptFiles.forEach(({ name, blob }) => zip.file(name, blob));
   const zipBlob = await zip.generateAsync({ type: "blob" });
   const url = URL.createObjectURL(zipBlob);
   const anchor = document.createElement("a");
@@ -33,17 +35,28 @@ export function buildGridsFolderName(sourceFileName: string, now = new Date()): 
   return `${base}_grids_${timestamp}`;
 }
 
-export async function saveAllToFolder(blobs: Blob[], folderName: string): Promise<void> {
+export async function saveAllToFolder(
+  blobs: Blob[],
+  folderName: string,
+  transcriptFiles: TranscriptFile[] = [],
+): Promise<void> {
   if (!window.showDirectoryPicker) {
     throw new Error("This browser doesn't support saving directly to a folder.");
   }
   const parentHandle = await window.showDirectoryPicker({ mode: "readwrite" });
   const dirHandle = await parentHandle.getDirectoryHandle(folderName, { create: true });
   for (const [i, blob] of blobs.entries()) {
-    const fileHandle = await dirHandle.getFileHandle(gridFileName(i), { create: true });
-    const writable = await fileHandle.createWritable();
-    await writable.write(blob);
-    await writable.close();
+    await writeFile(dirHandle, gridFileName(i), blob);
   }
+  for (const { name, blob } of transcriptFiles) {
+    await writeFile(dirHandle, name, blob);
+  }
+}
+
+async function writeFile(dirHandle: FileSystemDirectoryHandle, name: string, blob: Blob): Promise<void> {
+  const fileHandle = await dirHandle.getFileHandle(name, { create: true });
+  const writable = await fileHandle.createWritable();
+  await writable.write(blob);
+  await writable.close();
 }
 

@@ -39,6 +39,10 @@ that pack many timestamped frames into a single file, sized and shaped for
 feeding into AI vision models (OpenAI, Gemini, Claude, Grok, Venice.ai, etc.)
 instead of uploading hundreds of individual frames.
 
+- **Drag-and-drop + preview**: drop a video onto the sidebar (or click to
+  browse), then set the start/end time range with a dual-handle timeline
+  slider (or the number inputs). Grabbing a handle pops up a floating preview
+  that follows it and shows the exact frame — no guessing seconds.
 - **Time & rate control**: pick a start/end time range and a target sampling
   rate (frames per second).
 - **Optimal grid packing**: for a given "frames per grid" count and output
@@ -61,8 +65,18 @@ instead of uploading hundreds of individual frames.
 - **Keyframe fast mode**: an opt-in toggle that decodes only the video's
   keyframes instead of sampling by Target FPS, trading exact frame timing and
   a caller-chosen frame count for a near-instant preview.
-- Results are shown in a gallery (click any collage to view it full-size) and
-  downloadable as a single `.zip` of JPEGs at a configurable quality.
+- **Generate transcript**: an opt-in toggle that runs an
+  in-browser Whisper speech-to-text model on the video's audio track, no
+  upload involved. By default it produces one WebVTT (`.vtt`) file per grid
+  sheet (e.g. `grid_0001.vtt` alongside `grid_0001.jpg`), covering that
+  sheet's frame time range; an extra checkbox switches to a single combined
+  `transcript.vtt` for the whole export instead. Cue timestamps are absolute
+  to the source video, matching the timestamps already burned into each grid
+  cell.
+- Results are shown in a gallery (click any collage to view it full-size),
+  with a transcript preview under each thumbnail when generated, and
+  downloadable as a single `.zip` (or saved folder) containing the JPEGs and
+  any transcript files at a configurable quality.
 
 ## How it works
 
@@ -93,10 +107,17 @@ supported, WebCodecs and Web Workers) APIs. No server, no upload. See
    `OffscreenCanvas` and JPEG-encode each sheet directly, falling back to
    synchronous main-thread rendering when Workers or `OffscreenCanvas` aren't
    available.
-4. [web/src/core.ts](web/src/core.ts) is the facade (`generateCollages`)
-   tying the above together, returning ready-to-use JPEG `Blob`s that
-   [web/src/main.ts](web/src/main.ts) renders into the gallery and zips up
-   for download.
+4. When Generate transcript is on,
+   [web/src/audioExtraction.ts](web/src/audioExtraction.ts) decodes the
+   video's audio track to mono 16kHz PCM via the Web Audio API, and
+   [web/src/transcription.ts](web/src/transcription.ts) runs it through a
+   Whisper model in [web/src/transcriptionWorker.ts](web/src/transcriptionWorker.ts)
+   (transformers.js, off the main thread), turning the model's chunk-level
+   timestamps into WebVTT cues.
+5. [web/src/core.ts](web/src/core.ts) is the facade (`generateCollages`)
+   tying the above together, returning ready-to-use JPEG `Blob`s (plus any
+   transcript files) that [web/src/main.ts](web/src/main.ts) renders into the
+   gallery and zips up for download.
 
 ## Use it
 
@@ -109,6 +130,13 @@ supported, WebCodecs and Web Workers) APIs. No server, no upload. See
   so sampling is purely time-based (`video.currentTime` seeks to the nearest
   frame). Requesting a `targetFps` higher than the source can still produce
   duplicate frames.
+- Transcript generation is English-focused (the default model is
+  `Xenova/whisper-tiny.en`), downloads its model (~40MB) plus the ONNX
+  runtime it runs on (~20MB) from the internet on first use only (cached by
+  the browser afterwards; the video/audio itself is never sent anywhere),
+  and is noticeably slower without WebGPU. Per-sheet transcripts are a
+  best-effort split of the recognized speech by frame time window and may
+  divide a sentence across two sheets.
 
 ## Development
 

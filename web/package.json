@@ -1,7 +1,7 @@
 {
   "name": "vid2grid-web",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@huggingface/transformers": "^3.7.5",
     "jszip": "^3.10.1",
     "mp4box": "^2.4.1"
   },
