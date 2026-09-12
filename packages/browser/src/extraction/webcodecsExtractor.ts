@@ -19,7 +19,7 @@ import { looksLikeIsoBmff } from "./isoBmff";
 // Generous upper bound on B-frame reorder depth: without the padding, composition-order
 // reordering could cut off a wanted frame at the end of the range.
 const REORDER_PADDING_SAMPLES = 16;
-// Bounds decoder memory on long clips instead of queuing the whole video.
+// Bounds memory on long clips rather than queuing the whole video at once.
 const MAX_DECODE_QUEUE_SIZE = 30;
 
 interface DemuxResult {
@@ -216,6 +216,21 @@ export function drawRotated(
   ctx.restore();
 }
 
+/** The wanted indices a frame at `timestampSeconds` fills, given the next unfilled one:
+ * the first frame at or after a wanted timestamp is the one kept, so a sample the decoder
+ * never emitted shifts none of the others. */
+export function planIndicesForFrame(
+  wanted: number[],
+  nextIndex: number,
+  timestampSeconds: number,
+): number[] {
+  const filled: number[] = [];
+  for (let i = nextIndex; i < wanted.length && timestampSeconds >= wanted[i]; i++) {
+    filled.push(i);
+  }
+  return filled;
+}
+
 interface FrameCollector {
   consume(frame: VideoFrame): void;
   isComplete(): boolean;
@@ -246,8 +261,7 @@ function createFrameCollector(
 
   return {
     consume(frame) {
-      while (wantedIndex < wanted.length && frame.timestamp / 1e6 >= wanted[wantedIndex]) {
-        const capturedIndex = wantedIndex;
+      for (const capturedIndex of planIndicesForFrame(wanted, wantedIndex, frame.timestamp / 1e6)) {
         drawRotated(ctx, frame, cellW, cellH, rotation);
         pendingCaptures.push(
           createImageBitmap(canvas).then((image) => {
@@ -256,7 +270,7 @@ function createFrameCollector(
             onProgress?.(capturedCount, wanted.length);
           }),
         );
-        wantedIndex++;
+        wantedIndex = capturedIndex + 1;
       }
       if (wantedIndex >= wanted.length && !complete) {
         complete = true;
@@ -368,6 +382,7 @@ async function decodeKeyframes(
   decoderConfig: VideoDecoderConfig,
   samples: Sample[],
   indices: number[],
+  wanted: number[],
   cellW: number,
   cellH: number,
   rotation: number,
@@ -376,9 +391,9 @@ async function decodeKeyframes(
   const cellCanvas = createCellCanvas(cellW, cellH);
   if (!cellCanvas) return [];
 
-  const images: (ImageBitmap | undefined)[] = new Array(indices.length);
+  const images: (ImageBitmap | undefined)[] = new Array(wanted.length);
   const pendingCaptures: Promise<void>[] = [];
-  let outputIndex = 0;
+  let nextIndex = 0;
   let capturedCount = 0;
 
   let onDecoderError!: (error: DOMException) => void;
@@ -388,16 +403,18 @@ async function decodeKeyframes(
 
   const decoder = new VideoDecoder({
     output: (frame) => {
-      const captureIndex = outputIndex++;
       try {
-        drawRotated(cellCanvas.ctx, frame, cellW, cellH, rotation);
-        pendingCaptures.push(
-          createImageBitmap(cellCanvas.canvas).then((image) => {
-            images[captureIndex] = image;
-            capturedCount++;
-            onProgress?.(capturedCount, indices.length);
-          }),
-        );
+        for (const captureIndex of planIndicesForFrame(wanted, nextIndex, frame.timestamp / 1e6)) {
+          drawRotated(cellCanvas.ctx, frame, cellW, cellH, rotation);
+          pendingCaptures.push(
+            createImageBitmap(cellCanvas.canvas).then((image) => {
+              images[captureIndex] = image;
+              capturedCount++;
+              onProgress?.(capturedCount, wanted.length);
+            }),
+          );
+          nextIndex = captureIndex + 1;
+        }
       } finally {
         frame.close();
       }
@@ -450,6 +467,7 @@ export async function extractFramesWebCodecs(
       decoderConfig,
       samples,
       keyframeIndices,
+      wanted,
       cellW,
       cellH,
       rotation,

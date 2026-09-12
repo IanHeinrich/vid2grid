@@ -124,7 +124,7 @@ async function handleFile(file: File | null): Promise<void> {
   els.statusEl.textContent = "Reading video metadata...";
   let videoInfo: VideoInfo;
   try {
-    videoInfo = await probeVideo(file);
+    videoInfo = await probeVideo(file, { keyframeTimestamps: false });
   } catch (err) {
     els.statusEl.textContent = `Failed to read video: ${(err as Error).message}`;
     state.videoInfo = null;

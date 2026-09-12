@@ -37,6 +37,6 @@ describe("fixtures/render-plans", () => {
     const fixture: Fixture = JSON.parse(readFileSync(join(fixturesDir, fileName), "utf-8"));
 
     expect(fixture.name).toBe(fileName.replace(/\.json$/, ""));
-    expect(buildRenderPlan(fixture.request, fixture.info)).toEqual(fixture.plan);
+    expect(buildRenderPlan(fixture.request, fixture.info)).toStrictEqual(fixture.plan);
   });
 });
