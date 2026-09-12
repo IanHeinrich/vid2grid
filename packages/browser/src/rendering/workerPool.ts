@@ -1,9 +1,4 @@
-/**
- * A minimal fixed-size Web Worker pool that load-balances independent jobs
- * across its workers: each worker handles one job at a time, and queued jobs are
- * handed to whichever worker frees up next. Correlation is by worker identity
- * (one in-flight job per worker), so no per-message ids are needed.
- */
+// One in-flight job per worker, so replies correlate by worker identity and need no message ids.
 interface PoolTask<TRequest, TResponse> {
   request: TRequest;
   transfer: Transferable[];

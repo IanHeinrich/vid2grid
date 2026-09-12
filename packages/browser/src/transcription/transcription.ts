@@ -1,7 +1,3 @@
-/**
- * Talks to the transcription worker and turns its raw chunk output into
- * timestamped cues on the video's own timeline.
- */
 import type { TranscribeStage, TranscriptCue } from "@vid2grid/core";
 import type { TranscribeRequest, TranscribeWorkerMessage } from "./transcriptionWorker";
 
@@ -18,12 +14,7 @@ function getWorker(): Worker {
   return sharedWorker;
 }
 
-/**
- * Transcribes `samples` (mono 16kHz PCM) and shifts every cue's timestamps by
- * `offsetSeconds` (the request's `startTime`) so cues land on the same
- * absolute video timeline as the frame timestamps already burned into each
- * grid cell.
- */
+/** `samples` is mono 16kHz PCM; `offsetSeconds` puts cues back on the absolute video timeline. */
 export function transcribeAudio(
   samples: Float32Array,
   offsetSeconds: number,

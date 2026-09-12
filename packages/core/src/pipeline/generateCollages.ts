@@ -42,7 +42,7 @@ export interface GenerateCollagesOptions {
   // Non-fatal problems (a failed transcription, a video with no audio track)
   // are reported rather than thrown, so they never lose the rendered sheets.
   onWarning?: (message: string) => void;
-  /** The source's already-probed duration and dimensions, to avoid probing twice. */
+  /** Supplying what the caller already read skips the probe. */
   videoInfo?: VideoInfo;
 }
 

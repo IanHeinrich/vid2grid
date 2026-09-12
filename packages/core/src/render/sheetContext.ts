@@ -1,7 +1,6 @@
-// Declared structurally so core never names a DOM type: a browser
-// CanvasRenderingContext2D and a worker OffscreenCanvasRenderingContext2D both
-// satisfy it as-is. fillStyle/strokeStyle are unknown because the DOM lib's
-// colour-or-gradient-or-pattern union is not assignable to string.
+// Structural so core names no DOM type; both canvas 2D contexts satisfy it as-is.
+// The style fields are `unknown` because the DOM lib's colour-or-gradient-or-pattern
+// union rejects `string`.
 export interface SheetContext2D<TImage> {
   fillStyle: unknown;
   strokeStyle: unknown;

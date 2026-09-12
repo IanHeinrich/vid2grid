@@ -2,10 +2,8 @@ import { describe, expect, it } from "vitest";
 import { buildRenderPlan, type SheetRenderJob } from "@vid2grid/core";
 import { renderSheetsToBlobs } from "../src/rendering/sheetRenderer";
 
-// jsdom has neither Worker nor OffscreenCanvas, so this exercises the
-// main-thread fallback: paint onto a (mocked) canvas and encode it with
-// canvas.toBlob. Plan-to-job routing is covered in core; what matters here is
-// that a sheet really comes back as a JPEG Blob.
+// jsdom has neither `Worker` nor `OffscreenCanvas`, so only the main-thread fallback runs
+// here. Plan-to-job routing is core's to test; this asks whether a JPEG Blob comes back.
 const PLAN = buildRenderPlan(
   {
     startSeconds: 0,

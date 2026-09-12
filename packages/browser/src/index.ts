@@ -1,8 +1,3 @@
-/**
- * The browser executor: core's ports implemented with the platform APIs a page
- * already has (`<video>`/`<canvas>`, WebCodecs, OffscreenCanvas workers, Web
- * Audio and a transformers.js Whisper worker).
- */
 import type { CollagePorts, TranscribeStage, TranscriptCue } from "@vid2grid/core";
 import { probeVideo } from "./probe";
 import { extractFramesAuto } from "./extraction/frameExtraction";

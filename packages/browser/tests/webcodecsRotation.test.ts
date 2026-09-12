@@ -12,8 +12,7 @@ describe("rotationFromMatrix", () => {
     expect(rotationFromMatrix([0, -FP, 0, FP, 0, 0, 0, 0, 1 << 30])).toBe(270);
   });
 
-  // The 90-degree case above is exactly the matrix carried by the sample phone
-  // clip VID-20190126-WA0013.mp4 (coded 640x352 landscape displayed 352x640).
+  // The 90-degree matrix above is the one a real phone clip carried: coded 640x352, displayed 352x640.
 });
 
 function canvasContext(): CanvasRenderingContext2D {
@@ -25,8 +24,8 @@ function canvasContext(): CanvasRenderingContext2D {
   return ctx;
 }
 
-// jest-canvas-mock's drawImage validates its source is canvas-like, so use a
-// real (mocked) canvas element as the stand-in frame.
+// jest-canvas-mock's drawImage rejects anything but a canvas-like source, so a real
+// (mocked) canvas element stands in for the frame.
 function fakeFrame(width: number, height: number): CanvasImageSource {
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -52,7 +51,6 @@ describe("drawRotated", () => {
     const rotate = vi.spyOn(ctx, "rotate");
     const drawImage = vi.spyOn(ctx, "drawImage");
 
-    // Landscape frame, portrait cell (100x200).
     drawRotated(ctx, fakeFrame(640, 352), 100, 200, 90);
 
     expect(translate).toHaveBeenCalledWith(50, 100);

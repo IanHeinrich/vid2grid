@@ -4,8 +4,7 @@ export interface TranscriptCue {
   text: string;
 }
 
-/** WebVTT requires a fixed-width HH:MM:SS.mmm timestamp, unlike the adaptive,
- * component-dropping format `paintCollageSheet` burns into grid cells. */
+/** Separate from `formatTimestamp` because WebVTT demands a fixed-width HH:MM:SS.mmm. */
 export function formatVttTimestamp(seconds: number): string {
   const totalMs = Math.max(0, Math.round(seconds * 1000));
   const hours = Math.floor(totalMs / 3_600_000);
@@ -28,7 +27,6 @@ export function cuesToVtt(cues: TranscriptCue[]): string {
   return `WEBVTT\n\n${body}\n`;
 }
 
-/** Strips VTT structure down to just the spoken text, for lightweight gallery previews. */
 export function vttToPlainText(vtt: string): string {
   return vtt
     .split("\n")
@@ -37,7 +35,6 @@ export function vttToPlainText(vtt: string): string {
     .trim();
 }
 
-/** A cue belongs to a sheet's window if it overlaps `[windowStart, windowEnd)` at all. */
 export function cuesInWindow(
   cues: TranscriptCue[],
   windowStart: number,

@@ -10,8 +10,7 @@ import type { RenderSheetRequest, RenderSheetResponse } from "./renderWorker";
 
 const MAX_RENDER_WORKERS = 4;
 
-// Compile-time proof that both canvas contexts satisfy core's DOM-free sheet
-// context, so paintSheetFromPlan can paint on-thread and in a worker alike.
+// Unused at runtime: compile-time proof that both canvas contexts satisfy core's SheetContext2D.
 type AssignableToSheetContext<T extends SheetContext2D<ImageBitmap>> = T;
 export type MainThreadSheetContext = AssignableToSheetContext<CanvasRenderingContext2D>;
 export type WorkerSheetContext = AssignableToSheetContext<OffscreenCanvasRenderingContext2D>;
@@ -59,8 +58,7 @@ async function renderWithWorkers(
 
   await Promise.all(
     jobs.map(async (job, index) => {
-      // The decoded frames are transferred, not copied: the worker owns and
-      // closes them once the sheet is encoded.
+      // The frames are transferred, not copied: the worker closes them once encoded.
       const response = await pool.run(
         { plan, sheet: job.sheet, images: job.images, jpegQuality: plan.jpegQuality },
         presentImages(job.images),

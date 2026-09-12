@@ -5,10 +5,8 @@ import {
 } from "../src/extraction/webcodecsExtractor";
 import type { Sample } from "mp4box";
 
-// The keyframe helpers are the only part of the WebCodecs path that can run
-// under jsdom (VideoDecoder is unavailable), so they are covered directly with
-// fabricated sample tables. A 30-tick/second timescale makes a sample's cts
-// tick equal its frame index.
+// jsdom has no VideoDecoder, so only these pure helpers of the fast path can be tested here.
+// The 30-tick timescale makes a sample's cts tick equal its frame index.
 const TIMESCALE = 30;
 
 function fakeSamples(count: number, gopSize: number): Sample[] {

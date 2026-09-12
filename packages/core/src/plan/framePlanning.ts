@@ -1,9 +1,8 @@
 import type { CollagePlanRequest, VideoInfo } from "../types";
 import type { PlannedFrame } from "./renderPlan";
 
-// Spelled out rather than using a built-in rounding helper: JavaScript's
-// Math.round rounds a half up and Python's round rounds a half to even, so the
-// two ports would disagree on exact half-microseconds.
+// Spelled out because Math.round rounds a half up where Python's round rounds a
+// half to even: the two ports would disagree on exact half-microseconds.
 export function roundToMicroseconds(seconds: number): number {
   return Math.floor(seconds * 1e6 + 0.5) / 1e6;
 }

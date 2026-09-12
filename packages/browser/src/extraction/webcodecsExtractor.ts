@@ -1,11 +1,5 @@
-/**
- * Frame capture via WebCodecs `VideoDecoder` + mp4box.js demuxing: one
- * continuous decode pass over the wanted sample range instead of the seek-based
- * extractor's re-decode from the nearest keyframe per frame.
- *
- * Returns `null` whenever the container/codec isn't supported (or anything else
- * goes wrong) so the caller can fall back to the seek-based extractor.
- */
+// One continuous decode pass, where extractor.ts re-decodes from a keyframe per sampled frame.
+// Every entry point returns `null` on an undecodable input so the caller can fall back to it.
 import {
   createFile,
   MP4BoxBuffer,
@@ -22,9 +16,8 @@ import { roundToMicroseconds, type PlannedFrame, type RenderPlan } from "@vid2gr
 import type { ExtractionProgress } from "./extractor";
 import { looksLikeIsoBmff } from "./isoBmff";
 
-// Generous upper bound on B-frame reorder depth: how many extra samples (in
-// decode order) past the last wanted timestamp we still feed the decoder, so
-// composition-order reordering doesn't cut off a wanted frame.
+// Generous upper bound on B-frame reorder depth: without the padding, composition-order
+// reordering could cut off a wanted frame at the end of the range.
 const REORDER_PADDING_SAMPLES = 16;
 // Bounds decoder memory on long clips instead of queuing the whole video.
 const MAX_DECODE_QUEUE_SIZE = 30;
@@ -36,11 +29,8 @@ interface DemuxResult {
   rotation: number;
 }
 
-// The seek-based <video> path gets rotation applied by the browser for free;
-// VideoDecoder emits raw coded frames, so we read the track's tkhd display
-// matrix and re-apply it ourselves. Elements a,b (indices 0,1) are 16.16 fixed
-// point; atan2(b, a) recovers the clockwise rotation (y-down), matching
-// ffmpeg's av_display_rotation_get. Snapped to the nearest right angle.
+// VideoDecoder emits raw coded frames, so rotation the browser would apply for free on a
+// <video> is ours to redo. Elements a,b are 16.16 fixed point, as in ffmpeg's av_display_rotation_get.
 export function rotationFromMatrix(matrix: Matrix): number {
   const a = matrix[0] / 65536;
   const b = matrix[1] / 65536;
@@ -48,17 +38,15 @@ export function rotationFromMatrix(matrix: Matrix): number {
   return ((degrees % 360) + 360) % 360;
 }
 
-// Demuxing is independent of the collage settings, so it is cached per File to
-// make regenerating the same video with different settings cheap. A WeakMap key
-// means a re-picked file re-parses and old entries are GC'd.
+// Demuxing is independent of the collage settings, so regenerating with new settings reuses it.
+// Keyed by File identity so a re-picked file re-parses and old entries are collectable.
 const demuxCache = new WeakMap<File, Promise<DemuxResult | null>>();
 
 function demuxCached(file: File): Promise<DemuxResult | null> {
   let cached = demuxCache.get(file);
   if (!cached) {
     cached = demux(file).catch((err: unknown) => {
-      // A failed parse must not poison the cache entry: a retry should get a
-      // fresh attempt.
+      // A failed parse must not poison the entry: a retry should get a fresh attempt.
       demuxCache.delete(file);
       throw err;
     });
@@ -75,8 +63,7 @@ function getCodecDescription(isoFile: ISOFile, trackId: number): Uint8Array | un
     if (!box) continue;
     const stream = new DataStream(undefined, 0, Endianness.BIG_ENDIAN);
     (box.write as (stream: DataStream) => void)(stream);
-    // Skip the 8-byte box header (size + fourcc): VideoDecoder wants just the
-    // codec-specific configuration payload.
+    // VideoDecoder wants the configuration payload alone, past the 8-byte box header.
     return new Uint8Array(stream.buffer, 8);
   }
   return undefined;
@@ -153,12 +140,8 @@ export async function countKeyframesInRange(
   return timestamps.filter((time) => time >= startTime && time <= endTime).length;
 }
 
-/**
- * The sample index per planned frame when every one of them is a sync sample's
- * own composition time - i.e. the plan came from keyframe sampling - so those
- * samples can be decoded on their own. `null` means the plan needs a full
- * decode pass.
- */
+/** Every planned timestamp being a sync sample's own composition time is what identifies a
+ * keyframe-sampled plan; `null` means the plan needs a full decode pass. */
 export function selectKeyframeSampleIndices(
   samples: Sample[],
   frames: PlannedFrame[],
@@ -180,8 +163,7 @@ export function selectKeyframeSampleIndices(
   return indices;
 }
 
-// A tiny wrapper so TS doesn't (incorrectly) carry "state !== closed" narrowing
-// across the `await` between the two closed-state checks in the feed loop below.
+// A wrapper because TS otherwise carries stale "state !== closed" narrowing across an `await`.
 function isDecoderClosed(decoder: VideoDecoder): boolean {
   return decoder.state === "closed";
 }
@@ -210,9 +192,8 @@ function createCellCanvas(
   return { canvas, ctx };
 }
 
-// Undoes the container's coded-vs-display rotation while drawing into the
-// (already display-oriented) cell. For 90/270 the rotated frame's width and
-// height are swapped, so the draw extents are swapped too.
+// The cell is already display-oriented, so at 90/270 the rotated frame's width and height
+// are swapped and the draw extents swap with them.
 export function drawRotated(
   ctx: CanvasRenderingContext2D,
   frame: CanvasImageSource,
@@ -242,9 +223,8 @@ interface FrameCollector {
   settle(): Promise<ImageBitmap[]>;
 }
 
-// Keeps the first decoded frame at/after each wanted timestamp, mirroring the
-// seek-based extractor's "seek to time T" semantics rather than true
-// nearest-frame matching. Captures run async, so settle() awaits them.
+// Keeps the first frame at or after each wanted timestamp, matching the seek-based
+// extractor's "seek to time T" semantics rather than true nearest-frame matching.
 function createFrameCollector(
   wanted: number[],
   canvas: HTMLCanvasElement,
@@ -382,9 +362,8 @@ async function decodeIntoCollector(
   }
 }
 
-// Fast path for a keyframe-sampled plan: decodes only the planned sync samples,
-// each independently decodable, instead of every frame between them. One
-// decoded frame per planned frame, in order.
+// Sync samples decode independently, so the P/B frames the sparse sampling would discard
+// need never be decoded at all.
 async function decodeKeyframes(
   decoderConfig: VideoDecoderConfig,
   samples: Sample[],

@@ -27,9 +27,8 @@ export interface SheetEncoderPort<TImage, TBinary> {
   ): Promise<TBinary[]>;
 }
 
-// "model" is the one-time (host-cached) weights download, "transcribe" is
-// running the model: the first has a byte-accurate percentage, the second only
-// an approximate heartbeat, so a UI can label them honestly.
+// Separate stages because "model" (the one-time weights download) reports a
+// byte-accurate percentage while "transcribe" only has an approximate heartbeat.
 export type TranscribeStage = "model" | "transcribe";
 
 export interface TranscriptPort<TSource> {

@@ -2,11 +2,8 @@ import type { RenderPlan } from "@vid2grid/core";
 
 export type ExtractionProgress = (done: number, total: number) => void;
 
-/**
- * Seeks an in-memory `<video>` to each planned timestamp. `currentTime` lands on
- * the nearest frame rather than the first frame at/after the timestamp, which is
- * the one place this path differs from the WebCodecs one.
- */
+/** `currentTime` lands on the nearest frame, not the first at/after the timestamp: the one
+ * place this path's semantics differ from the WebCodecs one. */
 export async function extractFrames(
   file: File,
   plan: RenderPlan,
@@ -22,8 +19,7 @@ export async function extractFrames(
     video.src = url;
     await waitForEvent(video, "loadedmetadata");
 
-    // Captured at the final cell size, so no second downscale later in the
-    // render pipeline.
+    // Cell-sized, not source-sized, so no frame is downscaled twice.
     const canvas = document.createElement("canvas");
     canvas.width = plan.cell.width;
     canvas.height = plan.cell.height;

@@ -5,9 +5,8 @@ import type { RenderPlan } from "../src/plan/renderPlan";
 import type { CollagePlanRequest, VideoInfo } from "../src/types";
 import type { TranscriptCue } from "../src/transcript/vtt";
 
-// Every platform boundary is a fake port, so what is under test is the
-// pipeline's own decisions: plan-to-job routing, file names, progress phases,
-// transcript windows and warnings. Images and encoded files are plain strings.
+// Images and encoded files are plain strings here: real Blob/ImageBitmap behaviour is the
+// browser package's to test, so only the pipeline's own decisions are under test.
 type FakePorts = CollagePorts<string, string, string>;
 
 const VIDEO_INFO: VideoInfo = { durationSeconds: 10, width: 640, height: 480 };
