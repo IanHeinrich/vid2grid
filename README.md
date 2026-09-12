@@ -167,10 +167,11 @@ npm install
 | `npm test` | Run the vitest suite (jsdom + vitest-canvas-mock; see [web/tests](web/tests)). |
 | `npm run build` | Type-check (`tsc -b`) and produce a production build in `web/dist`. |
 | `npm run preview` | Serve the `web/dist` production build locally. |
+| `npm run format` | Format `web/` with Prettier. |
 
-There's no separate lint step. `npm run build`'s `tsc -b` is the type-check
-gate, and `npm test` is the correctness gate. Both should pass before opening
-a PR.
+There's no lint step. `npm run build`'s `tsc -b` is the type-check gate,
+`npm test` is the correctness gate, and `npm run format` is the format step.
+All three should be clean before opening a PR.
 
 The [pages.yml](.github/workflows/pages.yml) workflow runs `npm test` on
 every push/PR touching `web/**`. On `main`, if `web/package.json`'s `version`
