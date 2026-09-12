@@ -1,47 +1,24 @@
-import type { CollageRequest } from "../types";
-import type { GridLayout } from "@vid2grid/core";
+import type { CapturedFrame, CollageRequest } from "@vid2grid/core";
 
-export interface ExtractedFrame {
-  timestamp: number;
-  frameIndex: number;
-  bitmap: ImageBitmap;
-}
-
-export interface VideoMetadata {
-  duration: number;
+/** The final on-sheet size every captured frame is scaled to. */
+export interface CellSize {
   width: number;
   height: number;
-}
-
-export async function getVideoMetadata(file: File): Promise<VideoMetadata> {
-  const video = document.createElement("video");
-  video.preload = "metadata";
-  const url = URL.createObjectURL(file);
-  video.src = url;
-  try {
-    await waitForEvent(video, "loadedmetadata");
-    return {
-      duration: video.duration || 0,
-      width: video.videoWidth,
-      height: video.videoHeight,
-    };
-  } finally {
-    URL.revokeObjectURL(url);
-  }
 }
 
 export type ExtractionProgress = (done: number, total: number) => void;
 
 export async function extractFrames(
+  file: File,
   config: CollageRequest,
+  cell: CellSize,
   onProgress?: ExtractionProgress,
-  layout?: GridLayout,
-): Promise<ExtractedFrame[]> {
+): Promise<CapturedFrame<ImageBitmap>[]> {
   const video = document.createElement("video");
   video.preload = "auto";
   video.muted = true;
   video.playsInline = true;
-  const url = URL.createObjectURL(config.videoFile);
+  const url = URL.createObjectURL(file);
 
   try {
     video.src = url;
@@ -50,26 +27,26 @@ export async function extractFrames(
     const duration = config.endTime - config.startTime;
     const frameCount = Math.max(1, Math.floor(duration * config.targetFps));
 
-    // Captures directly at the final cell size (when known) instead of full
-    // source resolution, avoiding a large drawImage + createImageBitmap per
-    // frame followed by a second downscale later in the render pipeline.
+    // Captures directly at the final cell size instead of full source
+    // resolution, avoiding a large drawImage + createImageBitmap per frame
+    // followed by a second downscale later in the render pipeline.
     const canvas = document.createElement("canvas");
-    canvas.width = layout?.cellW ?? video.videoWidth;
-    canvas.height = layout?.cellH ?? video.videoHeight;
+    canvas.width = cell.width;
+    canvas.height = cell.height;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvas 2D context unavailable");
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
 
-    const frames: ExtractedFrame[] = [];
+    const frames: CapturedFrame<ImageBitmap>[] = [];
     for (let i = 0; i < frameCount; i++) {
       const timestamp = config.startTime + i / config.targetFps;
       if (timestamp >= video.duration) break;
 
       await seekTo(video, timestamp);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const bitmap = await createImageBitmap(canvas);
-      frames.push({ timestamp, frameIndex: i, bitmap });
+      const image = await createImageBitmap(canvas);
+      frames.push({ timestamp, frameIndex: i, image });
       onProgress?.(i + 1, frameCount);
     }
     return frames;
@@ -78,7 +55,7 @@ export async function extractFrames(
   }
 }
 
-function waitForEvent(target: HTMLVideoElement, event: string): Promise<void> {
+export function waitForEvent(target: HTMLVideoElement, event: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const cleanup = () => {
       target.removeEventListener(event, onEvent);

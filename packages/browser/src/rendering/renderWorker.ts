@@ -6,10 +6,10 @@
  * it to a JPEG `Blob` so the render/encode phase runs in parallel across a
  * pool of these workers instead of blocking the UI thread.
  */
-import { paintCollageSheet, type CollageSheetInput } from "./renderer";
+import { paintCollageSheet, type CollageSheetInput } from "@vid2grid/core";
 
 export interface RenderSheetRequest {
-  input: CollageSheetInput;
+  input: CollageSheetInput<ImageBitmap>;
   jpegQuality: number;
 }
 
@@ -37,7 +37,7 @@ scope.onmessage = async (event) => {
     paintCollageSheet(ctx, input);
     const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: jpegQuality / 100 });
 
-    for (const bitmap of input.bitmaps) bitmap.close();
+    for (const image of input.images) image.close();
     scope.postMessage({ blob });
   } catch (err) {
     scope.postMessage({ error: (err as Error).message });

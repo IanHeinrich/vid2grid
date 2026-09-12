@@ -89,42 +89,45 @@ instead of uploading hundreds of individual frames.
 <details>
 <summary>Everything runs client-side via the <code>&lt;video&gt;</code>/<code>&lt;canvas&gt;</code> (and, where supported, WebCodecs and Web Workers) APIs — no server, no upload. Click to expand the pipeline.</summary>
 
-See [web/](web/) for the full source:
+See [packages/](packages/) and [web/](web/) for the full source:
 
-1. [web/src/extraction/frameExtraction.ts](web/src/extraction/frameExtraction.ts) picks
+1. [packages/browser/src/extraction/frameExtraction.ts](packages/browser/src/extraction/frameExtraction.ts) picks
    the fastest available extraction strategy. For supported browsers and ISO-BMFF files
    (mp4/mov/m4v) it demuxes the file with mp4box.js and decodes the wanted
    sample range in one pass with a WebCodecs `VideoDecoder`
-   ([web/src/extraction/webcodecsExtractor.ts](web/src/extraction/webcodecsExtractor.ts)), including
+   ([packages/browser/src/extraction/webcodecsExtractor.ts](packages/browser/src/extraction/webcodecsExtractor.ts)), including
    an optional keyframe-only fast path for Keyframe fast mode. Otherwise it
-   falls back to [web/src/extraction/extractor.ts](web/src/extraction/extractor.ts), which seeks an
+   falls back to [packages/browser/src/extraction/extractor.ts](packages/browser/src/extraction/extractor.ts), which seeks an
    in-memory `<video>` element to a fixed time-step between the requested
    start/end time and draws each sampled frame to an offscreen `<canvas>`.
    Either way, frames are captured directly at their final collage cell size.
 2. [packages/core/src/grid/gridMaths.ts](packages/core/src/grid/gridMaths.ts) computes the optimal
    `(rows, cols, cell size)` layout once per batch, from the requested frames
    per collage and the source frame's aspect ratio.
-3. [web/src/rendering/renderer.ts](web/src/rendering/renderer.ts) draws each sampled frame into
+3. [packages/core/src/render/paintCollageSheet.ts](packages/core/src/render/paintCollageSheet.ts) draws each sampled frame into
    its final cell position on a collage sheet, watermarks it with its
    timestamp/frame index, and fills any left-over cells with black.
-   [web/src/rendering/sheetRenderer.ts](web/src/rendering/sheetRenderer.ts) parallelises this
+   [packages/browser/src/rendering/sheetRenderer.ts](packages/browser/src/rendering/sheetRenderer.ts) parallelises this
    across a pool of Web Workers
-   ([web/src/rendering/renderWorker.ts](web/src/rendering/renderWorker.ts) +
-   [web/src/rendering/workerPool.ts](web/src/rendering/workerPool.ts)) that draw onto an
+   ([packages/browser/src/rendering/renderWorker.ts](packages/browser/src/rendering/renderWorker.ts) +
+   [packages/browser/src/rendering/workerPool.ts](packages/browser/src/rendering/workerPool.ts)) that draw onto an
    `OffscreenCanvas` and JPEG-encode each sheet directly, falling back to
    synchronous main-thread rendering when Workers or `OffscreenCanvas` aren't
    available.
 4. When Generate transcript is on,
-   [web/src/extraction/audioExtraction.ts](web/src/extraction/audioExtraction.ts) decodes the
+   [packages/browser/src/extraction/audioExtraction.ts](packages/browser/src/extraction/audioExtraction.ts) decodes the
    video's audio track to mono 16kHz PCM via the Web Audio API, and
-   [web/src/transcription/transcription.ts](web/src/transcription/transcription.ts) runs it through a
-   Whisper model in [web/src/transcription/transcriptionWorker.ts](web/src/transcription/transcriptionWorker.ts)
+   [packages/browser/src/transcription/transcription.ts](packages/browser/src/transcription/transcription.ts) runs it through a
+   Whisper model in [packages/browser/src/transcription/transcriptionWorker.ts](packages/browser/src/transcription/transcriptionWorker.ts)
    (transformers.js, off the main thread), turning the model's chunk-level
    timestamps into WebVTT cues.
-5. [web/src/core.ts](web/src/core.ts) is the facade (`generateCollages`)
-   tying the above together, returning ready-to-use JPEG `Blob`s (plus any
-   transcript files) that [web/src/main.ts](web/src/main.ts) renders into the
-   gallery and zips up for download.
+5. [packages/core/src/pipeline/generateCollages.ts](packages/core/src/pipeline/generateCollages.ts)
+   is the facade (`generateCollages`) tying the above together through the
+   ports in [packages/core/src/pipeline/ports.ts](packages/core/src/pipeline/ports.ts),
+   which [packages/browser/src/index.ts](packages/browser/src/index.ts) implements
+   for the browser. It returns named JPEG `Blob`s (plus any transcript files)
+   that [web/src/main.ts](web/src/main.ts) renders into the gallery and zips up
+   for download.
 
 </details>
 
@@ -153,8 +156,9 @@ See [web/](web/) for the full source:
 ## Development
 
 This repo is an npm workspaces monorepo: `packages/core` holds the DOM-free
-pure logic, and `web/` (a plain Vite + TypeScript project, no framework) is
-the app that uses it. All commands below are run from the repo root.
+pure logic, `packages/browser` implements its ports with browser APIs, and
+`web/` (a plain Vite + TypeScript project, no framework) is the app that uses
+them. All commands below are run from the repo root.
 
 ```bash
 git clone https://github.com/IanHeinrich/vid2grid.git

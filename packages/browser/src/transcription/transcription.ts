@@ -1,20 +1,9 @@
 /**
  * Talks to the transcription worker and turns its raw chunk output into
- * timestamped cues plus a WebVTT document.
+ * timestamped cues on the video's own timeline.
  */
-import type {
-  TranscribeRequest,
-  TranscribeStage,
-  TranscribeWorkerMessage,
-} from "./transcriptionWorker";
-
-export type { TranscribeStage };
-
-export interface TranscriptCue {
-  start: number;
-  end: number;
-  text: string;
-}
+import type { TranscribeStage, TranscriptCue } from "@vid2grid/core";
+import type { TranscribeRequest, TranscribeWorkerMessage } from "./transcriptionWorker";
 
 export type TranscribeProgress = (stage: TranscribeStage, percent: number) => void;
 
@@ -76,37 +65,4 @@ export function transcribeAudio(
     const request: TranscribeRequest = { samples };
     worker.postMessage(request, [samples.buffer]);
   });
-}
-
-/** WebVTT requires a fixed-width HH:MM:SS.mmm timestamp, unlike the adaptive,
- * component-dropping format `renderer.ts` burns into grid cells. */
-export function formatVttTimestamp(seconds: number): string {
-  const totalMs = Math.max(0, Math.round(seconds * 1000));
-  const hours = Math.floor(totalMs / 3_600_000);
-  const minutes = Math.floor((totalMs % 3_600_000) / 60_000);
-  const secs = Math.floor((totalMs % 60_000) / 1000);
-  const ms = totalMs % 1000;
-  return (
-    `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:` +
-    `${String(secs).padStart(2, "0")}.${String(ms).padStart(3, "0")}`
-  );
-}
-
-export function cuesToVtt(cues: TranscriptCue[]): string {
-  if (cues.length === 0) return "WEBVTT\n";
-  const body = cues
-    .map(
-      (cue) => `${formatVttTimestamp(cue.start)} --> ${formatVttTimestamp(cue.end)}\n${cue.text}`,
-    )
-    .join("\n\n");
-  return `WEBVTT\n\n${body}\n`;
-}
-
-/** Strips VTT structure down to just the spoken text, for lightweight gallery previews. */
-export function vttToPlainText(vtt: string): string {
-  return vtt
-    .split("\n")
-    .filter((line) => line.trim() !== "" && line !== "WEBVTT" && !line.includes("-->"))
-    .join(" ")
-    .trim();
 }

@@ -4,7 +4,7 @@ import {
   formatVttTimestamp,
   vttToPlainText,
   type TranscriptCue,
-} from "../src/transcription/transcription";
+} from "../src/transcript/vtt";
 
 describe("formatVttTimestamp", () => {
   it("formats a fixed-width HH:MM:SS.mmm timestamp", () => {

@@ -13,6 +13,7 @@ import {
   type AutomaticSpeechRecognitionPipeline,
   type WhisperTokenizer,
 } from "@huggingface/transformers";
+import type { TranscribeStage } from "@vid2grid/core";
 
 const MODEL_ID = "Xenova/whisper-tiny.en";
 const CHUNK_LENGTH_S = 30;
@@ -27,16 +28,6 @@ export interface TranscriptionChunk {
   start: number;
   end: number;
 }
-
-/**
- * "model" covers the one-time (browser-cached) download of the model's
- * weights; "transcribe" covers actually running it on the audio. Reported
- * separately so the UI can show a distinct, honest label for each - the
- * model stage has a real byte-accurate percentage, the transcribe stage
- * only an approximate "still working" heartbeat (transformers.js doesn't
- * expose real inference progress).
- */
-export type TranscribeStage = "model" | "transcribe";
 
 export type TranscribeWorkerMessage =
   | { type: "progress"; stage: TranscribeStage; percent: number }

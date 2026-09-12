@@ -4,14 +4,12 @@
  */
 import { els } from "../dom";
 import { state } from "../state";
-import { gridFileName, gridTranscriptFileName } from "../grid/gridFileName";
-import { vttToPlainText } from "../transcription/transcription";
-import type { TranscriptFile } from "../core";
+import { gridTranscriptFileName, vttToPlainText, type GeneratedFile } from "@vid2grid/core";
 
-type PreviewSlot = { el: HTMLElement; file: TranscriptFile } | null;
+type PreviewSlot = { el: HTMLElement; file: GeneratedFile<Blob> } | null;
 
 export function resetGallery(): void {
-  state.jpegBlobs = [];
+  state.sheets = [];
   state.transcriptFiles = [];
   state.galleryUrls.forEach((url) => URL.revokeObjectURL(url));
   state.galleryUrls = [];
@@ -23,13 +21,13 @@ export function resetGallery(): void {
 
 export function renderGallery(): void {
   els.gallery.innerHTML = "";
-  state.galleryUrls = state.jpegBlobs.map((blob) => URL.createObjectURL(blob));
+  state.galleryUrls = state.sheets.map((sheet) => URL.createObjectURL(sheet.data));
   const previewSlots: PreviewSlot[] = [];
   state.galleryUrls.forEach((url, i) => {
     const figure = document.createElement("figure");
     const img = document.createElement("img");
     img.src = url;
-    img.alt = gridFileName(i);
+    img.alt = state.sheets[i].name;
     img.title = "Click to view larger";
     img.loading = "lazy";
     img.decoding = "async";
@@ -57,8 +55,8 @@ export function renderGallery(): void {
     els.gallery.appendChild(figure);
   });
   populateTranscriptPreviews(previewSlots);
-  els.resultsCount.textContent = `Generated ${state.jpegBlobs.length} grid image(s)`;
-  els.resultsHeader.hidden = state.jpegBlobs.length === 0;
+  els.resultsCount.textContent = `Generated ${state.sheets.length} grid image(s)`;
+  els.resultsHeader.hidden = state.sheets.length === 0;
   els.emptyState.hidden = true;
 }
 
@@ -70,7 +68,7 @@ export function renderGallery(): void {
  * each run and the repeats collapse to a reference back to it.
  */
 function populateTranscriptPreviews(slots: PreviewSlot[]): void {
-  const texts = slots.map((slot) => (slot ? slot.file.blob.text() : Promise.resolve(null)));
+  const texts = slots.map((slot) => (slot ? slot.file.data.text() : Promise.resolve(null)));
   void Promise.all(texts).then((vtts) => {
     let runText: string | null = null;
     let runStartName = "";
@@ -95,7 +93,7 @@ function populateTranscriptPreviews(slots: PreviewSlot[]): void {
         slot.el.textContent = text;
         slot.el.title = text; // hover to read the full transcript inline
         runText = text;
-        runStartName = gridFileName(i);
+        runStartName = state.sheets[i].name;
       }
     });
   });

@@ -6,7 +6,7 @@
  * leftover cells (when totalFrames isn't evenly divisible by framesPerGrid):
  * that last, partially-filled sheet is expected and not worth optimizing for.
  */
-import { computeOptimalGrid } from "@vid2grid/core";
+import { computeOptimalGrid } from "./gridMaths";
 
 export function estimateExtractedFrameCount(
   startTime: number,

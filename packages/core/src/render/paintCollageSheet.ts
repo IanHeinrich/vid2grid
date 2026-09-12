@@ -1,53 +1,11 @@
-import type { GridLayout } from "@vid2grid/core";
-
-const FONT_HEIGHT_DIVISOR = 16; // font size = cell height / this; smaller cells get smaller text
-const MIN_FONT_SIZE = 8;
-
-export interface TimestampFormat {
-  showHours: boolean;
-  showMinutes: boolean;
-  showMilliseconds: boolean;
-}
-
-function formatTimestamp(seconds: number, format: TimestampFormat): string {
-  const totalMs = Math.round(seconds * 1000);
-  const hours = Math.floor(totalMs / 3_600_000);
-  const afterHoursMs = totalMs % 3_600_000;
-  const minutes = Math.floor(afterHoursMs / 60_000);
-  const afterMinutesMs = afterHoursMs % 60_000;
-  const secs = Math.floor(afterMinutesMs / 1000);
-  const ms = afterMinutesMs % 1000;
-
-  const secondsText = format.showMilliseconds
-    ? `${String(secs).padStart(2, "0")}.${String(ms).padStart(3, "0")}`
-    : String(secs).padStart(2, "0");
-
-  if (format.showHours) {
-    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${secondsText}`;
-  }
-  if (format.showMinutes) {
-    return `${String(minutes).padStart(2, "0")}:${secondsText}`;
-  }
-  return secondsText;
-}
-
-type SheetContext2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
-
-/**
- * A single collage sheet's worth of frames plus the geometry needed to paint it.
- *
- * Transfer friendly (its `bitmaps` are Transferable) so the whole sheet can be
- * shipped to a render worker unchanged.
- */
-export interface CollageSheetInput {
-  bitmaps: ImageBitmap[];
-  timestamps: number[];
-  frameIndices: number[];
-  layout: GridLayout;
-  outputResolution: number;
-  gutterPx: number;
-  timestampFormat: TimestampFormat;
-}
+import type { CollageSheetInput } from "./sheetInput";
+import type { SheetContext2D } from "./sheetContext";
+import {
+  formatTimestamp,
+  FONT_HEIGHT_DIVISOR,
+  MIN_FONT_SIZE,
+  type TimestampFormat,
+} from "./timestampFormat";
 
 /**
  * Paints a whole collage sheet onto an already-created 2D context, working with
@@ -58,7 +16,10 @@ export interface CollageSheetInput {
  * frames stay the black background, which is what a trailing under-full sheet
  * wants.
  */
-export function paintCollageSheet(ctx: SheetContext2D, input: CollageSheetInput): void {
+export function paintCollageSheet<TImage>(
+  ctx: SheetContext2D<TImage>,
+  input: CollageSheetInput<TImage>,
+): void {
   const { layout, outputResolution, gutterPx } = input;
 
   ctx.fillStyle = "black";
@@ -66,13 +27,13 @@ export function paintCollageSheet(ctx: SheetContext2D, input: CollageSheetInput)
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
 
-  input.bitmaps.forEach((bitmap, i) => {
+  input.images.forEach((image, i) => {
     const row = Math.floor(i / layout.cols);
     const col = i % layout.cols;
     if (row >= layout.rows) return;
     const x = layout.offsetX + gutterPx + col * (layout.cellW + gutterPx);
     const y = layout.offsetY + gutterPx + row * (layout.cellH + gutterPx);
-    ctx.drawImage(bitmap, x, y, layout.cellW, layout.cellH);
+    ctx.drawImage(image, x, y, layout.cellW, layout.cellH);
     watermarkCell(
       ctx,
       x,
@@ -95,8 +56,8 @@ export function paintCollageSheet(ctx: SheetContext2D, input: CollageSheetInput)
  * for the whole batch this frame belongs to, e.g. a short clip sampled at 1fps
  * or slower gets a plain `SS` timestamp instead of `00:SS.000`.
  */
-function watermarkCell(
-  ctx: SheetContext2D,
+function watermarkCell<TImage>(
+  ctx: SheetContext2D<TImage>,
   offsetX: number,
   offsetY: number,
   cellW: number,
@@ -121,8 +82,8 @@ function watermarkCell(
   drawStrokedText(ctx, indexText, offsetX + cellW - indexWidth - 4, offsetY + 4, strokeWidth);
 }
 
-function drawStrokedText(
-  ctx: SheetContext2D,
+function drawStrokedText<TImage>(
+  ctx: SheetContext2D<TImage>,
   text: string,
   x: number,
   y: number,
@@ -133,18 +94,4 @@ function drawStrokedText(
   ctx.strokeText(text, x, y);
   ctx.fillStyle = "black";
   ctx.fillText(text, x, y);
-}
-
-/** Encodes a collage canvas as a JPEG Blob at the given quality (1-100). */
-export function canvasToJpegBlob(canvas: HTMLCanvasElement, quality = 80): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => {
-        if (blob) resolve(blob);
-        else reject(new Error("Failed to encode JPEG"));
-      },
-      "image/jpeg",
-      quality / 100,
-    );
-  });
 }

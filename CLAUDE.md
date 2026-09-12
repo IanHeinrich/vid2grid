@@ -19,10 +19,11 @@ server and nothing is uploaded.
 
 `npm test` and `npm run build` must both pass before a change is done.
 
-| Package         | What it is                                                                                                                                                                                                                   |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/core` | `@vid2grid/core`, DOM-free pure logic. `tsconfig` sets `lib: ["ES2022"]` and `types: []` so any browser API is a compile error, and it must have no `dependencies` (enforced by `packages/core/tests/dependencies.test.ts`). |
-| `web/`          | The Vite app.                                                                                                                                                                                                                |
+| Package            | What it is                                                                                                                                                                                                                             |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/core`    | `@vid2grid/core`, DOM-free pure logic. `tsconfig` sets `lib: ["ES2022"]` and `types: []` so any browser API is a compile error, and it must have no `dependencies` (enforced by `packages/core/tests/dependencies.test.ts`).           |
+| `packages/browser` | `@vid2grid/browser`, the browser executor: core's ports implemented with `<video>`/`<canvas>`, WebCodecs + mp4box, an OffscreenCanvas worker pool, Web Audio and a transformers.js Whisper worker. Owns every browser-only dependency. |
+| `web/`             | The Vite app: UI markup, wiring, state, download. It calls `generateCollages` from `@vid2grid/core` with the ports from `@vid2grid/browser`.                                                                                           |
 
 ## Rules a worker may not read elsewhere
 

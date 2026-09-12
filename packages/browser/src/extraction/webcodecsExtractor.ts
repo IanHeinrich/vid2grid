@@ -24,9 +24,8 @@ import {
   type Track,
   type VisualSampleEntry,
 } from "mp4box";
-import type { CollageRequest } from "../types";
-import type { GridLayout } from "@vid2grid/core";
-import type { ExtractedFrame, ExtractionProgress } from "./extractor";
+import type { CapturedFrame, CollageRequest } from "@vid2grid/core";
+import type { CellSize, ExtractionProgress } from "./extractor";
 
 // Generous upper bound on B-frame reorder depth: how many extra samples (in
 // decode order) past the last wanted timestamp we still feed the decoder, so
@@ -266,7 +265,7 @@ interface FrameCollector {
   consume(frame: VideoFrame): void;
   isComplete(): boolean;
   completed: Promise<void>;
-  settle(): Promise<ExtractedFrame[]>;
+  settle(): Promise<CapturedFrame<ImageBitmap>[]>;
 }
 
 /**
@@ -284,7 +283,7 @@ function createFrameCollector(
   rotation: number,
   onProgress?: ExtractionProgress,
 ): FrameCollector {
-  const frames: (ExtractedFrame | undefined)[] = new Array(wanted.length);
+  const frames: (CapturedFrame<ImageBitmap> | undefined)[] = new Array(wanted.length);
   const pendingCaptures: Promise<void>[] = [];
   let wantedIndex = 0;
   let capturedCount = 0;
@@ -300,11 +299,11 @@ function createFrameCollector(
         const capturedIndex = wantedIndex;
         drawRotated(ctx, frame, cellW, cellH, rotation);
         pendingCaptures.push(
-          createImageBitmap(canvas).then((bitmap) => {
+          createImageBitmap(canvas).then((image) => {
             frames[capturedIndex] = {
               timestamp: wanted[capturedIndex],
               frameIndex: capturedIndex,
-              bitmap,
+              image,
             };
             capturedCount++;
             onProgress?.(capturedCount, wanted.length);
@@ -321,7 +320,7 @@ function createFrameCollector(
     completed,
     async settle() {
       await Promise.all(pendingCaptures);
-      const contiguous: ExtractedFrame[] = [];
+      const contiguous: CapturedFrame<ImageBitmap>[] = [];
       for (const frame of frames) {
         if (!frame) break;
         contiguous.push(frame);
@@ -429,11 +428,11 @@ async function decodeKeyframes(
   cellH: number,
   rotation: number,
   onProgress?: ExtractionProgress,
-): Promise<ExtractedFrame[]> {
-  const cell = createCellCanvas(cellW, cellH);
-  if (!cell) return [];
+): Promise<CapturedFrame<ImageBitmap>[]> {
+  const cellCanvas = createCellCanvas(cellW, cellH);
+  if (!cellCanvas) return [];
 
-  const frames: (ExtractedFrame | undefined)[] = new Array(indices.length);
+  const frames: (CapturedFrame<ImageBitmap> | undefined)[] = new Array(indices.length);
   const pendingCaptures: Promise<void>[] = [];
   let outputIndex = 0;
   let capturedCount = 0;
@@ -447,14 +446,14 @@ async function decodeKeyframes(
     output: (frame) => {
       const captureIndex = outputIndex++;
       try {
-        drawRotated(cell.ctx, frame, cellW, cellH, rotation);
+        drawRotated(cellCanvas.ctx, frame, cellW, cellH, rotation);
         pendingCaptures.push(
-          createImageBitmap(cell.canvas).then((bitmap) => {
+          createImageBitmap(cellCanvas.canvas).then((image) => {
             const sample = samples[indices[captureIndex]];
             frames[captureIndex] = {
               timestamp: sample.cts / sample.timescale,
               frameIndex: captureIndex,
-              bitmap,
+              image,
             };
             capturedCount++;
             onProgress?.(capturedCount, indices.length);
@@ -475,7 +474,7 @@ async function decodeKeyframes(
   }
 
   await Promise.all(pendingCaptures);
-  const contiguous: ExtractedFrame[] = [];
+  const contiguous: CapturedFrame<ImageBitmap>[] = [];
   for (const frame of frames) {
     if (!frame) break;
     contiguous.push(frame);
@@ -484,14 +483,15 @@ async function decodeKeyframes(
 }
 
 export async function extractFramesWebCodecs(
+  file: File,
   config: CollageRequest,
-  layout: GridLayout | undefined,
+  cell: CellSize,
   onProgress?: ExtractionProgress,
   keyframeSampling?: boolean,
-): Promise<ExtractedFrame[] | null> {
+): Promise<CapturedFrame<ImageBitmap>[] | null> {
   if (typeof VideoDecoder === "undefined") return null;
 
-  const demuxed = await demuxCached(config.videoFile);
+  const demuxed = await demuxCached(file);
   if (!demuxed) return null;
   const { videoTrack, description, samples, durationSeconds, rotation } = demuxed;
 
@@ -508,13 +508,8 @@ export async function extractFramesWebCodecs(
   const support = await VideoDecoder.isConfigSupported(decoderConfig);
   if (!support.supported) return null;
 
-  // When no layout is supplied the cell defaults to the frame's own size, which
-  // is the *display* size - so swap coded dims for 90/270 rotations.
-  const swapsDimensions = rotation === 90 || rotation === 270;
-  const fallbackW = swapsDimensions ? codedHeight : codedWidth;
-  const fallbackH = swapsDimensions ? codedWidth : codedHeight;
-  const cellW = layout?.cellW ?? fallbackW;
-  const cellH = layout?.cellH ?? fallbackH;
+  const cellW = cell.width;
+  const cellH = cell.height;
 
   // Fast mode: decode only the keyframes within the selected range, skipping every
   // inter-frame. Frame count is whatever the video provides, not the requested FPS.
@@ -536,12 +531,12 @@ export async function extractFramesWebCodecs(
   const wanted = buildWantedTimestamps(config, durationSeconds);
   if (wanted.length === 0) return [];
 
-  const cell = createCellCanvas(cellW, cellH);
-  if (!cell) return null;
+  const cellCanvas = createCellCanvas(cellW, cellH);
+  if (!cellCanvas) return null;
   const collector = createFrameCollector(
     wanted,
-    cell.canvas,
-    cell.ctx,
+    cellCanvas.canvas,
+    cellCanvas.ctx,
     cellW,
     cellH,
     rotation,
