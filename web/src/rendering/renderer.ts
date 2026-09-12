@@ -1,6 +1,5 @@
-import type { GridLayout } from "../grid/gridMaths";
+import type { GridLayout } from "@vid2grid/core";
 
-export const GUTTER_PX = 8;
 const FONT_HEIGHT_DIVISOR = 16; // font size = cell height / this; smaller cells get smaller text
 const MIN_FONT_SIZE = 8;
 

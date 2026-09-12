@@ -1,5 +1,6 @@
-web/node_modules/
-web/dist/
+node_modules/
+dist/
+*.tsbuildinfo
 
 # Claude Code per-machine overrides; .claude/settings.json and .claude/rules/
 # are tracked on purpose.

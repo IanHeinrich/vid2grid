@@ -5,22 +5,19 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "format": "prettier --write ."
+    "typecheck": "tsc -b"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.7.5",
+    "@vid2grid/core": "*",
     "jszip": "^3.10.1",
     "mp4box": "^2.4.1"
   },
   "devDependencies": {
     "jsdom": "^25.0.1",
-    "prettier": "^3.9.6",
-    "typescript": "^5.6.2",
-    "vite": "^6.4.3",
-    "vitest": "^3.2.7",
     "vitest-canvas-mock": "^0.3.3"
   }
 }
