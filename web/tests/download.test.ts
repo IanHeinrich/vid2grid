@@ -8,7 +8,7 @@ describe("buildGridsFolderName", () => {
   });
 
   it("sanitizes characters that aren't safe in a folder name", () => {
-    const name = buildGridsFolderName('weird:name*?.mov', new Date("2026-07-17T14:30:00.000Z"));
+    const name = buildGridsFolderName("weird:name*?.mov", new Date("2026-07-17T14:30:00.000Z"));
     expect(name).toBe("weird_name__grids_2026-07-17_143000");
   });
 

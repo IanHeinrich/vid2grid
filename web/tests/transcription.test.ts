@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { cuesToVtt, formatVttTimestamp, vttToPlainText, type TranscriptCue } from "../src/transcription/transcription";
+import {
+  cuesToVtt,
+  formatVttTimestamp,
+  vttToPlainText,
+  type TranscriptCue,
+} from "../src/transcription/transcription";
 
 describe("formatVttTimestamp", () => {
   it("formats a fixed-width HH:MM:SS.mmm timestamp", () => {

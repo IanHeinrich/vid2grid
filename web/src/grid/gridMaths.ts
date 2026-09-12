@@ -61,9 +61,7 @@ export function computeOptimalGrid(
   }
 
   if (best === null) {
-    throw new Error(
-      "output_resolution too small to fit frame_count frames with the given gutter",
-    );
+    throw new Error("output_resolution too small to fit frame_count frames with the given gutter");
   }
   return best;
 }

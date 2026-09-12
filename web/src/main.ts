@@ -14,7 +14,12 @@ import {
   disableRangeSlider,
   type HandlePosition,
 } from "./ui/rangeSlider";
-import { downloadAllAsZip, saveAllToFolder, isFolderSaveSupported, buildGridsFolderName } from "./download";
+import {
+  downloadAllAsZip,
+  saveAllToFolder,
+  isFolderSaveSupported,
+  buildGridsFolderName,
+} from "./download";
 
 initLightbox();
 
@@ -280,7 +285,9 @@ function applyKeyframeModeAvailability(file: File): void {
   const supported = fileSupportsKeyframeMode(file);
   els.keyframeModeInput.disabled = !supported;
   if (!supported) els.keyframeModeInput.checked = false;
-  els.keyframeModeInput.title = supported ? "" : "Keyframe fast mode is only available for MP4/MOV videos.";
+  els.keyframeModeInput.title = supported
+    ? ""
+    : "Keyframe fast mode is only available for MP4/MOV videos.";
   updateKeyframeModeUi();
 }
 
@@ -412,4 +419,3 @@ async function handleSaveToFolderClicked(): Promise<void> {
     els.statusEl.textContent = `Failed to save to folder: ${(err as Error).message}`;
   }
 }
-

@@ -8,7 +8,6 @@
  */
 import { computeOptimalGrid } from "./gridMaths";
 
-
 export function estimateExtractedFrameCount(
   startTime: number,
   endTime: number,
@@ -76,7 +75,12 @@ export function suggestFramesPerGrid(
   const max = currentValue + searchRadius;
   for (let framesPerGrid = min; framesPerGrid <= max; framesPerGrid++) {
     if (framesPerGrid === currentValue) continue;
-    const wastedCells = countGridPackingBlanks(framesPerGrid, sourceAspect, outputResolution, gutterPx);
+    const wastedCells = countGridPackingBlanks(
+      framesPerGrid,
+      sourceAspect,
+      outputResolution,
+      gutterPx,
+    );
     if (wastedCells === null) continue;
     candidates.push({
       framesPerGrid,

@@ -61,25 +61,33 @@ function getTranscriber(): Promise<AutomaticSpeechRecognitionPipeline> {
     // (tiny) config/tokenizer files don't get equal billing with the (much
     // larger) weights file.
     const fileBytes = new Map<string, { loaded: number; total: number }>();
-    transcriberPromise = pipeline<"automatic-speech-recognition">("automatic-speech-recognition", MODEL_ID, {
-      progress_callback: (info) => {
-        if (info.status === "progress") {
-          fileBytes.set(info.file, { loaded: info.loaded, total: info.total });
-        } else if (info.status === "done") {
-          const known = fileBytes.get(info.file);
-          fileBytes.set(info.file, { loaded: known?.total ?? 1, total: known?.total ?? 1 });
-        } else {
-          return;
-        }
-        let loaded = 0;
-        let total = 0;
-        for (const file of fileBytes.values()) {
-          loaded += file.loaded;
-          total += file.total;
-        }
-        scope.postMessage({ type: "progress", stage: "model", percent: total > 0 ? (loaded / total) * 100 : 0 });
+    transcriberPromise = pipeline<"automatic-speech-recognition">(
+      "automatic-speech-recognition",
+      MODEL_ID,
+      {
+        progress_callback: (info) => {
+          if (info.status === "progress") {
+            fileBytes.set(info.file, { loaded: info.loaded, total: info.total });
+          } else if (info.status === "done") {
+            const known = fileBytes.get(info.file);
+            fileBytes.set(info.file, { loaded: known?.total ?? 1, total: known?.total ?? 1 });
+          } else {
+            return;
+          }
+          let loaded = 0;
+          let total = 0;
+          for (const file of fileBytes.values()) {
+            loaded += file.loaded;
+            total += file.total;
+          }
+          scope.postMessage({
+            type: "progress",
+            stage: "model",
+            percent: total > 0 ? (loaded / total) * 100 : 0,
+          });
+        },
       },
-    });
+    );
   }
   return transcriberPromise;
 }

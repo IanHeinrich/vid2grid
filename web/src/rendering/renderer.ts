@@ -4,7 +4,6 @@ export const GUTTER_PX = 8;
 const FONT_HEIGHT_DIVISOR = 16; // font size = cell height / this; smaller cells get smaller text
 const MIN_FONT_SIZE = 8;
 
-
 export interface TimestampFormat {
   showHours: boolean;
   showMinutes: boolean;
