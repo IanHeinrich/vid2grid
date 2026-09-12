@@ -1,11 +1,20 @@
 import type { CollageRequest } from "./types";
-import { getVideoMetadata, type ExtractedFrame, type ExtractionProgress } from "./extraction/extractor";
+import {
+  getVideoMetadata,
+  type ExtractedFrame,
+  type ExtractionProgress,
+} from "./extraction/extractor";
 import { extractFramesAuto } from "./extraction/frameExtraction";
 import { computeOptimalGrid, type GridLayout } from "./grid/gridMaths";
 import { GUTTER_PX, type CollageSheetInput, type TimestampFormat } from "./rendering/renderer";
 import { renderSheetsToBlobs } from "./rendering/sheetRenderer";
 import { decodeAudioForTranscription } from "./extraction/audioExtraction";
-import { transcribeAudio, cuesToVtt, type TranscriptCue, type TranscribeStage } from "./transcription/transcription";
+import {
+  transcribeAudio,
+  cuesToVtt,
+  type TranscriptCue,
+  type TranscribeStage,
+} from "./transcription/transcription";
 import { gridTranscriptFileName, combinedTranscriptFileName } from "./grid/gridFileName";
 
 export type GenerationPhase = "extracting" | "rendering" | "transcribing";
@@ -44,7 +53,12 @@ export interface GenerateCollagesOptions {
    * actually running it on the audio - callers can use it to show a more
    * honest label than a single generic "transcribing" message.
    */
-  onProgress?: (phase: GenerationPhase, done: number, total: number, transcribeStage?: TranscribeStage) => void;
+  onProgress?: (
+    phase: GenerationPhase,
+    done: number,
+    total: number,
+    transcribeStage?: TranscribeStage,
+  ) => void;
   onTiming?: (timings: GenerationTimings) => void;
   /**
    * Non-fatal problems (e.g. transcription failed or the video has no audio
@@ -83,12 +97,20 @@ async function defaultTranscribeImpl(
   config: CollageRequest,
   onProgress?: (stage: TranscribeStage, percent: number) => void,
 ): Promise<TranscriptCue[]> {
-  const samples = await decodeAudioForTranscription(config.videoFile, config.startTime, config.endTime);
+  const samples = await decodeAudioForTranscription(
+    config.videoFile,
+    config.startTime,
+    config.endTime,
+  );
   return transcribeAudio(samples, config.startTime, onProgress);
 }
 
 /** A cue belongs to a sheet's window if it overlaps `[windowStart, windowEnd)` at all. */
-function cuesInWindow(cues: TranscriptCue[], windowStart: number, windowEnd: number): TranscriptCue[] {
+function cuesInWindow(
+  cues: TranscriptCue[],
+  windowStart: number,
+  windowEnd: number,
+): TranscriptCue[] {
   return cues.filter((cue) => cue.start < windowEnd && cue.end > windowStart);
 }
 
@@ -97,7 +119,10 @@ function cuesInWindow(cues: TranscriptCue[], windowStart: number, windowEnd: num
  * midpoint so every cue in `[config.startTime, config.endTime]` lands in
  * exactly one sheet's transcript.
  */
-function computeSheetWindows(sheets: CollageSheetInput[], config: CollageRequest): [number, number][] {
+function computeSheetWindows(
+  sheets: CollageSheetInput[],
+  config: CollageRequest,
+): [number, number][] {
   const firsts = sheets.map((s) => s.timestamps[0]);
   const lasts = sheets.map((s) => s.timestamps[s.timestamps.length - 1]);
   return sheets.map((_, i) => {
@@ -123,7 +148,12 @@ async function generateTranscriptFiles(
   onTranscribeMs?.(performance.now() - transcribeStart);
 
   if (transcript.scope === "combined") {
-    return [{ name: combinedTranscriptFileName(), blob: new Blob([cuesToVtt(cues)], { type: "text/vtt" }) }];
+    return [
+      {
+        name: combinedTranscriptFileName(),
+        blob: new Blob([cuesToVtt(cues)], { type: "text/vtt" }),
+      },
+    ];
   }
 
   const windows = computeSheetWindows(sheets, config);
@@ -150,7 +180,12 @@ export async function generateCollages(
       const metadata = await getVideoMetadata(config.videoFile);
       sourceAspect = metadata.width / metadata.height;
     }
-    layout = computeOptimalGrid(config.framesPerGrid, sourceAspect, config.outputResolution, GUTTER_PX);
+    layout = computeOptimalGrid(
+      config.framesPerGrid,
+      sourceAspect,
+      config.outputResolution,
+      GUTTER_PX,
+    );
   }
 
   const extractStart = performance.now();
@@ -166,7 +201,12 @@ export async function generateCollages(
   if (!layout) {
     const firstBitmap = extracted[0].bitmap;
     const sourceAspect = firstBitmap.width / firstBitmap.height;
-    layout = computeOptimalGrid(config.framesPerGrid, sourceAspect, config.outputResolution, GUTTER_PX);
+    layout = computeOptimalGrid(
+      config.framesPerGrid,
+      sourceAspect,
+      config.outputResolution,
+      GUTTER_PX,
+    );
   }
 
   // Decided once for the whole batch (rather than per-frame) so every sheet uses a

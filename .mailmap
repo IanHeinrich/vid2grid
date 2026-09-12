@@ -1,0 +1,7 @@
+# Keep every commit attributed to the repository owner, whatever identity the
+# committing tool happened to be configured with. See CLAUDE.md, "Commit
+# attribution". Client-side only: this fixes git log/blame/shortlog, not
+# GitHub's contributors graph — the primary control is the git author identity.
+Ian Heinrich <ian@heinrich.org.uk> <noreply@anthropic.com>
+Ian Heinrich <ian@heinrich.org.uk> <claude@anthropic.com>
+Ian Heinrich <ian@heinrich.org.uk> <noreply@github.com>

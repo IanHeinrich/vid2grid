@@ -1,2 +1,8 @@
 web/node_modules/
 web/dist/
+
+# Claude Code per-machine overrides; .claude/settings.json and .claude/rules/
+# are tracked on purpose.
+.claude/settings.local.json
+
+.DS_Store

@@ -1,0 +1,18 @@
+{
+  "includeCoAuthoredBy": false,
+  "extraKnownMarketplaces": {
+    "claude-toolkit": {
+      "source": { "source": "github", "repo": "IanHeinrich/claude-toolkit" }
+    }
+  },
+  "enabledPlugins": {
+    "lean@claude-toolkit": true,
+    "guard@claude-toolkit": true,
+    "checks@claude-toolkit": true,
+    "verify@claude-toolkit": true,
+    "orchestrate@claude-toolkit": true
+  },
+  "env": {
+    "CLAUDE_CHECKS_SKIP": "dart,python,java,terraform"
+  }
+}

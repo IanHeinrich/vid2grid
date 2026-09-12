@@ -2,7 +2,11 @@
  * Talks to the transcription worker and turns its raw chunk output into
  * timestamped cues plus a WebVTT document.
  */
-import type { TranscribeRequest, TranscribeStage, TranscribeWorkerMessage } from "./transcriptionWorker";
+import type {
+  TranscribeRequest,
+  TranscribeStage,
+  TranscribeWorkerMessage,
+} from "./transcriptionWorker";
 
 export type { TranscribeStage };
 
@@ -18,7 +22,9 @@ let sharedWorker: Worker | null = null;
 
 function getWorker(): Worker {
   if (!sharedWorker) {
-    sharedWorker = new Worker(new URL("./transcriptionWorker.ts", import.meta.url), { type: "module" });
+    sharedWorker = new Worker(new URL("./transcriptionWorker.ts", import.meta.url), {
+      type: "module",
+    });
   }
   return sharedWorker;
 }
@@ -89,7 +95,9 @@ export function formatVttTimestamp(seconds: number): string {
 export function cuesToVtt(cues: TranscriptCue[]): string {
   if (cues.length === 0) return "WEBVTT\n";
   const body = cues
-    .map((cue) => `${formatVttTimestamp(cue.start)} --> ${formatVttTimestamp(cue.end)}\n${cue.text}`)
+    .map(
+      (cue) => `${formatVttTimestamp(cue.start)} --> ${formatVttTimestamp(cue.end)}\n${cue.text}`,
+    )
     .join("\n\n");
   return `WEBVTT\n\n${body}\n`;
 }

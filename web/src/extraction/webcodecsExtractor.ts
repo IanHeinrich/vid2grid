@@ -65,7 +65,7 @@ interface DemuxResult {
 export function rotationFromMatrix(matrix: Matrix): number {
   const a = matrix[0] / 65536;
   const b = matrix[1] / 65536;
-  const degrees = Math.round(Math.atan2(b, a) * (180 / Math.PI) / 90) * 90;
+  const degrees = Math.round((Math.atan2(b, a) * (180 / Math.PI)) / 90) * 90;
   return ((degrees % 360) + 360) % 360;
 }
 
@@ -176,7 +176,6 @@ function findDecodeEndIndex(samples: Sample[], endTime: number): number {
   }
   return samples.length - 1;
 }
-
 
 export function selectKeyframeIndices(
   samples: Sample[],
@@ -302,7 +301,11 @@ function createFrameCollector(
         drawRotated(ctx, frame, cellW, cellH, rotation);
         pendingCaptures.push(
           createImageBitmap(canvas).then((bitmap) => {
-            frames[capturedIndex] = { timestamp: wanted[capturedIndex], frameIndex: capturedIndex, bitmap };
+            frames[capturedIndex] = {
+              timestamp: wanted[capturedIndex],
+              frameIndex: capturedIndex,
+              bitmap,
+            };
             capturedCount++;
             onProgress?.(capturedCount, wanted.length);
           }),
@@ -341,7 +344,9 @@ async function feedDecoder(
     const chunk = toEncodedVideoChunk(samples[i]);
     if (!chunk) continue;
     if (decoder.decodeQueueSize > MAX_DECODE_QUEUE_SIZE) {
-      await new Promise<void>((resolve) => decoder.addEventListener("dequeue", () => resolve(), { once: true }));
+      await new Promise<void>((resolve) =>
+        decoder.addEventListener("dequeue", () => resolve(), { once: true }),
+      );
     }
     if (isDecoderClosed(decoder)) break;
     decoder.decode(chunk);
@@ -400,7 +405,9 @@ async function feedKeyframes(
     const chunk = toEncodedVideoChunk(samples[index]);
     if (!chunk) continue;
     if (decoder.decodeQueueSize > MAX_DECODE_QUEUE_SIZE) {
-      await new Promise<void>((resolve) => decoder.addEventListener("dequeue", () => resolve(), { once: true }));
+      await new Promise<void>((resolve) =>
+        decoder.addEventListener("dequeue", () => resolve(), { once: true }),
+      );
     }
     if (isDecoderClosed(decoder)) break;
     decoder.decode(chunk);
@@ -514,7 +521,15 @@ export async function extractFramesWebCodecs(
   if (keyframeSampling) {
     const keyframeIndices = selectKeyframeIndices(samples, config.startTime, config.endTime);
     if (keyframeIndices.length > 0) {
-      return decodeKeyframes(decoderConfig, samples, keyframeIndices, cellW, cellH, rotation, onProgress);
+      return decodeKeyframes(
+        decoderConfig,
+        samples,
+        keyframeIndices,
+        cellW,
+        cellH,
+        rotation,
+        onProgress,
+      );
     }
   }
 
@@ -523,7 +538,15 @@ export async function extractFramesWebCodecs(
 
   const cell = createCellCanvas(cellW, cellH);
   if (!cell) return null;
-  const collector = createFrameCollector(wanted, cell.canvas, cell.ctx, cellW, cellH, rotation, onProgress);
+  const collector = createFrameCollector(
+    wanted,
+    cell.canvas,
+    cell.ctx,
+    cellW,
+    cellH,
+    rotation,
+    onProgress,
+  );
   const startIndex = findDecodeStartIndex(samples, config.startTime);
   const endIndex = findDecodeEndIndex(samples, config.endTime);
   await decodeSampleRange(decoderConfig, samples, startIndex, endIndex, collector);

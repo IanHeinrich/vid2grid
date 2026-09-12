@@ -1,4 +1,3 @@
-
 import type { CollageRequest } from "../types";
 import type { GridLayout } from "../grid/gridMaths";
 

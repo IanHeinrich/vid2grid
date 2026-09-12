@@ -9,8 +9,8 @@ Contributions are welcome — bug reports, feature ideas, and PRs.
    [web/src](web/src) — plain TypeScript, no framework, self-documenting
    names over comments).
 3. Add or update tests for behavioral changes — see [web/tests](web/tests)
-   — and make sure `npm test` and `npm run build` both pass locally
-   (from `web/`).
+   — then run `npm run format` and make sure `npm test` and `npm run build`
+   both pass locally (all from `web/`).
 4. Open a PR against `main`.
 5. **Don't bump `web/package.json`'s `version`** in your PR — that's reserved
    for maintainers, since a version bump landing on `main` triggers an

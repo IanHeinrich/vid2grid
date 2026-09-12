@@ -6,7 +6,10 @@ export function isFolderSaveSupported(): boolean {
   return typeof window.showDirectoryPicker === "function";
 }
 
-export async function downloadAllAsZip(blobs: Blob[], transcriptFiles: TranscriptFile[] = []): Promise<void> {
+export async function downloadAllAsZip(
+  blobs: Blob[],
+  transcriptFiles: TranscriptFile[] = [],
+): Promise<void> {
   const zip = new JSZip();
   blobs.forEach((blob, i) => zip.file(gridFileName(i), blob));
   transcriptFiles.forEach(({ name, blob }) => zip.file(name, blob));
@@ -27,11 +30,7 @@ function sanitizeForFileName(name: string): string {
 /** e.g. "myClip.mp4" -> "myClip_grids_2026-07-17_143000" */
 export function buildGridsFolderName(sourceFileName: string, now = new Date()): string {
   const base = sanitizeForFileName(sourceFileName.replace(/\.[^./\\]+$/, ""));
-  const timestamp = now
-    .toISOString()
-    .slice(0, 19)
-    .replace("T", "_")
-    .replace(/:/g, "");
+  const timestamp = now.toISOString().slice(0, 19).replace("T", "_").replace(/:/g, "");
   return `${base}_grids_${timestamp}`;
 }
 
@@ -53,10 +52,13 @@ export async function saveAllToFolder(
   }
 }
 
-async function writeFile(dirHandle: FileSystemDirectoryHandle, name: string, blob: Blob): Promise<void> {
+async function writeFile(
+  dirHandle: FileSystemDirectoryHandle,
+  name: string,
+  blob: Blob,
+): Promise<void> {
   const fileHandle = await dirHandle.getFileHandle(name, { create: true });
   const writable = await fileHandle.createWritable();
   await writable.write(blob);
   await writable.close();
 }
-

@@ -138,11 +138,14 @@ describe("generateCollages", () => {
       { start: 0, end: 1, text: "early" },
       { start: 5, end: 6, text: "late" },
     ];
-    const { transcriptFiles } = await generateCollages(baseConfig({ framesPerGrid: 4, endTime: 8 }), {
-      extractFramesImpl: async () => frames,
-      transcript: { scope: "per-sheet" },
-      transcribeImpl: async () => cues,
-    });
+    const { transcriptFiles } = await generateCollages(
+      baseConfig({ framesPerGrid: 4, endTime: 8 }),
+      {
+        extractFramesImpl: async () => frames,
+        transcript: { scope: "per-sheet" },
+        transcribeImpl: async () => cues,
+      },
+    );
 
     expect(transcriptFiles.map((f) => f.name)).toEqual(["grid_0001.vtt", "grid_0002.vtt"]);
     const [first, second] = await Promise.all(transcriptFiles.map((f) => readBlobText(f.blob)));
@@ -154,11 +157,14 @@ describe("generateCollages", () => {
 
   it("produces only the combined transcript for scope 'combined', not per-sheet files too", async () => {
     const frames = stubExtractedFrames(8);
-    const { transcriptFiles } = await generateCollages(baseConfig({ framesPerGrid: 4, endTime: 8 }), {
-      extractFramesImpl: async () => frames,
-      transcript: { scope: "combined" },
-      transcribeImpl: async () => [{ start: 0, end: 1, text: "hi" }],
-    });
+    const { transcriptFiles } = await generateCollages(
+      baseConfig({ framesPerGrid: 4, endTime: 8 }),
+      {
+        extractFramesImpl: async () => frames,
+        transcript: { scope: "combined" },
+        transcribeImpl: async () => [{ start: 0, end: 1, text: "hi" }],
+      },
+    );
 
     expect(transcriptFiles.map((f) => f.name)).toEqual(["transcript.vtt"]);
   });

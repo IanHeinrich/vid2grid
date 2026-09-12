@@ -42,7 +42,7 @@ export function updateFramePlanningUi(options: { recomputeSuggestions?: boolean 
   }
 
   const totalFrames = keyframeMode
-    ? state.keyframeCount ?? 0
+    ? (state.keyframeCount ?? 0)
     : state.videoFile
       ? estimateExtractedFrameCount(
           Number(els.startTimeInput.value),
@@ -55,7 +55,13 @@ export function updateFramePlanningUi(options: { recomputeSuggestions?: boolean 
   if (options.recomputeSuggestions ?? true) {
     state.cachedSuggestions =
       totalFrames > 0 && state.sourceAspect > 0
-        ? suggestFramesPerGrid(totalFrames, currentValue, state.sourceAspect, outputResolution, GUTTER_PX)
+        ? suggestFramesPerGrid(
+            totalFrames,
+            currentValue,
+            state.sourceAspect,
+            outputResolution,
+            GUTTER_PX,
+          )
         : [];
   }
 
