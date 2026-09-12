@@ -5,6 +5,7 @@ on:
     paths:
       - "web/**"
       - "packages/**"
+      - "python/**"
       - "fixtures/**"
       - "scripts/**"
       - "package.json"
@@ -40,6 +41,28 @@ jobs:
       - run: npm run typecheck
       - run: npm run fixtures
       - run: git diff --exit-code fixtures/
+
+  python:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@v5
+
+      - run: uv sync --all-groups
+      - run: uv run pytest
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
 
   check-version:
     needs: test

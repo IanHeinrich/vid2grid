@@ -20,11 +20,15 @@ server and nothing is uploaded.
 
 `npm test` and `npm run build` must both pass before a change is done.
 
+The Python package is its own toolchain and does not go through npm:
+`cd python && uv sync --all-groups && uv run pytest && uv run ruff check .`.
+
 | Package                  | What it is                                                                                                                                                                                                                                                             |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `packages/core`          | `@vid2grid/core`, DOM-free pure logic. `tsconfig` sets `lib: ["ES2022"]` and `types: []` so any browser API is a compile error, and it must have no `dependencies` (enforced by `packages/core/tests/dependencies.test.ts`).                                           |
 | `packages/browser`       | `@vid2grid/browser`, the browser executor: core's ports implemented with `<video>`/`<canvas>`, WebCodecs + mp4box, an OffscreenCanvas worker pool, Web Audio and a transformers.js Whisper worker. Owns every browser-only dependency.                                 |
 | `web/`                   | The Vite app: UI markup, wiring, state, download. It calls `generateCollages` from `@vid2grid/core` with the ports from `@vid2grid/browser`.                                                                                                                           |
+| `python/`                | `vid2grid`, the headless executor: a line-by-line port of core's planner plus a PyAV/Pillow executor, `pip install`able and depending only on `av` and `Pillow`. No transcription. Its own tests and lint (`pytest`, `ruff`), run from `python/`, never through npm.   |
 | `fixtures/` + `scripts/` | `fixtures/render-plans/*.json` are golden `RenderPlan`s, written only by `scripts/generateRenderPlanFixtures.ts` (`npm run fixtures`) and read back by `packages/core/tests/renderPlanFixtures.test.ts`. Generated: Prettier ignores them, nothing edits them by hand. |
 
 ## Rules a worker may not read elsewhere
@@ -44,12 +48,14 @@ server and nothing is uploaded.
 - **Tests live in `<package>/tests/<module>.test.ts`**, flat, named after the
   module under test — not beside the source. `packages/core/src/grid/gridMaths.ts`
   is covered by `packages/core/tests/gridMaths.test.ts`.
-- **A planner change regenerates fixtures in the same PR.** Anything under
+- **A planner change is three changes in one PR.** Anything under
   `packages/core/src/plan/` (or the layout, timestamp-format or file-name
-  helpers it uses) changes the `RenderPlan` contract: run `npm run fixtures` and
-  commit the result with the change, or CI's
-  `git diff --exit-code fixtures/` fails. `docs/render-plan.md` is the contract's
-  spec and moves with it.
+  helpers it uses) changes the `RenderPlan` contract, so the same PR carries
+  all three: the TypeScript, regenerated `fixtures/` (`npm run fixtures`, or
+  CI's `git diff --exit-code fixtures/` fails), and the matching edit to
+  `python/src/vid2grid/planner.py` — the Python port is held to the same
+  fixtures by `python/tests/test_planner.py`. `docs/render-plan.md` is the
+  contract's spec and moves with it.
 - **All UI markup is in `web/index.html`.** There are no framework templates;
   `web/src/main.ts` wires that markup to the modules.
 - **Style: names over comments.** A comment earns its place only for a

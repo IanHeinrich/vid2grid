@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vid2grid"
+version = "0.1.0"
+description = "Turn a video into collage sheets: grid JPEGs packing many timestamped frames"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["av>=14", "Pillow>=10.1"]
+
+[dependency-groups]
+dev = ["pytest>=8.2", "ruff>=0.5"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vid2grid"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

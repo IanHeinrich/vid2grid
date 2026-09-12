@@ -6,4 +6,11 @@ dist/
 # are tracked on purpose.
 .claude/settings.local.json
 
+python/.venv/
+python/dist/
+**/__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
 .DS_Store
