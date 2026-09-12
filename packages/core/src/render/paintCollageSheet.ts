@@ -7,15 +7,8 @@ import {
   type TimestampFormat,
 } from "./timestampFormat";
 
-/**
- * Paints a whole collage sheet onto an already-created 2D context, working with
- * both a main-thread `HTMLCanvasElement` and a worker `OffscreenCanvas`.
- *
- * Each frame is drawn straight into its final cell position and watermarked in
- * place - no per-frame intermediate cell canvas - and cells past the supplied
- * frames stay the black background, which is what a trailing under-full sheet
- * wants.
- */
+/** Cells past the supplied frames are left as the black background, which is what a
+ * trailing under-full sheet wants. */
 export function paintCollageSheet<TImage>(
   ctx: SheetContext2D<TImage>,
   input: CollageSheetInput<TImage>,
@@ -47,15 +40,6 @@ export function paintCollageSheet<TImage>(
   });
 }
 
-/**
- * Draws a timestamp (top-left) and frame index (top-right) inside the cell at
- * (offsetX, offsetY): black text with a white stroke. Font scales with the
- * cell's final rendered height.
- *
- * `format` drops components (hours, minutes, milliseconds) that are redundant
- * for the whole batch this frame belongs to, e.g. a short clip sampled at 1fps
- * or slower gets a plain `SS` timestamp instead of `00:SS.000`.
- */
 function watermarkCell<TImage>(
   ctx: SheetContext2D<TImage>,
   offsetX: number,

@@ -1,6 +1,5 @@
 import type { CapturedFrame, CollageRequest } from "@vid2grid/core";
 
-/** The final on-sheet size every captured frame is scaled to. */
 export interface CellSize {
   width: number;
   height: number;
@@ -27,9 +26,7 @@ export async function extractFrames(
     const duration = config.endTime - config.startTime;
     const frameCount = Math.max(1, Math.floor(duration * config.targetFps));
 
-    // Captures directly at the final cell size instead of full source
-    // resolution, avoiding a large drawImage + createImageBitmap per frame
-    // followed by a second downscale later in the render pipeline.
+    // Cell-sized, not source-sized, so no frame is downscaled twice.
     const canvas = document.createElement("canvas");
     canvas.width = cell.width;
     canvas.height = cell.height;

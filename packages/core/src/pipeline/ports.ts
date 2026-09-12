@@ -31,13 +31,8 @@ export interface SheetEncoderPort<TImage, TBinary> {
   ): Promise<TBinary[]>;
 }
 
-/**
- * "model" covers the one-time (host-cached) download of a speech model's
- * weights; "transcribe" covers actually running it on the audio. Reported
- * separately so a UI can show a distinct, honest label for each - the model
- * stage has a real byte-accurate percentage, the transcribe stage only an
- * approximate "still working" heartbeat.
- */
+/** Separate stages because "model" (the one-time weights download) reports byte-accurate
+ * progress while "transcribe" only has an approximate heartbeat. */
 export type TranscribeStage = "model" | "transcribe";
 
 export interface TranscriptPort<TSource> {

@@ -1,12 +1,5 @@
-/**
- * Decodes a video file's audio track into a mono 16 kHz PCM buffer suitable
- * for feeding straight into a Whisper ASR pipeline.
- *
- * Uses the browser's native audio decoder rather than any new demuxing code:
- * `decodeAudioData` resamples directly to whatever sample rate the
- * `AudioContext` it's called on was constructed with, so building the
- * context at Whisper's expected 16 kHz does the resample for free.
- */
+// `decodeAudioData` resamples to its `AudioContext`'s rate, so constructing the context at
+// Whisper's rate gets the resample for free.
 const WHISPER_SAMPLE_RATE = 16000;
 
 export async function decodeAudioForTranscription(

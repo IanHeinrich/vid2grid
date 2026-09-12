@@ -2,18 +2,12 @@ import { describe, expect, it } from "vitest";
 import { computeOptimalGrid, GUTTER_PX, type CollageSheetInput } from "@vid2grid/core";
 import { renderSheetsToBlobs } from "../src/rendering/sheetRenderer";
 
-/**
- * jsdom has neither `Worker` nor `OffscreenCanvas`, so this exercises the
- * main-thread fallback: paint onto a (mocked) canvas and encode it with
- * `canvas.toBlob`. The pipeline's own sheet-splitting decisions are covered in
- * core; what matters here is that a sheet really comes back as a JPEG Blob.
- */
+// jsdom has neither `Worker` nor `OffscreenCanvas`, so only the main-thread fallback runs here.
 const OUTPUT_RESOLUTION = 256;
 const FRAMES_PER_SHEET = 4;
 
-// jest-canvas-mock's drawImage validates its source is a real canvas-like
-// element, so stand in with an actual (mocked) HTMLCanvasElement - jsdom
-// doesn't implement ImageBitmap/createImageBitmap.
+// jsdom has no ImageBitmap, and jest-canvas-mock's drawImage rejects anything but a
+// real canvas-like element, so a mocked HTMLCanvasElement stands in.
 function fakeImage(width: number, height: number): ImageBitmap {
   const canvas = document.createElement("canvas");
   canvas.width = width;

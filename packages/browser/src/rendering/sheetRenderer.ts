@@ -1,9 +1,3 @@
-/**
- * Turns fully-described collage sheets into JPEG `Blob`s, rendering them in
- * parallel across a pool of `OffscreenCanvas` workers when the browser supports
- * it and falling back to synchronous main-thread rendering otherwise (e.g. jsdom
- * in tests, or browsers without `OffscreenCanvas`/`Worker`).
- */
 import { paintCollageSheet, type CollageSheetInput, type SheetContext2D } from "@vid2grid/core";
 import { canvasToJpegBlob } from "./canvasJpeg";
 import { WorkerPool } from "./workerPool";
@@ -11,8 +5,7 @@ import type { RenderSheetRequest, RenderSheetResponse } from "./renderWorker";
 
 const MAX_RENDER_WORKERS = 4;
 
-// Compile-time proof that both canvas contexts satisfy core's DOM-free sheet
-// context, so `paintCollageSheet` can paint on-thread and in a worker alike.
+// Unused at runtime: compile-time proof that both canvas contexts satisfy core's SheetContext2D.
 type AssignableToSheetContext<T extends SheetContext2D<ImageBitmap>> = T;
 export type MainThreadSheetContext = AssignableToSheetContext<CanvasRenderingContext2D>;
 export type WorkerSheetContext = AssignableToSheetContext<OffscreenCanvasRenderingContext2D>;
@@ -60,8 +53,7 @@ async function renderWithWorkers(
 
   await Promise.all(
     sheets.map(async (sheet, index) => {
-      // Transfer (not copy) the decoded frames into the worker; the worker owns
-      // and closes them once the sheet is encoded.
+      // The frames are transferred, not copied: the worker closes them once encoded.
       const response = await pool.run({ input: sheet, jpegQuality }, sheet.images);
       if (response.error || !response.blob) {
         throw new Error(response.error ?? "Render worker returned no image");

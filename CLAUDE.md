@@ -44,8 +44,12 @@ server and nothing is uploaded.
   is covered by `packages/core/tests/gridMaths.test.ts`.
 - **All UI markup is in `web/index.html`.** There are no framework templates;
   `web/src/main.ts` wires that markup to the modules.
-- **Style: self-documenting names over comments.** Match the surrounding code
-  rather than introducing a new idiom. (`CONTRIBUTING.md`.)
+- **Style: names over comments.** A comment earns its place only for a
+  non-obvious why — a platform quirk, a convention mismatch, a deliberate
+  trade-off — and runs one or two lines. No JSDoc restating a signature,
+  parameter list or return type; no prose narrating what the next lines do.
+  Match the surrounding code rather than introducing a new idiom.
+  (`CONTRIBUTING.md`.)
 
 ## Commit attribution
 

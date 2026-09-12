@@ -13,7 +13,6 @@ import type { ClockPort, CollagePorts, TranscribeStage, TranscriptPort } from ".
 
 export type GenerationPhase = "extracting" | "rendering" | "transcribing";
 
-/** Lightweight per-phase timing, surfaced via `onTiming` for profiling. */
 export interface GenerationTimings {
   extractMs: number;
   renderMs: number;
@@ -22,17 +21,13 @@ export interface GenerationTimings {
   sheetCount: number;
 }
 
-/** One produced file: `data` is whatever binary the host's ports encode to. */
 export interface GeneratedFile<TBinary> {
   name: string;
   data: TBinary;
 }
 
 export interface TranscriptOptions {
-  /**
-   * "per-sheet" pairs one .vtt with each grid sheet's frame time window;
-   * "combined" produces a single whole-export transcript.vtt instead.
-   */
+  /** "per-sheet" windows one .vtt to each sheet's frame times; "combined" emits one for the whole export. */
   scope: "per-sheet" | "combined";
 }
 
@@ -42,12 +37,6 @@ export interface GenerateCollagesResult<TBinary> {
 }
 
 export interface GenerateCollagesOptions {
-  /**
-   * `transcribeStage` is only ever populated during the "transcribing"
-   * phase, distinguishing the one-time (host-cached) model download from
-   * actually running it on the audio - callers can use it to show a more
-   * honest label than a single generic "transcribing" message.
-   */
   onProgress?: (
     phase: GenerationPhase,
     done: number,
@@ -55,24 +44,12 @@ export interface GenerateCollagesOptions {
     transcribeStage?: TranscribeStage,
   ) => void;
   onTiming?: (timings: GenerationTimings) => void;
-  /**
-   * Non-fatal problems (e.g. transcription failed or the video has no audio
-   * track) are reported here rather than thrown, so a transcript failure
-   * never loses the already-rendered grid images.
-   */
+  /** Transcript trouble is warned about, not thrown, so it never loses the already-rendered sheets. */
   onWarning?: (message: string) => void;
-  /**
-   * The source's already-known dimensions and duration, when the caller read
-   * them earlier - avoids probing again just to lay out the grid.
-   */
+  /** Supplying what the caller already read skips the probe. */
   videoInfo?: VideoInfo;
-  /**
-   * Opt-in fast mode: capture only the keyframe nearest each sampled timestamp,
-   * trading exact-time frames for far less decode work. Hosts that cannot do
-   * this ignore it.
-   */
+  /** Trades exact-time frames for far less decode work. Hosts that cannot do it ignore the flag. */
   keyframeSampling?: boolean;
-  /** Opt-in: also generate a speech-to-text transcript. */
   transcript?: TranscriptOptions;
 }
 
@@ -125,9 +102,7 @@ export async function generateCollages<TSource, TImage, TBinary>(
 
   const videoInfo = options.videoInfo ?? (await ports.probe.probe(source));
 
-  // Computed up front (from the video's real dimensions) so the host can
-  // capture frames directly at their final cell size instead of at full source
-  // resolution and downscale them again later in the render pipeline.
+  // Before capture, so frames arrive already at cell size rather than being downscaled twice.
   const layout = computeOptimalGrid(
     request.framesPerGrid,
     videoInfo.width / videoInfo.height,
@@ -146,8 +121,7 @@ export async function generateCollages<TSource, TImage, TBinary>(
   const extractMs = clock.now() - extractStart;
   if (captured.length === 0) return { sheets: [], transcriptFiles: [] };
 
-  // Decided once for the whole batch (rather than per-frame) so every sheet uses a
-  // consistent timestamp format instead of flipping components mid-batch.
+  // Decided per batch, not per frame, so components cannot flip between sheets.
   const lastTimestamp = captured[captured.length - 1].timestamp;
   const timestampFormat: TimestampFormat = {
     showHours: lastTimestamp >= 3600,

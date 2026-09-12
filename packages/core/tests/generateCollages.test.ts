@@ -4,14 +4,8 @@ import type { CapturedFrame, CollagePorts } from "../src/pipeline/ports";
 import type { CollageRequest, VideoInfo } from "../src/types";
 import type { TranscriptCue } from "../src/transcript/vtt";
 
-/**
- * Outside-in tests for the generateCollages pipeline: every platform boundary
- * (probe, frame capture, sheet encoding, text encoding, transcription) is a
- * fake port, so the pipeline's own decisions - grid layout, sheet chunking,
- * file names, progress phases, transcript windows, warnings - are what's under
- * test. Images are plain strings and encoded files are plain strings too; the
- * real Blob/ImageBitmap behaviour belongs to the browser package's tests.
- */
+// Images and encoded files are plain strings here: real Blob/ImageBitmap behaviour is the
+// browser package's to test, so only the pipeline's own decisions are under test.
 type FakePorts = CollagePorts<string, string, string>;
 
 const VIDEO_INFO: VideoInfo = { durationSeconds: 10, width: 640, height: 480 };
@@ -212,9 +206,7 @@ describe("generateCollages", () => {
   });
 
   it("splits cues into per-sheet transcripts by frame time window for scope 'per-sheet'", async () => {
-    // 8 frames at timestamps 0..7, framesPerGrid=4 -> sheet0 covers frames 0-3
-    // (timestamps 0..3), sheet1 covers frames 4-7 (timestamps 4..7). The
-    // midpoint between sheets sits at (3 + 4) / 2 = 3.5.
+    // Sheets cover timestamps 0..3 and 4..7, so the window boundary lands at (3 + 4) / 2 = 3.5.
     const cues: TranscriptCue[] = [
       { start: 0, end: 1, text: "early" },
       { start: 5, end: 6, text: "late" },

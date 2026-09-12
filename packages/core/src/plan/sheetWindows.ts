@@ -1,8 +1,4 @@
-/**
- * One time window per sheet, splitting the gaps between sheets at their
- * midpoint so every cue in `[startSeconds, endSeconds]` lands in exactly one
- * sheet's transcript.
- */
+/** Gaps between sheets split at their midpoint, so every cue lands in exactly one window. */
 export function computeSheetWindows(
   sheets: { timestamps: number[] }[],
   startSeconds: number,

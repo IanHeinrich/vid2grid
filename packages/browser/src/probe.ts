@@ -1,10 +1,6 @@
 import type { VideoInfo } from "@vid2grid/core";
 import { waitForEvent } from "./extraction/extractor";
 
-/**
- * Reads a video's duration and display dimensions from a `<video>` element's
- * metadata, which is cheap and works for every format the browser can play.
- */
 export async function probeVideo(file: File): Promise<VideoInfo> {
   const video = document.createElement("video");
   video.preload = "metadata";
@@ -22,11 +18,7 @@ export async function probeVideo(file: File): Promise<VideoInfo> {
   }
 }
 
-/**
- * Counts the ISO-BMFF keyframes inside a time range, or `null` when the file
- * isn't demuxable (keyframe fast mode is then unavailable). mp4box is loaded
- * lazily so it stays out of the host's main bundle.
- */
+/** `null` when the file isn't demuxable. The import is lazy so mp4box stays out of the main bundle. */
 export async function countKeyframesInRange(
   file: File,
   startTime: number,

@@ -1,4 +1,4 @@
-export const FONT_HEIGHT_DIVISOR = 16; // font size = cell height / this; smaller cells get smaller text
+export const FONT_HEIGHT_DIVISOR = 16;
 export const MIN_FONT_SIZE = 8;
 
 export interface TimestampFormat {

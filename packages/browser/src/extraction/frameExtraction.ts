@@ -1,9 +1,6 @@
 import type { CapturedFrame, CollageRequest } from "@vid2grid/core";
 import { extractFrames, type CellSize, type ExtractionProgress } from "./extractor";
 
-/**
- * Picks the fastest available frame-extraction strategy.
- */
 export async function extractFramesAuto(
   file: File,
   config: CollageRequest,
