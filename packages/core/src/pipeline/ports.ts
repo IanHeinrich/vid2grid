@@ -4,8 +4,14 @@ import type { VideoInfo } from "../types";
 
 export type ProgressCallback = (done: number, total: number) => void;
 
+// Reading keyframe times means demuxing the whole file, so it is asked for only
+// when keyframe mode needs them rather than on every probe.
+export interface ProbeOptions {
+  keyframeTimestamps: boolean;
+}
+
 export interface ProbePort<TSource> {
-  probe(source: TSource): Promise<VideoInfo>;
+  probe(source: TSource, options: ProbeOptions): Promise<VideoInfo>;
 }
 
 export interface FrameCapturePort<TSource, TImage> {

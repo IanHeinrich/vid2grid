@@ -56,11 +56,15 @@ async function renderWithWorkers(
   const blobs = new Array<Blob>(jobs.length);
   let done = 0;
 
+  // paintSheetFromPlan reads none of the frame or sheet lists, and they would otherwise
+  // be structured-cloned once per sheet.
+  const sheetPlan: RenderPlan = { ...plan, frames: [], sheets: [] };
+
   await Promise.all(
     jobs.map(async (job, index) => {
       // The frames are transferred, not copied: the worker closes them once encoded.
       const response = await pool.run(
-        { plan, sheet: job.sheet, images: job.images, jpegQuality: plan.jpegQuality },
+        { plan: sheetPlan, sheet: job.sheet, images: job.images, jpegQuality: plan.jpegQuality },
         presentImages(job.images),
       );
       if (response.error || !response.blob) {

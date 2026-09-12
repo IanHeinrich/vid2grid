@@ -5,6 +5,7 @@ import { cuesInWindow, cuesToVtt, type TranscriptCue } from "../transcript/vtt";
 import type {
   ClockPort,
   CollagePorts,
+  ProbePort,
   SheetRenderJob,
   TranscribeStage,
   TranscriptPort,
@@ -48,6 +49,43 @@ export interface GenerateCollagesOptions {
 
 const systemClock: ClockPort = { now: () => Date.now() };
 
+const KEYFRAMES_UNAVAILABLE_WARNING = "Keyframes unavailable; sampled by target FPS instead";
+
+// Keyframe times cost a full demux, so a caller's videoInfo is taken as it comes and
+// topped up only when keyframe mode actually needs the field.
+async function resolveVideoInfo<TSource>(
+  source: TSource,
+  request: CollagePlanRequest,
+  probe: ProbePort<TSource>,
+  supplied?: VideoInfo,
+): Promise<VideoInfo> {
+  const wantsKeyframes = request.keyframeSampling === true;
+  if (!supplied) return probe.probe(source, { keyframeTimestamps: wantsKeyframes });
+  if (!wantsKeyframes || supplied.keyframeTimestampsSeconds !== undefined) return supplied;
+
+  const probed = await probe.probe(source, { keyframeTimestamps: true });
+  return probed.keyframeTimestampsSeconds === undefined
+    ? supplied
+    : { ...supplied, keyframeTimestampsSeconds: probed.keyframeTimestampsSeconds };
+}
+
+function hasKeyframesInRange(request: CollagePlanRequest, info: VideoInfo): boolean {
+  return (info.keyframeTimestampsSeconds ?? []).some(
+    (timestamp) => timestamp >= request.startSeconds && timestamp <= request.endSeconds,
+  );
+}
+
+// A short capture drops the trailing sheets, so the last surviving window takes over
+// their range rather than leaving the cues past it in no file at all.
+function sheetWindowsForJobs<TImage>(
+  jobs: SheetRenderJob<TImage>[],
+  endSeconds: number,
+): TranscriptWindow[] {
+  const windows = jobs.flatMap((job) => (job.sheet.transcript ? [job.sheet.transcript] : []));
+  if (windows.length === 0) return windows;
+  return [...windows.slice(0, -1), { ...windows[windows.length - 1], endSeconds }];
+}
+
 async function generateTranscriptFiles<TSource, TBinary>(
   source: TSource,
   request: CollagePlanRequest,
@@ -85,8 +123,16 @@ export async function generateCollages<TSource, TImage, TBinary>(
   validateCollagePlanRequest(request);
   const clock = ports.clock ?? systemClock;
 
-  const videoInfo = options.videoInfo ?? (await ports.probe.probe(source));
-  const plan = buildRenderPlan(request, videoInfo);
+  const videoInfo = await resolveVideoInfo(source, request, ports.probe, options.videoInfo);
+
+  // buildRenderPlan throws on keyframe mode without times, which is right for a host
+  // calling it directly; here the old sampled behaviour is the better answer.
+  let planRequest = request;
+  if (request.keyframeSampling && !hasKeyframesInRange(request, videoInfo)) {
+    planRequest = { ...request, keyframeSampling: false };
+    options.onWarning?.(KEYFRAMES_UNAVAILABLE_WARNING);
+  }
+  const plan = buildRenderPlan(planRequest, videoInfo);
 
   const extractStart = clock.now();
   const images = await ports.frames.capture(source, plan, (done, total) =>
@@ -114,7 +160,7 @@ export async function generateCollages<TSource, TImage, TBinary>(
       const windows =
         plan.combinedTranscript !== undefined
           ? [plan.combinedTranscript]
-          : jobs.flatMap((job) => (job.sheet.transcript ? [job.sheet.transcript] : []));
+          : sheetWindowsForJobs(jobs, request.endSeconds);
       transcriptFiles = await generateTranscriptFiles(
         source,
         request,

@@ -179,6 +179,16 @@ in the plan; hosts must not recompute them.
 6. If a transcript was asked for, keep the cues overlapping each window and
    write them as WebVTT under the window's `fileName`.
 
+**What the plan decides before a frame is decoded.** The timestamp format and the
+sheet windows come from the planned frames, not the captured ones: a stream that
+ends early keeps the watermark format the full range asked for, and
+`generateCollages` stretches the last surviving sheet's window to
+`endSeconds` so the dropped sheets' cues still land somewhere. Keyframe mode is
+likewise settled before capture — `generateCollages` plans a request whose
+keyframes it cannot read, or that selects none in `[startSeconds, endSeconds]`,
+as a sampled one instead and reports a warning, where `buildRenderPlan` on its
+own throws.
+
 `packages/core`'s `paintSheetFromPlan` implements steps 3 and 4 for any
 JavaScript host (`fixtures/render-plans/` pins steps 1-6's inputs), and
 `generateCollages` drives the whole sequence through the ports in

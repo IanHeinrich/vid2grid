@@ -12,8 +12,8 @@ export interface RenderSheetResponse {
   error?: string;
 }
 
-// The DOM lib types `self` as a Window; cast to just the worker surface we use
-// so we don't have to pull in the conflicting WebWorker lib.
+// The DOM lib types `self` as a Window, so cast to just the surface used here rather
+// than pull in the conflicting WebWorker lib.
 interface RenderWorkerScope {
   onmessage: ((event: MessageEvent<RenderSheetRequest>) => void) | null;
   postMessage(message: RenderSheetResponse): void;

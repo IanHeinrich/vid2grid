@@ -1,8 +1,11 @@
-import type { VideoInfo } from "@vid2grid/core";
+import type { ProbeOptions, VideoInfo } from "@vid2grid/core";
 import { waitForEvent } from "./extraction/extractor";
 import { looksLikeIsoBmff } from "./extraction/isoBmff";
 
-export async function probeVideo(file: File): Promise<VideoInfo> {
+export async function probeVideo(
+  file: File,
+  { keyframeTimestamps }: ProbeOptions,
+): Promise<VideoInfo> {
   const video = document.createElement("video");
   video.preload = "metadata";
   const url = URL.createObjectURL(file);
@@ -19,6 +22,8 @@ export async function probeVideo(file: File): Promise<VideoInfo> {
     URL.revokeObjectURL(url);
   }
 
+  if (!keyframeTimestamps) return { durationSeconds, width, height };
+
   const keyframeTimestampsSeconds = await readKeyframeTimestampsIfAvailable(file);
   return {
     durationSeconds,
@@ -30,8 +35,13 @@ export async function probeVideo(file: File): Promise<VideoInfo> {
 
 async function readKeyframeTimestampsIfAvailable(file: File): Promise<number[] | null> {
   if (typeof VideoDecoder === "undefined" || !looksLikeIsoBmff(file)) return null;
-  const { readKeyframeTimestamps } = await import("./extraction/webcodecsExtractor");
-  return readKeyframeTimestamps(file);
+  try {
+    const { readKeyframeTimestamps } = await import("./extraction/webcodecsExtractor");
+    return await readKeyframeTimestamps(file);
+  } catch {
+    // Losing the demuxer chunk costs keyframe mode, which falls back to sampling, not the probe.
+    return null;
+  }
 }
 
 /** `null` when the file isn't demuxable. The import is lazy so mp4box stays out of the main bundle. */

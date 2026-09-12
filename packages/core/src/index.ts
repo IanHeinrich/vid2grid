@@ -53,6 +53,7 @@ export type {
   ClockPort,
   CollagePorts,
   FrameCapturePort,
+  ProbeOptions,
   ProbePort,
   ProgressCallback,
   SheetEncoderPort,
