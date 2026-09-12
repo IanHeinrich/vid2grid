@@ -1,0 +1,1008 @@
+{
+  "name": "transcript-per-sheet-windows",
+  "request": {
+    "startSeconds": 5,
+    "endSeconds": 35,
+    "targetFps": 1,
+    "framesPerGrid": 6,
+    "outputResolution": 1024,
+    "jpegQuality": 85,
+    "transcript": {
+      "scope": "per-sheet"
+    }
+  },
+  "info": {
+    "durationSeconds": 40,
+    "width": 1280,
+    "height": 720
+  },
+  "plan": {
+    "version": 1,
+    "canvas": {
+      "width": 1024,
+      "height": 1024
+    },
+    "cell": {
+      "width": 500,
+      "height": 281
+    },
+    "layout": {
+      "cols": 2,
+      "rows": 3,
+      "offsetX": 0,
+      "offsetY": 74
+    },
+    "style": {
+      "background": "black",
+      "textFill": "black",
+      "textStroke": "white",
+      "fontFamily": "sans-serif",
+      "textBaseline": "top"
+    },
+    "jpegQuality": 85,
+    "timestampFormat": {
+      "showHours": false,
+      "showMinutes": false,
+      "showMilliseconds": false
+    },
+    "frames": [
+      {
+        "frameIndex": 0,
+        "timestampSeconds": 5
+      },
+      {
+        "frameIndex": 1,
+        "timestampSeconds": 6
+      },
+      {
+        "frameIndex": 2,
+        "timestampSeconds": 7
+      },
+      {
+        "frameIndex": 3,
+        "timestampSeconds": 8
+      },
+      {
+        "frameIndex": 4,
+        "timestampSeconds": 9
+      },
+      {
+        "frameIndex": 5,
+        "timestampSeconds": 10
+      },
+      {
+        "frameIndex": 6,
+        "timestampSeconds": 11
+      },
+      {
+        "frameIndex": 7,
+        "timestampSeconds": 12
+      },
+      {
+        "frameIndex": 8,
+        "timestampSeconds": 13
+      },
+      {
+        "frameIndex": 9,
+        "timestampSeconds": 14
+      },
+      {
+        "frameIndex": 10,
+        "timestampSeconds": 15
+      },
+      {
+        "frameIndex": 11,
+        "timestampSeconds": 16
+      },
+      {
+        "frameIndex": 12,
+        "timestampSeconds": 17
+      },
+      {
+        "frameIndex": 13,
+        "timestampSeconds": 18
+      },
+      {
+        "frameIndex": 14,
+        "timestampSeconds": 19
+      },
+      {
+        "frameIndex": 15,
+        "timestampSeconds": 20
+      },
+      {
+        "frameIndex": 16,
+        "timestampSeconds": 21
+      },
+      {
+        "frameIndex": 17,
+        "timestampSeconds": 22
+      },
+      {
+        "frameIndex": 18,
+        "timestampSeconds": 23
+      },
+      {
+        "frameIndex": 19,
+        "timestampSeconds": 24
+      },
+      {
+        "frameIndex": 20,
+        "timestampSeconds": 25
+      },
+      {
+        "frameIndex": 21,
+        "timestampSeconds": 26
+      },
+      {
+        "frameIndex": 22,
+        "timestampSeconds": 27
+      },
+      {
+        "frameIndex": 23,
+        "timestampSeconds": 28
+      },
+      {
+        "frameIndex": 24,
+        "timestampSeconds": 29
+      },
+      {
+        "frameIndex": 25,
+        "timestampSeconds": 30
+      },
+      {
+        "frameIndex": 26,
+        "timestampSeconds": 31
+      },
+      {
+        "frameIndex": 27,
+        "timestampSeconds": 32
+      },
+      {
+        "frameIndex": 28,
+        "timestampSeconds": 33
+      },
+      {
+        "frameIndex": 29,
+        "timestampSeconds": 34
+      }
+    ],
+    "sheets": [
+      {
+        "sheetIndex": 0,
+        "fileName": "grid_0001.jpg",
+        "cells": [
+          {
+            "frameIndex": 0,
+            "timestampSeconds": 5,
+            "x": 8,
+            "y": 82,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "05",
+                "anchor": "top-left",
+                "x": 12,
+                "y": 86,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "0",
+                "anchor": "top-right",
+                "x": 504,
+                "y": 86,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 1,
+            "timestampSeconds": 6,
+            "x": 516,
+            "y": 82,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "06",
+                "anchor": "top-left",
+                "x": 520,
+                "y": 86,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "1",
+                "anchor": "top-right",
+                "x": 1012,
+                "y": 86,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 2,
+            "timestampSeconds": 7,
+            "x": 8,
+            "y": 371,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "07",
+                "anchor": "top-left",
+                "x": 12,
+                "y": 375,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "2",
+                "anchor": "top-right",
+                "x": 504,
+                "y": 375,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 3,
+            "timestampSeconds": 8,
+            "x": 516,
+            "y": 371,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "08",
+                "anchor": "top-left",
+                "x": 520,
+                "y": 375,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "3",
+                "anchor": "top-right",
+                "x": 1012,
+                "y": 375,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 4,
+            "timestampSeconds": 9,
+            "x": 8,
+            "y": 660,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "09",
+                "anchor": "top-left",
+                "x": 12,
+                "y": 664,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "4",
+                "anchor": "top-right",
+                "x": 504,
+                "y": 664,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 5,
+            "timestampSeconds": 10,
+            "x": 516,
+            "y": 660,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "10",
+                "anchor": "top-left",
+                "x": 520,
+                "y": 664,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "5",
+                "anchor": "top-right",
+                "x": 1012,
+                "y": 664,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          }
+        ],
+        "transcript": {
+          "startSeconds": 5,
+          "endSeconds": 10.5,
+          "fileName": "grid_0001.vtt"
+        }
+      },
+      {
+        "sheetIndex": 1,
+        "fileName": "grid_0002.jpg",
+        "cells": [
+          {
+            "frameIndex": 6,
+            "timestampSeconds": 11,
+            "x": 8,
+            "y": 82,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "11",
+                "anchor": "top-left",
+                "x": 12,
+                "y": 86,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "6",
+                "anchor": "top-right",
+                "x": 504,
+                "y": 86,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 7,
+            "timestampSeconds": 12,
+            "x": 516,
+            "y": 82,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "12",
+                "anchor": "top-left",
+                "x": 520,
+                "y": 86,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "7",
+                "anchor": "top-right",
+                "x": 1012,
+                "y": 86,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 8,
+            "timestampSeconds": 13,
+            "x": 8,
+            "y": 371,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "13",
+                "anchor": "top-left",
+                "x": 12,
+                "y": 375,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "8",
+                "anchor": "top-right",
+                "x": 504,
+                "y": 375,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 9,
+            "timestampSeconds": 14,
+            "x": 516,
+            "y": 371,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "14",
+                "anchor": "top-left",
+                "x": 520,
+                "y": 375,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "9",
+                "anchor": "top-right",
+                "x": 1012,
+                "y": 375,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 10,
+            "timestampSeconds": 15,
+            "x": 8,
+            "y": 660,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "15",
+                "anchor": "top-left",
+                "x": 12,
+                "y": 664,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "10",
+                "anchor": "top-right",
+                "x": 504,
+                "y": 664,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 11,
+            "timestampSeconds": 16,
+            "x": 516,
+            "y": 660,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "16",
+                "anchor": "top-left",
+                "x": 520,
+                "y": 664,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "11",
+                "anchor": "top-right",
+                "x": 1012,
+                "y": 664,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          }
+        ],
+        "transcript": {
+          "startSeconds": 10.5,
+          "endSeconds": 16.5,
+          "fileName": "grid_0002.vtt"
+        }
+      },
+      {
+        "sheetIndex": 2,
+        "fileName": "grid_0003.jpg",
+        "cells": [
+          {
+            "frameIndex": 12,
+            "timestampSeconds": 17,
+            "x": 8,
+            "y": 82,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "17",
+                "anchor": "top-left",
+                "x": 12,
+                "y": 86,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "12",
+                "anchor": "top-right",
+                "x": 504,
+                "y": 86,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 13,
+            "timestampSeconds": 18,
+            "x": 516,
+            "y": 82,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "18",
+                "anchor": "top-left",
+                "x": 520,
+                "y": 86,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "13",
+                "anchor": "top-right",
+                "x": 1012,
+                "y": 86,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 14,
+            "timestampSeconds": 19,
+            "x": 8,
+            "y": 371,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "19",
+                "anchor": "top-left",
+                "x": 12,
+                "y": 375,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "14",
+                "anchor": "top-right",
+                "x": 504,
+                "y": 375,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 15,
+            "timestampSeconds": 20,
+            "x": 516,
+            "y": 371,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "20",
+                "anchor": "top-left",
+                "x": 520,
+                "y": 375,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "15",
+                "anchor": "top-right",
+                "x": 1012,
+                "y": 375,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 16,
+            "timestampSeconds": 21,
+            "x": 8,
+            "y": 660,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "21",
+                "anchor": "top-left",
+                "x": 12,
+                "y": 664,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "16",
+                "anchor": "top-right",
+                "x": 504,
+                "y": 664,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 17,
+            "timestampSeconds": 22,
+            "x": 516,
+            "y": 660,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "22",
+                "anchor": "top-left",
+                "x": 520,
+                "y": 664,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "17",
+                "anchor": "top-right",
+                "x": 1012,
+                "y": 664,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          }
+        ],
+        "transcript": {
+          "startSeconds": 16.5,
+          "endSeconds": 22.5,
+          "fileName": "grid_0003.vtt"
+        }
+      },
+      {
+        "sheetIndex": 3,
+        "fileName": "grid_0004.jpg",
+        "cells": [
+          {
+            "frameIndex": 18,
+            "timestampSeconds": 23,
+            "x": 8,
+            "y": 82,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "23",
+                "anchor": "top-left",
+                "x": 12,
+                "y": 86,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "18",
+                "anchor": "top-right",
+                "x": 504,
+                "y": 86,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 19,
+            "timestampSeconds": 24,
+            "x": 516,
+            "y": 82,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "24",
+                "anchor": "top-left",
+                "x": 520,
+                "y": 86,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "19",
+                "anchor": "top-right",
+                "x": 1012,
+                "y": 86,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 20,
+            "timestampSeconds": 25,
+            "x": 8,
+            "y": 371,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "25",
+                "anchor": "top-left",
+                "x": 12,
+                "y": 375,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "20",
+                "anchor": "top-right",
+                "x": 504,
+                "y": 375,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 21,
+            "timestampSeconds": 26,
+            "x": 516,
+            "y": 371,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "26",
+                "anchor": "top-left",
+                "x": 520,
+                "y": 375,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "21",
+                "anchor": "top-right",
+                "x": 1012,
+                "y": 375,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 22,
+            "timestampSeconds": 27,
+            "x": 8,
+            "y": 660,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "27",
+                "anchor": "top-left",
+                "x": 12,
+                "y": 664,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "22",
+                "anchor": "top-right",
+                "x": 504,
+                "y": 664,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 23,
+            "timestampSeconds": 28,
+            "x": 516,
+            "y": 660,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "28",
+                "anchor": "top-left",
+                "x": 520,
+                "y": 664,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "23",
+                "anchor": "top-right",
+                "x": 1012,
+                "y": 664,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          }
+        ],
+        "transcript": {
+          "startSeconds": 22.5,
+          "endSeconds": 28.5,
+          "fileName": "grid_0004.vtt"
+        }
+      },
+      {
+        "sheetIndex": 4,
+        "fileName": "grid_0005.jpg",
+        "cells": [
+          {
+            "frameIndex": 24,
+            "timestampSeconds": 29,
+            "x": 8,
+            "y": 82,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "29",
+                "anchor": "top-left",
+                "x": 12,
+                "y": 86,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "24",
+                "anchor": "top-right",
+                "x": 504,
+                "y": 86,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 25,
+            "timestampSeconds": 30,
+            "x": 516,
+            "y": 82,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "30",
+                "anchor": "top-left",
+                "x": 520,
+                "y": 86,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "25",
+                "anchor": "top-right",
+                "x": 1012,
+                "y": 86,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 26,
+            "timestampSeconds": 31,
+            "x": 8,
+            "y": 371,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "31",
+                "anchor": "top-left",
+                "x": 12,
+                "y": 375,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "26",
+                "anchor": "top-right",
+                "x": 504,
+                "y": 375,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 27,
+            "timestampSeconds": 32,
+            "x": 516,
+            "y": 371,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "32",
+                "anchor": "top-left",
+                "x": 520,
+                "y": 375,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "27",
+                "anchor": "top-right",
+                "x": 1012,
+                "y": 375,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 28,
+            "timestampSeconds": 33,
+            "x": 8,
+            "y": 660,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "33",
+                "anchor": "top-left",
+                "x": 12,
+                "y": 664,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "28",
+                "anchor": "top-right",
+                "x": 504,
+                "y": 664,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 29,
+            "timestampSeconds": 34,
+            "x": 516,
+            "y": 660,
+            "width": 500,
+            "height": 281,
+            "watermarks": [
+              {
+                "text": "34",
+                "anchor": "top-left",
+                "x": 520,
+                "y": 664,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "29",
+                "anchor": "top-right",
+                "x": 1012,
+                "y": 664,
+                "fontSizePx": 17,
+                "strokeWidthPx": 2
+              }
+            ]
+          }
+        ],
+        "transcript": {
+          "startSeconds": 28.5,
+          "endSeconds": 35,
+          "fileName": "grid_0005.vtt"
+        }
+      }
+    ]
+  }
+}

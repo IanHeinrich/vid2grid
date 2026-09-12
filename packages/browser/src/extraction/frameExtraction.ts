@@ -1,32 +1,21 @@
-import type { CapturedFrame, CollageRequest } from "@vid2grid/core";
-import { extractFrames, type CellSize, type ExtractionProgress } from "./extractor";
+import type { RenderPlan } from "@vid2grid/core";
+import { extractFrames, type ExtractionProgress } from "./extractor";
+import { looksLikeIsoBmff } from "./isoBmff";
 
-/**
- * Picks the fastest available frame-extraction strategy.
- */
+/** Captures the plan's frames with the fastest strategy this browser and file allow. */
 export async function extractFramesAuto(
   file: File,
-  config: CollageRequest,
-  cell: CellSize,
-  keyframeSampling: boolean,
+  plan: RenderPlan,
   onProgress?: ExtractionProgress,
-): Promise<CapturedFrame<ImageBitmap>[]> {
-  if (typeof VideoDecoder !== "undefined") {
+): Promise<ImageBitmap[]> {
+  if (typeof VideoDecoder !== "undefined" && looksLikeIsoBmff(file)) {
     try {
-      const { looksLikeIsoBmff, extractFramesWebCodecs } = await import("./webcodecsExtractor");
-      if (looksLikeIsoBmff(file)) {
-        const frames = await extractFramesWebCodecs(
-          file,
-          config,
-          cell,
-          onProgress,
-          keyframeSampling,
-        );
-        if (frames) return frames;
-      }
+      const { extractFramesWebCodecs } = await import("./webcodecsExtractor");
+      const images = await extractFramesWebCodecs(file, plan, onProgress);
+      if (images) return images;
     } catch {
       // Falls through to the seek-based extractor below.
     }
   }
-  return extractFrames(file, config, cell, onProgress);
+  return extractFrames(file, plan, onProgress);
 }

@@ -1,32 +1,46 @@
 import type { VideoInfo } from "@vid2grid/core";
 import { waitForEvent } from "./extraction/extractor";
+import { looksLikeIsoBmff } from "./extraction/isoBmff";
 
 /**
- * Reads a video's duration and display dimensions from a `<video>` element's
- * metadata, which is cheap and works for every format the browser can play.
+ * Duration and display dimensions come from a `<video>` element's metadata,
+ * which is cheap and works for every format the browser can play; keyframe
+ * times need the ISO-BMFF demuxer and are left out when it can't read the file.
+ * mp4box is imported lazily so it stays out of the host's main bundle.
  */
 export async function probeVideo(file: File): Promise<VideoInfo> {
   const video = document.createElement("video");
   video.preload = "metadata";
   const url = URL.createObjectURL(file);
   video.src = url;
+  let durationSeconds: number;
+  let width: number;
+  let height: number;
   try {
     await waitForEvent(video, "loadedmetadata");
-    return {
-      durationSeconds: video.duration || 0,
-      width: video.videoWidth,
-      height: video.videoHeight,
-    };
+    durationSeconds = video.duration || 0;
+    width = video.videoWidth;
+    height = video.videoHeight;
   } finally {
     URL.revokeObjectURL(url);
   }
+
+  const keyframeTimestampsSeconds = await readKeyframeTimestampsIfAvailable(file);
+  return {
+    durationSeconds,
+    width,
+    height,
+    ...(keyframeTimestampsSeconds ? { keyframeTimestampsSeconds } : {}),
+  };
 }
 
-/**
- * Counts the ISO-BMFF keyframes inside a time range, or `null` when the file
- * isn't demuxable (keyframe fast mode is then unavailable). mp4box is loaded
- * lazily so it stays out of the host's main bundle.
- */
+async function readKeyframeTimestampsIfAvailable(file: File): Promise<number[] | null> {
+  if (typeof VideoDecoder === "undefined" || !looksLikeIsoBmff(file)) return null;
+  const { readKeyframeTimestamps } = await import("./extraction/webcodecsExtractor");
+  return readKeyframeTimestamps(file);
+}
+
+/** The keyframe count the planning UI shows for the selected range, or `null` when unreadable. */
 export async function countKeyframesInRange(
   file: File,
   startTime: number,

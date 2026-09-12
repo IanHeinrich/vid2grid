@@ -1,11 +1,7 @@
-/**
- * The 2D drawing surface `paintCollageSheet` needs, declared structurally so
- * core never names a DOM type: a browser `CanvasRenderingContext2D` and a
- * worker `OffscreenCanvasRenderingContext2D` both satisfy it as-is.
- *
- * `fillStyle`/`strokeStyle` are `unknown` because the DOM lib's
- * colour-or-gradient-or-pattern union is not assignable to `string`.
- */
+// Declared structurally so core never names a DOM type: a browser
+// CanvasRenderingContext2D and a worker OffscreenCanvasRenderingContext2D both
+// satisfy it as-is. fillStyle/strokeStyle are unknown because the DOM lib's
+// colour-or-gradient-or-pattern union is not assignable to string.
 export interface SheetContext2D<TImage> {
   fillStyle: unknown;
   strokeStyle: unknown;

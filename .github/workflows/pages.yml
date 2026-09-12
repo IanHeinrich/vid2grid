@@ -5,6 +5,8 @@ on:
     paths:
       - "web/**"
       - "packages/**"
+      - "fixtures/**"
+      - "scripts/**"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/pages.yml"
@@ -36,6 +38,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run typecheck
+      - run: npm run fixtures
+      - run: git diff --exit-code fixtures/
 
   check-version:
     needs: test

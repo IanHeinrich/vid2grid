@@ -23,7 +23,10 @@ single pair of hands. Each line names where the full rule lives.
   `package.json`, root `package-lock.json`, `.prettierignore`,
   `.prettierrc.json`, `packages/core/package.json`,
   `packages/core/src/index.ts`, `packages/core/src/pipeline/ports.ts`,
-  `packages/browser/package.json` and `packages/browser/src/index.ts`.
+  `packages/browser/package.json`, `packages/browser/src/index.ts`,
+  `packages/core/src/plan/renderPlan.ts` (the contract types),
+  `scripts/generateRenderPlanFixtures.ts` and `fixtures/render-plans/**`
+  (generated: one worker regenerates them, via `npm run fixtures`).
   Route edits to those through the orchestrator.
 - **Checks a worker runs, and checks it must not.** A worker runs only its own
   targeted tests: `npx vitest run tests/<module>.test.ts` from the owning

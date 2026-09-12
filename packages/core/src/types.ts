@@ -7,29 +7,49 @@ export interface VideoInfo {
   keyframeTimestampsSeconds?: number[];
 }
 
-export interface CollageRequest {
-  startTime: number;
-  endTime: number;
+// Flat sampling fields rather than a discriminated union: targetFps still
+// decides the burned-in timestamp's precision in keyframe mode, where it plays
+// no part in choosing the frames.
+export interface CollagePlanRequest {
+  startSeconds: number;
+  endSeconds: number;
+  targetFps: number;
+  /** Sampled mode: exactly this many frames, evenly spaced across the range. */
+  frameCount?: number;
+  /** Capture the source's own keyframes instead of sampling by time. */
+  keyframeSampling?: boolean;
+  /** Keyframe mode: thin the keyframes out evenly to at most this many. */
+  maxKeyframes?: number;
   framesPerGrid: number;
   outputResolution: number;
-  targetFps: number;
   jpegQuality: number;
+  transcript?: { scope: "per-sheet" | "combined" };
 }
 
-export function validateCollageRequest(config: CollageRequest): void {
-  if (config.endTime <= config.startTime) {
+export function validateCollagePlanRequest(request: CollagePlanRequest): void {
+  if (request.endSeconds <= request.startSeconds) {
     throw new Error("end_time must be greater than start_time");
   }
-  if (config.targetFps <= 0) {
+  if (request.targetFps <= 0) {
     throw new Error("target_fps must be positive");
   }
-  if (config.framesPerGrid <= 0) {
+  if (request.framesPerGrid <= 0) {
     throw new Error("frames_per_grid must be positive");
   }
-  if (config.outputResolution <= 0) {
+  if (request.outputResolution <= 0) {
     throw new Error("output_resolution must be positive");
   }
-  if (config.jpegQuality < 1 || config.jpegQuality > 100) {
+  if (request.jpegQuality < 1 || request.jpegQuality > 100) {
     throw new Error("jpeg_quality must be between 1 and 100");
   }
+  if (request.frameCount !== undefined && !isPositiveInteger(request.frameCount)) {
+    throw new Error("frame_count must be a positive integer");
+  }
+  if (request.maxKeyframes !== undefined && !isPositiveInteger(request.maxKeyframes)) {
+    throw new Error("max_keyframes must be a positive integer");
+  }
+}
+
+function isPositiveInteger(value: number): boolean {
+  return Number.isInteger(value) && value > 0;
 }

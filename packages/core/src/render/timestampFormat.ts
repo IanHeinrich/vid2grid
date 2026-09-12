@@ -7,6 +7,22 @@ export interface TimestampFormat {
   showMilliseconds: boolean;
 }
 
+// Decided once per batch from its last timestamp, so components stay consistent
+// across every sheet instead of flipping mid-batch. No frames means no text.
+export function chooseTimestampFormat(
+  lastTimestampSeconds: number | undefined,
+  targetFps: number,
+): TimestampFormat {
+  if (lastTimestampSeconds === undefined) {
+    return { showHours: false, showMinutes: false, showMilliseconds: false };
+  }
+  return {
+    showHours: lastTimestampSeconds >= 3600,
+    showMinutes: lastTimestampSeconds >= 60,
+    showMilliseconds: targetFps > 1,
+  };
+}
+
 export function formatTimestamp(seconds: number, format: TimestampFormat): string {
   const totalMs = Math.round(seconds * 1000);
   const hours = Math.floor(totalMs / 3_600_000);

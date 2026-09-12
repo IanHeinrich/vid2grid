@@ -104,7 +104,12 @@ See [packages/](packages/) and [web/](web/) for the full source:
 2. [packages/core/src/grid/gridMaths.ts](packages/core/src/grid/gridMaths.ts) computes the optimal
    `(rows, cols, cell size)` layout once per batch, from the requested frames
    per collage and the source frame's aspect ratio.
-3. [packages/core/src/render/paintCollageSheet.ts](packages/core/src/render/paintCollageSheet.ts) draws each sampled frame into
+   [packages/core/src/plan/buildRenderPlan.ts](packages/core/src/plan/buildRenderPlan.ts) turns
+   that plus the settings into a **RenderPlan** - the language-neutral JSON
+   contract of capture timestamps, cell placement, watermark strings and file
+   names that every step below follows, specified in
+   [docs/render-plan.md](docs/render-plan.md).
+3. [packages/core/src/render/paintSheetFromPlan.ts](packages/core/src/render/paintSheetFromPlan.ts) draws each sampled frame into
    its final cell position on a collage sheet, watermarks it with its
    timestamp/frame index, and fills any left-over cells with black.
    [packages/browser/src/rendering/sheetRenderer.ts](packages/browser/src/rendering/sheetRenderer.ts) parallelises this
@@ -174,6 +179,7 @@ npm ci
 | `npm run build`                   | Type-check, then produce a production build in `web/dist`.                                                       |
 | `npm run preview --workspace web` | Serve the `web/dist` production build locally.                                                                   |
 | `npm run format`                  | Format the repo with Prettier.                                                                                   |
+| `npm run fixtures`                | Regenerate `fixtures/render-plans/` from the planner (required by any planner change).                           |
 
 There's no lint step. `npm run typecheck` (which `npm run build` runs first)
 is the type-check gate, `npm test` is the correctness gate, and `npm run

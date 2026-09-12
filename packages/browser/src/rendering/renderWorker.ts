@@ -1,15 +1,9 @@
-/**
- * Off-main-thread collage renderer + JPEG encoder.
- *
- * Receives one fully-described collage sheet (frames already decoded to
- * transferable `ImageBitmap`s), paints it onto an `OffscreenCanvas`, and encodes
- * it to a JPEG `Blob` so the render/encode phase runs in parallel across a
- * pool of these workers instead of blocking the UI thread.
- */
-import { paintCollageSheet, type CollageSheetInput } from "@vid2grid/core";
+import { paintSheetFromPlan, type PlannedSheet, type RenderPlan } from "@vid2grid/core";
 
 export interface RenderSheetRequest {
-  input: CollageSheetInput<ImageBitmap>;
+  plan: RenderPlan;
+  sheet: PlannedSheet;
+  images: (ImageBitmap | undefined)[];
   jpegQuality: number;
 }
 
@@ -28,16 +22,16 @@ interface RenderWorkerScope {
 const scope = self as unknown as RenderWorkerScope;
 
 scope.onmessage = async (event) => {
-  const { input, jpegQuality } = event.data;
+  const { plan, sheet, images, jpegQuality } = event.data;
   try {
-    const canvas = new OffscreenCanvas(input.outputResolution, input.outputResolution);
+    const canvas = new OffscreenCanvas(plan.canvas.width, plan.canvas.height);
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("OffscreenCanvas 2D context unavailable");
 
-    paintCollageSheet(ctx, input);
+    paintSheetFromPlan(ctx, plan, sheet, images);
     const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: jpegQuality / 100 });
 
-    for (const image of input.images) image.close();
+    for (const image of images) image?.close();
     scope.postMessage({ blob });
   } catch (err) {
     scope.postMessage({ error: (err as Error).message });
