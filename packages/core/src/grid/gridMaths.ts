@@ -1,3 +1,5 @@
+export const GUTTER_PX = 8;
+
 export interface GridLayout {
   cols: number;
   rows: number;

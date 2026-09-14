@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { GUTTER_PX } from "@vid2grid/core";
 import {
   countBlankCells,
   countGridPackingBlanks,
@@ -8,7 +9,6 @@ import {
 } from "../src/grid/frameSuggestions";
 
 const OUTPUT_RESOLUTION = 1024;
-const GUTTER_PX = 8;
 const PORTRAIT_ASPECT = 9 / 16;
 const SQUARE_ASPECT = 1;
 

@@ -1,6 +1,6 @@
 import { els } from "../dom";
 import { state } from "../state";
-import { GUTTER_PX } from "../rendering/renderer";
+import { GUTTER_PX } from "@vid2grid/core";
 import {
   countGridPackingBlanks,
   estimateExtractedFrameCount,

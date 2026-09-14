@@ -1,5 +1,5 @@
 import type { CollageRequest } from "../types";
-import type { GridLayout } from "../grid/gridMaths";
+import type { GridLayout } from "@vid2grid/core";
 
 export interface ExtractedFrame {
   timestamp: number;

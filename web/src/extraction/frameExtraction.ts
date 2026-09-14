@@ -1,6 +1,6 @@
 import type { CollageRequest } from "../types";
 import { extractFrames, type ExtractedFrame, type ExtractionProgress } from "./extractor";
-import type { GridLayout } from "../grid/gridMaths";
+import type { GridLayout } from "@vid2grid/core";
 
 /**
  * Picks the fastest available frame-extraction strategy.

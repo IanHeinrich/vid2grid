@@ -5,8 +5,8 @@ import {
   type ExtractionProgress,
 } from "./extraction/extractor";
 import { extractFramesAuto } from "./extraction/frameExtraction";
-import { computeOptimalGrid, type GridLayout } from "./grid/gridMaths";
-import { GUTTER_PX, type CollageSheetInput, type TimestampFormat } from "./rendering/renderer";
+import { computeOptimalGrid, GUTTER_PX, type GridLayout } from "@vid2grid/core";
+import type { CollageSheetInput, TimestampFormat } from "./rendering/renderer";
 import { renderSheetsToBlobs } from "./rendering/sheetRenderer";
 import { decodeAudioForTranscription } from "./extraction/audioExtraction";
 import {

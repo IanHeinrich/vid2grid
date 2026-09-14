@@ -24,8 +24,8 @@ The grid packing adapts to the source video's aspect ratio: landscape and
 portrait clips each get a layout that maximises every frame's size within the
 square sheet:
 
-| Vertical (portrait) source | Horizontal (landscape) source |
-| :---: | :---: |
+|                                             Vertical (portrait) source                                             |                                          Horizontal (landscape) source                                          |
+| :----------------------------------------------------------------------------------------------------------------: | :-------------------------------------------------------------------------------------------------------------: |
 | <img src="docs/images/ui-horizontal-video.png" alt="vid2grid generating grids from a landscape video" width="460"> | <img src="docs/images/ui-vertical-video.png" alt="vid2grid generating grids from a portrait video" width="460"> |
 
 Click any collage in the gallery to view it full-size, with a timestamp and
@@ -34,8 +34,8 @@ when exact timestamps don't matter), **Keyframe fast mode** decodes only the
 video's keyframes instead of sampling by Target FPS. The sidebar shows the
 real frame/grid count and suggestions update live as you toggle it:
 
-| Collage sheet | Keyframe fast mode |
-| :---: | :---: |
+|                                                      Collage sheet                                                      |                                                                        Keyframe fast mode                                                                         |
+| :---------------------------------------------------------------------------------------------------------------------: | :---------------------------------------------------------------------------------------------------------------------------------------------------------------: |
 | <img src="docs/images/example-grid.png" alt="A single collage sheet with per-frame timestamps and indices" width="380"> | <img src="docs/images/keyframe-fast-mode.png" alt="The Keyframe fast mode toggle enabled in the sidebar, showing the resulting frame and grid count" width="380"> |
 
 ## What it does
@@ -101,7 +101,7 @@ See [web/](web/) for the full source:
    in-memory `<video>` element to a fixed time-step between the requested
    start/end time and draws each sampled frame to an offscreen `<canvas>`.
    Either way, frames are captured directly at their final collage cell size.
-2. [web/src/grid/gridMaths.ts](web/src/grid/gridMaths.ts) computes the optimal
+2. [packages/core/src/grid/gridMaths.ts](packages/core/src/grid/gridMaths.ts) computes the optimal
    `(rows, cols, cell size)` layout once per batch, from the requested frames
    per collage and the source frame's aspect ratio.
 3. [web/src/rendering/renderer.ts](web/src/rendering/renderer.ts) draws each sampled frame into
@@ -152,34 +152,36 @@ See [web/](web/) for the full source:
 
 ## Development
 
-`web/` is the only app in this repo (a plain Vite + TypeScript project, no
-framework). All commands below are run from that directory.
+This repo is an npm workspaces monorepo: `packages/core` holds the DOM-free
+pure logic, and `web/` (a plain Vite + TypeScript project, no framework) is
+the app that uses it. All commands below are run from the repo root.
 
 ```bash
 git clone https://github.com/IanHeinrich/vid2grid.git
-cd vid2grid/web
-npm install
+cd vid2grid
+npm ci
 ```
 
-| Command | Description |
-| --- | --- |
-| `npm run dev` | Start the Vite dev server with hot reload. |
-| `npm test` | Run the vitest suite (jsdom + vitest-canvas-mock; see [web/tests](web/tests)). |
-| `npm run build` | Type-check (`tsc -b`) and produce a production build in `web/dist`. |
-| `npm run preview` | Serve the `web/dist` production build locally. |
-| `npm run format` | Format `web/` with Prettier. |
+| Command                           | Description                                                                                                      |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`                     | Start the Vite dev server with hot reload.                                                                       |
+| `npm test`                        | Run the vitest suite across every workspace (jsdom + vitest-canvas-mock for `web/`; see [web/tests](web/tests)). |
+| `npm run typecheck`               | Type-check every package (`tsc -b`).                                                                             |
+| `npm run build`                   | Type-check, then produce a production build in `web/dist`.                                                       |
+| `npm run preview --workspace web` | Serve the `web/dist` production build locally.                                                                   |
+| `npm run format`                  | Format the repo with Prettier.                                                                                   |
 
-There's no lint step. `npm run build`'s `tsc -b` is the type-check gate,
-`npm test` is the correctness gate, and `npm run format` is the format step.
-All three should be clean before opening a PR.
+There's no lint step. `npm run typecheck` (which `npm run build` runs first)
+is the type-check gate, `npm test` is the correctness gate, and `npm run
+format` is the format step. All three should be clean before opening a PR.
 
 The [pages.yml](.github/workflows/pages.yml) workflow runs `npm test` on
-every push/PR touching `web/**`. On `main`, if `web/package.json`'s `version`
-has changed to a value with no existing `vX.Y.Z` git tag, it also tags the
-release, publishes a GitHub Release, and deploys `web/dist` to GitHub Pages.
+every push/PR touching the workspaces. On `main`, if `web/package.json`'s
+`version` has changed to a value with no existing `vX.Y.Z` git tag, it also
+tags the release, publishes a GitHub Release, and deploys `web/dist` to
+GitHub Pages.
 
 ## Contributing
 
 Contributions are welcome: bug reports, feature ideas, and PRs. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and merge requirements.
-
