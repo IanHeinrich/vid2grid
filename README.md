@@ -3,9 +3,18 @@
   <a href="https://github.com/IanHeinrich/vid2grid/actions/workflows/pages.yml"><img src="https://github.com/IanHeinrich/vid2grid/actions/workflows/pages.yml/badge.svg" alt="Deploy to GitHub Pages"></a>
 </p>
 
-Parse a video into a grid of frames, optimising the layout of each frame into one or more grid image files, with timestamps and order. Customise the number of frames per grid, output resolution of final images and more.
+vid2grid turns a video into **collage sheets**: square grid images that pack
+many timestamped frames into one JPEG file. They are sized for feeding into AI
+vision models (OpenAI, Gemini, Claude, Grok, Venice.ai) instead of uploading
+hundreds of separate frames. Every cell carries its timestamp and frame index,
+and the grid layout is chosen to make each frame as large as the sheet allows.
 
-Runs entirely in your browser, your video is never uploaded anywhere.
+Three ways to use it. The hosted browser app does the whole job client-side, so
+your video is never uploaded. The Python package
+(`pip install "git+https://github.com/IanHeinrich/vid2grid#subdirectory=python"`)
+does it headlessly with PyAV and Pillow, no browser involved. For anything else,
+the `RenderPlan` contract is the JSON both of those follow, and a new host
+implements only the decoding and painting.
 
 ### [ianheinrich.github.io/vid2grid](https://ianheinrich.github.io/vid2grid/)
 
@@ -40,15 +49,26 @@ real frame/grid count and suggestions update live as you toggle it:
 
 ## What it does
 
-vid2grid turns a video into one or more **collage sheets**: square grid images
-that pack many timestamped frames into a single file, sized and shaped for
-feeding into AI vision models (OpenAI, Gemini, Claude, Grok, Venice.ai, etc.)
-instead of uploading hundreds of individual frames.
+The grid geometry and the burned-in text are decided once, by the planner, and
+every host follows that plan. What differs is how each host decodes video, what
+it can add on top, and where the sheets end up.
+
+| Host           | Frame sampling by FPS                     | Keyframe fast mode | Watermarks and layout                     | Transcripts                                      | Output                                                 |
+| -------------- | ----------------------------------------- | ------------------ | ----------------------------------------- | ------------------------------------------------ | ------------------------------------------------------ |
+| Browser app    | Yes, over a start/end range               | Yes                | From the plan                             | In-browser Whisper, WebVTT per sheet or combined | JPEG sheets in a gallery, downloaded as a `.zip`       |
+| Python package | Yes, or an exact frame count onto a sheet | Yes                | From the same plan: same cells, same text | None                                             | JPEG files on disk                                     |
+| Other hosts    | From the plan                             | From the plan      | From the plan                             | Yours to add                                     | Yours: implement decode, scale, paste, text and encode |
+
+The contract each column follows is specified in
+[docs/render-plan.md](docs/render-plan.md).
+
+The browser app in detail:
 
 - **Drag-and-drop + preview**: drop a video onto the sidebar (or click to
   browse), then set the start/end time range with a dual-handle timeline
   slider (or the number inputs). Grabbing a handle pops up a floating preview
-  that follows it and shows the exact frame — no guessing seconds.
+  that follows it and shows the exact frame, so you are not guessing at
+  seconds.
 - **Time & rate control**: pick a start/end time range and a target sampling
   rate (frames per second).
 - **Optimal grid packing**: for a given "frames per grid" count and output
@@ -86,19 +106,39 @@ instead of uploading hundreds of individual frames.
 
 ## Architecture
 
-Three layers:
+Three layers.
 
-1. **The `RenderPlan` contract** — plain JSON from
-   [packages/core/src/plan/buildRenderPlan.ts](packages/core/src/plan/buildRenderPlan.ts):
-   exact capture timestamps, cell placement, watermark strings, file names.
-   Spec: [docs/render-plan.md](docs/render-plan.md).
-2. **`packages/core`** — DOM-free pure logic: grid layout, the planner, and
-   `paintSheetFromPlan` for drawing a plan onto any host's canvas. Drives the
-   pipeline through host-agnostic ports.
-3. **Per-host executors** implement those ports and only decode, scale,
+1. **The `RenderPlan` contract**: plain JSON from
+   [packages/core/src/plan/buildRenderPlan.ts](packages/core/src/plan/buildRenderPlan.ts),
+   holding the exact capture timestamps, cell placement, watermark strings and
+   file names. Spec: [docs/render-plan.md](docs/render-plan.md).
+2. **`packages/core`**: DOM-free pure logic. Grid layout, the planner, and
+   `paintSheetFromPlan` for drawing a plan onto any host's canvas. It drives
+   the pipeline through host-agnostic ports.
+3. **Per-host executors** implement those ports. They only decode, scale,
    paste, draw text and encode: `packages/browser` for this app, and the
-   [Python package](python/) headlessly. Sheets from different hosts match in
-   geometry and text, never in bytes.
+   [Python package](python/) for headless use.
+
+```mermaid
+flowchart TD
+    REQ["CollagePlanRequest"] --> PLANNER["buildRenderPlan"]
+    INFO["Probed VideoInfo"] --> PLANNER
+    PLANNER --> PLAN["RenderPlan JSON"]
+    PLAN --> BROWSER["Browser executor: WebCodecs, canvas, workers"]
+    PLAN --> PYTHON["Python executor: PyAV, Pillow"]
+    PLAN --> OTHER["Any other host"]
+    BROWSER --> SHEETS["Collage sheets"]
+    PYTHON --> SHEETS
+    OTHER --> SHEETS
+```
+
+Sheets from different hosts match in geometry and burned-in text, never in
+bytes: a canvas and Pillow rasterise the same string differently. The ten
+golden plans in [fixtures/render-plans/](fixtures/render-plans/) are what keeps
+the TypeScript and Python planners identical. Both
+`packages/core/tests/renderPlanFixtures.test.ts` and
+`python/tests/test_planner.py` are pinned to them, so a planner change that
+moves one language and not the other fails CI.
 
 <details>
 <summary>Click to expand the browser pipeline.</summary>
@@ -119,7 +159,7 @@ See [packages/](packages/) and [web/](web/) for the full source:
    `(rows, cols, cell size)` layout once per batch, from the requested frames
    per collage and the source frame's aspect ratio.
    [packages/core/src/plan/buildRenderPlan.ts](packages/core/src/plan/buildRenderPlan.ts) turns
-   that plus the settings into a **RenderPlan** - the language-neutral JSON
+   that plus the settings into a **RenderPlan**, the language-neutral JSON
    contract of capture timestamps, cell placement, watermark strings and file
    names that every step below follows, specified in
    [docs/render-plan.md](docs/render-plan.md).
@@ -171,6 +211,14 @@ print(result.to_sheet_row())
 Same `RenderPlan` contract as the browser app, no transcription. See
 [python/README.md](python/README.md) for the full API.
 
+### From another language or service
+
+Write your own executor. Build the plan (or accept one built elsewhere), then
+decode, scale, paste, draw text and encode as the plan says.
+[docs/render-plan.md](docs/render-plan.md) is the spec, and the golden plans in
+[fixtures/render-plans/](fixtures/render-plans/) are test inputs you can pin a
+new planner port to.
+
 <details>
 <summary>Known limitations</summary>
 
@@ -185,6 +233,9 @@ Same `RenderPlan` contract as the browser app, no transcription. See
   and is noticeably slower without WebGPU. Per-sheet transcripts are a
   best-effort split of the recognized speech by frame time window and may
   divide a sentence across two sheets.
+- The Python package does no transcription at all. It normalises rotation from
+  a container's display-matrix or `rotate` metadata, but that path is only
+  covered by synthetic tests, not by rotated sample files.
 
 </details>
 
@@ -193,7 +244,7 @@ Same `RenderPlan` contract as the browser app, no transcription. See
 This repo is an npm workspaces monorepo: `packages/core` holds the DOM-free
 pure logic, `packages/browser` implements its ports with browser APIs, and
 `web/` (a plain Vite + TypeScript project, no framework) is the app that uses
-them. `python/` is a separate, non-npm package — see
+them. `python/` is a separate, non-npm package with its own toolchain; see
 [python/README.md](python/README.md). All commands below are run from the
 repo root.
 
@@ -217,7 +268,7 @@ There's no lint step. `npm run typecheck` (which `npm run build` runs first)
 is the type-check gate, `npm test` is the correctness gate, and `npm run
 format` is the format step. All three should be clean before opening a PR.
 
-`python/` has its own toolchain, run from that directory — see
+`python/` has its own toolchain, run from that directory. See
 [python/README.md](python/README.md) for the uv (or venv) commands.
 
 The [pages.yml](.github/workflows/pages.yml) workflow runs a `test` job (npm

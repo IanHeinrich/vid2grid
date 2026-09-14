@@ -1,6 +1,6 @@
 # Contributing to vid2grid
 
-Contributions are welcome — bug reports, feature ideas, and PRs.
+Contributions are welcome: bug reports, feature ideas, and PRs.
 
 This is an npm workspaces monorepo with four areas: [packages/core](packages/core)
 (DOM-free pure logic and the `RenderPlan` planner), [packages/browser](packages/browser)
@@ -15,16 +15,16 @@ headless Python executor, its own toolchain outside npm).
    over comments).
 3. Add or update tests for behavioral changes in that package's flat `tests/`
    directory (see [packages/core/tests](packages/core/tests) and
-   [web/tests](web/tests)) — then run `npm run format` and make sure `npm test`
+   [web/tests](web/tests)). Then run `npm run format` and make sure `npm test`
    and `npm run build` both pass locally (all from the repo root; `npm run build`
    runs `npm run typecheck` first).
 4. A change under `packages/core/src/plan/` (or a helper it uses) changes the
    `RenderPlan` contract, so it isn't done until the same PR also runs
    `npm run fixtures` to regenerate `fixtures/render-plans/` and updates the
-   matching planner logic in `python/src/vid2grid/planner.py` — see
+   matching planner logic in `python/src/vid2grid/planner.py`. See
    [docs/render-plan.md](docs/render-plan.md).
 5. Open a PR against `main`.
-6. **Don't bump `web/package.json`'s `version`** in your PR — that's reserved
+6. **Don't bump `web/package.json`'s `version`** in your PR. That's reserved
    for maintainers, since a version bump landing on `main` triggers an
    automatic tagged release + Pages deploy.
 
@@ -32,7 +32,7 @@ For larger changes, consider opening an issue first to discuss the approach.
 
 ## Contributing to the Python package
 
-Its toolchain lives outside npm and runs from [python](python) —
+Its toolchain lives outside npm and runs from [python](python).
 [python/README.md](python/README.md) has the commands; pytest and both ruff
 checks must be clean before opening a PR.
 `python/tests/test_planner.py` checks the planner against the same
@@ -41,7 +41,7 @@ change must keep both in sync (see step 4 above).
 
 ## Merge requirements
 
-`main` is a protected branch — nobody, including maintainers, can push to it
+`main` is a protected branch: nobody, including maintainers, can push to it
 directly. Every change lands via a pull request that must have:
 
 - A passing `test` CI check (runs `npm test` from the repo root, from

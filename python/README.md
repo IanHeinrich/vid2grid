@@ -2,7 +2,7 @@
 
 Turns a video into "collage sheets": grid JPEGs packing many timestamped frames
 into one image, sized for feeding into AI vision models. This is the headless
-executor of the same `RenderPlan` contract the browser app uses — the planner is
+executor of the same `RenderPlan` contract the browser app uses. The planner is
 a line-by-line port of `packages/core`, pinned to the repo's
 `fixtures/render-plans/` goldens. PyAV decodes, Pillow paints. No transcription.
 
@@ -28,10 +28,10 @@ request = CollageRequest(
 batch = render_sheets("clip.mp4", request, "sheets/")
 ```
 
-Sheets match the web app's geometry and burned-in text exactly — same cell
-rectangles, same timestamps, same `grid_0001.jpg` file names — but not its
-bytes: a canvas and Pillow measure and rasterise text differently, so never
-compare rendered pixels between the two executors.
+Sheets match the web app's geometry and burned-in text exactly: same cell
+rectangles, same timestamps, same `grid_0001.jpg` file names. They do not match
+its bytes, because a canvas and Pillow measure and rasterise text differently,
+so never compare rendered pixels between the two executors.
 
 Development, from this directory:
 
