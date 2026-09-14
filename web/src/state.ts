@@ -1,12 +1,12 @@
-import type { FramesPerGridSuggestion } from "./grid/frameSuggestions";
-import type { TranscriptFile } from "./core";
+import type { FramesPerGridSuggestion, GeneratedFile, VideoInfo } from "@vid2grid/core";
 
 export const state = {
   videoFile: null as File | null,
+  videoInfo: null as VideoInfo | null,
   videoDuration: 0,
   sourceAspect: 0,
-  jpegBlobs: [] as Blob[],
-  transcriptFiles: [] as TranscriptFile[],
+  sheets: [] as GeneratedFile<Blob>[],
+  transcriptFiles: [] as GeneratedFile<Blob>[],
   galleryUrls: [] as string[],
   previewUrl: null as string | null,
   cachedSuggestions: [] as FramesPerGridSuggestion[],

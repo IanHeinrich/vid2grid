@@ -1,10 +1,16 @@
 import "./style.css";
 import { els } from "./dom";
 import { state } from "./state";
-import { MODEL_RESOLUTION_PRESETS, CUSTOM_OPTION } from "./grid/modelProfiles";
-import { getVideoMetadata } from "./extraction/extractor";
-import { generateCollages, type GenerationPhase } from "./core";
-import { validateCollageRequest, type CollageRequest } from "./types";
+import {
+  CUSTOM_OPTION,
+  generateCollages,
+  MODEL_RESOLUTION_PRESETS,
+  validateCollageRequest,
+  type CollageRequest,
+  type GenerationPhase,
+  type VideoInfo,
+} from "@vid2grid/core";
+import { countKeyframesInRange, createBrowserPorts, probeVideo } from "@vid2grid/browser";
 import { updateFramePlanningUi } from "./ui/framePlanning";
 import { resetGallery, renderGallery, initLightbox } from "./ui/gallery";
 import {
@@ -101,6 +107,7 @@ async function handleFile(file: File | null): Promise<void> {
   setPreview(file);
   resetResults();
   if (!file) {
+    state.videoInfo = null;
     state.videoDuration = 0;
     state.sourceAspect = 0;
     els.generateButton.disabled = true;
@@ -110,21 +117,26 @@ async function handleFile(file: File | null): Promise<void> {
   }
 
   els.statusEl.textContent = "Reading video metadata...";
-  let metadata: { duration: number; width: number; height: number };
+  let videoInfo: VideoInfo;
   try {
-    metadata = await getVideoMetadata(file);
+    videoInfo = await probeVideo(file);
   } catch (err) {
     els.statusEl.textContent = `Failed to read video: ${(err as Error).message}`;
+    state.videoInfo = null;
+    state.videoDuration = 0;
+    state.sourceAspect = 0;
     els.generateButton.disabled = true;
     disableRangeSlider();
     setPreview(null);
+    updateFramePlanningUi();
     return;
   }
 
   els.statusEl.textContent = "";
-  state.videoDuration = metadata.duration;
-  state.sourceAspect = metadata.width / metadata.height;
-  const roundedDuration = Math.floor(metadata.duration * 10) / 10;
+  state.videoInfo = videoInfo;
+  state.videoDuration = videoInfo.durationSeconds;
+  state.sourceAspect = videoInfo.width / videoInfo.height;
+  const roundedDuration = Math.floor(videoInfo.durationSeconds * 10) / 10;
   const end = Math.max(roundedDuration, 0.1);
   els.startTimeInput.disabled = false;
   els.endTimeInput.disabled = false;
@@ -314,7 +326,6 @@ async function refreshKeyframeCount(): Promise<void> {
 
   let count: number | null = null;
   try {
-    const { countKeyframesInRange } = await import("./extraction/webcodecsExtractor");
     count = await countKeyframesInRange(file, start, end);
   } catch {
     count = null;
@@ -337,7 +348,6 @@ async function handleGenerateClicked(): Promise<void> {
   els.statusEl.textContent = "";
 
   const config: CollageRequest = {
-    videoFile: state.videoFile,
     startTime: Number(els.startTimeInput.value),
     endTime: Number(els.endTimeInput.value),
     targetFps: Number(els.targetFpsInput.value),
@@ -365,25 +375,30 @@ async function handleGenerateClicked(): Promise<void> {
   };
 
   try {
-    const { sheets, transcriptFiles } = await generateCollages(config, {
-      sourceAspect: state.sourceAspect || undefined,
-      keyframeSampling: els.keyframeModeInput.checked,
-      transcript: transcriptOn
-        ? { scope: els.transcriptCombinedInput.checked ? "combined" : "per-sheet" }
-        : undefined,
-      onProgress: (phase, done, total, transcribeStage) => {
-        setProgress(
-          phaseStarts[phase] + (done / total) * phaseWeights[phase],
-          progressLabel(phase, transcribeStage),
-        );
+    const { sheets, transcriptFiles } = await generateCollages(
+      state.videoFile,
+      config,
+      createBrowserPorts(),
+      {
+        videoInfo: state.videoInfo ?? undefined,
+        keyframeSampling: els.keyframeModeInput.checked,
+        transcript: transcriptOn
+          ? { scope: els.transcriptCombinedInput.checked ? "combined" : "per-sheet" }
+          : undefined,
+        onProgress: (phase, done, total, transcribeStage) => {
+          setProgress(
+            phaseStarts[phase] + (done / total) * phaseWeights[phase],
+            progressLabel(phase, transcribeStage),
+          );
+        },
+        onWarning: (message) => {
+          els.statusEl.textContent = message;
+        },
+        onTiming: (timings) => console.info("[vid2grid] timings", timings),
       },
-      onWarning: (message) => {
-        els.statusEl.textContent = message;
-      },
-      onTiming: (timings) => console.info("[vid2grid] timings", timings),
-    });
+    );
 
-    state.jpegBlobs = sheets;
+    state.sheets = sheets;
     state.transcriptFiles = transcriptFiles;
     renderGallery();
     els.saveToFolderButton.hidden = !isFolderSaveSupported();
@@ -396,7 +411,7 @@ async function handleGenerateClicked(): Promise<void> {
 }
 
 els.downloadAllButton.addEventListener("click", () => {
-  void downloadAllAsZip(state.jpegBlobs, state.transcriptFiles);
+  void downloadAllAsZip(state.sheets, state.transcriptFiles);
 });
 
 els.saveToFolderButton.addEventListener("click", () => {
@@ -406,8 +421,8 @@ els.saveToFolderButton.addEventListener("click", () => {
 async function handleSaveToFolderClicked(): Promise<void> {
   const folderName = buildGridsFolderName(state.videoFile?.name ?? "video");
   try {
-    await saveAllToFolder(state.jpegBlobs, folderName, state.transcriptFiles);
-    els.statusEl.textContent = `Saved ${state.jpegBlobs.length} image(s) to "${folderName}" inside the folder you chose.`;
+    await saveAllToFolder(state.sheets, folderName, state.transcriptFiles);
+    els.statusEl.textContent = `Saved ${state.sheets.length} image(s) to "${folderName}" inside the folder you chose.`;
   } catch (err) {
     const name = (err as DOMException).name;
     if (name === "AbortError") return;

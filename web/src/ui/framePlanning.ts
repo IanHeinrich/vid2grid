@@ -1,13 +1,13 @@
 import { els } from "../dom";
 import { state } from "../state";
-import { GUTTER_PX } from "@vid2grid/core";
 import {
   countGridPackingBlanks,
   estimateExtractedFrameCount,
   estimateSheetCount,
+  GUTTER_PX,
   suggestFramesPerGrid,
   type FramesPerGridSuggestion,
-} from "../grid/frameSuggestions";
+} from "@vid2grid/core";
 
 // Above this keyframe density (keyframes per second) the "fast" mode stops being
 // meaningfully faster and starts producing far more grids than the user expects,

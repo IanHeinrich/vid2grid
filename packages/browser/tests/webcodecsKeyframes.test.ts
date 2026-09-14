@@ -2,15 +2,10 @@ import { describe, expect, it } from "vitest";
 import { selectKeyframeIndices } from "../src/extraction/webcodecsExtractor";
 import type { Sample } from "mp4box";
 
-/**
- * selectKeyframeIndices is the keyframe-only fast path's pure core, and the only
- * part that can run under jsdom (VideoDecoder is unavailable), so it's covered
- * directly with fabricated sample tables. Times use a 30-tick/second timescale so
- * a sample's cts tick equals its frame index.
- */
+// jsdom has no VideoDecoder, so only this pure part of the fast path can be tested here.
+// The 30-tick timescale makes a sample's cts tick equal its frame index.
 const TIMESCALE = 30;
 
-// A constant-frame-rate sample table with a keyframe every `gopSize` frames.
 function fakeSamples(count: number, gopSize: number): Sample[] {
   return Array.from({ length: count }, (_, i) => ({
     is_sync: i % gopSize === 0,

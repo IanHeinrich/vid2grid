@@ -1,12 +1,6 @@
-/**
- * Suggests `framesPerGrid` values that make the best use of every full grid
- * sheet i.e. values where the packed rectangle
- *
- * This is distinct from, and deliberately ignores the trailing sheet's
- * leftover cells (when totalFrames isn't evenly divisible by framesPerGrid):
- * that last, partially-filled sheet is expected and not worth optimizing for.
- */
-import { computeOptimalGrid } from "@vid2grid/core";
+// The suggestions judge a full sheet's packing only: a partially-filled trailing sheet is
+// expected, so its leftover cells are deliberately ignored.
+import { computeOptimalGrid } from "./gridMaths";
 
 export function estimateExtractedFrameCount(
   startTime: number,

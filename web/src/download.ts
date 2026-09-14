@@ -1,18 +1,18 @@
 import JSZip from "jszip";
-import { gridFileName } from "./grid/gridFileName";
-import type { TranscriptFile } from "./core";
+import type { GeneratedFile } from "@vid2grid/core";
 
 export function isFolderSaveSupported(): boolean {
   return typeof window.showDirectoryPicker === "function";
 }
 
 export async function downloadAllAsZip(
-  blobs: Blob[],
-  transcriptFiles: TranscriptFile[] = [],
+  sheets: GeneratedFile<Blob>[],
+  transcriptFiles: GeneratedFile<Blob>[] = [],
 ): Promise<void> {
   const zip = new JSZip();
-  blobs.forEach((blob, i) => zip.file(gridFileName(i), blob));
-  transcriptFiles.forEach(({ name, blob }) => zip.file(name, blob));
+  for (const { name, data } of [...sheets, ...transcriptFiles]) {
+    zip.file(name, data);
+  }
   const zipBlob = await zip.generateAsync({ type: "blob" });
   const url = URL.createObjectURL(zipBlob);
   const anchor = document.createElement("a");
@@ -35,20 +35,17 @@ export function buildGridsFolderName(sourceFileName: string, now = new Date()): 
 }
 
 export async function saveAllToFolder(
-  blobs: Blob[],
+  sheets: GeneratedFile<Blob>[],
   folderName: string,
-  transcriptFiles: TranscriptFile[] = [],
+  transcriptFiles: GeneratedFile<Blob>[] = [],
 ): Promise<void> {
   if (!window.showDirectoryPicker) {
     throw new Error("This browser doesn't support saving directly to a folder.");
   }
   const parentHandle = await window.showDirectoryPicker({ mode: "readwrite" });
   const dirHandle = await parentHandle.getDirectoryHandle(folderName, { create: true });
-  for (const [i, blob] of blobs.entries()) {
-    await writeFile(dirHandle, gridFileName(i), blob);
-  }
-  for (const { name, blob } of transcriptFiles) {
-    await writeFile(dirHandle, name, blob);
+  for (const { name, data } of [...sheets, ...transcriptFiles]) {
+    await writeFile(dirHandle, name, data);
   }
 }
 

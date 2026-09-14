@@ -1,19 +1,19 @@
 {
-  "name": "vid2grid-web",
+  "name": "@vid2grid/browser",
+  "version": "0.1.0",
   "private": true,
-  "version": "1.2.0",
   "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc -b"
   },
   "dependencies": {
-    "@vid2grid/browser": "*",
+    "@huggingface/transformers": "^3.7.5",
     "@vid2grid/core": "*",
-    "jszip": "^3.10.1"
+    "mp4box": "^2.4.1"
   },
   "devDependencies": {
     "jsdom": "^25.0.1",

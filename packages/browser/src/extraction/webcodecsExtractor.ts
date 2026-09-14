@@ -1,17 +1,5 @@
-/**
- * Fast frame extraction via WebCodecs `VideoDecoder` + mp4box.js demuxing.
- *
- * The seek-based extractor (extractor.ts) re-decodes from the nearest keyframe
- * for every single sampled frame, which dominates processing time. This module
- * demuxes the ISO-BMFF container once, decodes the relevant sample range
- * sequentially, and picks off the frames closest to each wanted timestamp as
- * they stream out of the decoder - one continuous decode pass instead of one
- * seek-and-decode per frame.
- *
- * Returns `null` whenever the container/codec isn't supported (or anything
- * else goes wrong) so the caller can transparently fall back to the seek-based
- * extractor. Never assumes the input is decodable.
- */
+// One continuous decode pass, where extractor.ts re-decodes from a keyframe per sampled frame.
+// Every entry point returns `null` on an undecodable input so the caller can fall back to it.
 import {
   createFile,
   MP4BoxBuffer,
@@ -24,16 +12,13 @@ import {
   type Track,
   type VisualSampleEntry,
 } from "mp4box";
-import type { CollageRequest } from "../types";
-import type { GridLayout } from "@vid2grid/core";
-import type { ExtractedFrame, ExtractionProgress } from "./extractor";
+import type { CapturedFrame, CollageRequest } from "@vid2grid/core";
+import type { CellSize, ExtractionProgress } from "./extractor";
 
-// Generous upper bound on B-frame reorder depth: how many extra samples (in
-// decode order) past the last wanted timestamp we still feed the decoder, so
-// composition-order reordering doesn't cause us to cut off a wanted frame.
+// Generous upper bound on B-frame reorder depth: without the padding, composition-order
+// reordering could cut off a wanted frame at the end of the range.
 const REORDER_PADDING_SAMPLES = 16;
-// How many chunks may be queued in the decoder before we pause feeding it,
-// to bound memory use on long clips instead of queuing the whole video at once.
+// Bounds memory on long clips rather than queuing the whole video at once.
 const MAX_DECODE_QUEUE_SIZE = 30;
 
 export function looksLikeIsoBmff(file: File): boolean {
@@ -56,12 +41,8 @@ interface DemuxResult {
   rotation: number;
 }
 
-// The seek-based <video> path gets rotation applied by the browser for free;
-// VideoDecoder emits raw coded frames, so we read the track's tkhd display
-// matrix and re-apply it ourselves. Matrix elements a,b (indices 0,1) are
-// 16.16 fixed point; atan2(b, a) recovers the clockwise rotation (y-down) and
-// matches ffmpeg's av_display_rotation_get. Snapped to the nearest right angle
-// (0/90/180/270).
+// VideoDecoder emits raw coded frames, so rotation the browser would apply for free on a
+// <video> is ours to redo. Elements a,b are 16.16 fixed point, as in ffmpeg's av_display_rotation_get.
 export function rotationFromMatrix(matrix: Matrix): number {
   const a = matrix[0] / 65536;
   const b = matrix[1] / 65536;
@@ -69,17 +50,15 @@ export function rotationFromMatrix(matrix: Matrix): number {
   return ((degrees % 360) + 360) % 360;
 }
 
-// Demuxing is independent of the collage settings, so cache it per File to make
-// regenerating the same video with different settings cheap. Keyed by File
-// identity (WeakMap) so a re-picked file re-parses and old entries are GC'd.
+// Demuxing is independent of the collage settings, so regenerating with new settings reuses it.
+// Keyed by File identity so a re-picked file re-parses and old entries are collectable.
 const demuxCache = new WeakMap<File, Promise<DemuxResult | null>>();
 
 function demuxCached(file: File): Promise<DemuxResult | null> {
   let cached = demuxCache.get(file);
   if (!cached) {
     cached = demux(file).catch((err: unknown) => {
-      // Don't let a failed parse permanently poison the cache entry - a retry
-      // (e.g. after a transient error) should get a fresh attempt.
+      // A failed parse must not poison the entry: a retry should get a fresh attempt.
       demuxCache.delete(file);
       throw err;
     });
@@ -96,8 +75,7 @@ function getCodecDescription(isoFile: ISOFile, trackId: number): Uint8Array | un
     if (!box) continue;
     const stream = new DataStream(undefined, 0, Endianness.BIG_ENDIAN);
     (box.write as (stream: DataStream) => void)(stream);
-    // Skip the 8-byte box header (4-byte size + 4-byte fourcc): VideoDecoder
-    // wants just the codec-specific configuration payload.
+    // VideoDecoder wants the configuration payload alone, past the 8-byte box header.
     return new Uint8Array(stream.buffer, 8);
   }
   return undefined;
@@ -207,8 +185,7 @@ export async function countKeyframesInRange(
   }
 }
 
-// A tiny wrapper so TS doesn't (incorrectly) carry "state !== closed" narrowing
-// across the `await` between the two closed-state checks in the feed loop below.
+// A wrapper because TS otherwise carries stale "state !== closed" narrowing across an `await`.
 function isDecoderClosed(decoder: VideoDecoder): boolean {
   return decoder.state === "closed";
 }
@@ -237,9 +214,8 @@ function createCellCanvas(
   return { canvas, ctx };
 }
 
-// Draws a decoded frame into the (already display-oriented) cell, rotating it to
-// undo the container's coded-vs-display rotation. For 90/270 the cell's width and
-// height are swapped in the rotated frame, so the draw extents are swapped too.
+// The cell is already display-oriented, so at 90/270 the rotated frame's width and height
+// are swapped and the draw extents swap with them.
 export function drawRotated(
   ctx: CanvasRenderingContext2D,
   frame: CanvasImageSource,
@@ -266,15 +242,11 @@ interface FrameCollector {
   consume(frame: VideoFrame): void;
   isComplete(): boolean;
   completed: Promise<void>;
-  settle(): Promise<ExtractedFrame[]>;
+  settle(): Promise<CapturedFrame<ImageBitmap>[]>;
 }
 
-/**
- * Draws each decoded frame into the cell-sized canvas and keeps the first frame
- * at/after each wanted timestamp - mirroring the seek-based extractor's "seek to
- * time T" semantics rather than true nearest-frame matching. Captures run async
- * (createImageBitmap), so `settle()` waits for them before returning.
- */
+// Keeps the first frame at or after each wanted timestamp, matching the seek-based
+// extractor's "seek to time T" semantics rather than true nearest-frame matching.
 function createFrameCollector(
   wanted: number[],
   canvas: HTMLCanvasElement,
@@ -284,7 +256,7 @@ function createFrameCollector(
   rotation: number,
   onProgress?: ExtractionProgress,
 ): FrameCollector {
-  const frames: (ExtractedFrame | undefined)[] = new Array(wanted.length);
+  const frames: (CapturedFrame<ImageBitmap> | undefined)[] = new Array(wanted.length);
   const pendingCaptures: Promise<void>[] = [];
   let wantedIndex = 0;
   let capturedCount = 0;
@@ -300,11 +272,11 @@ function createFrameCollector(
         const capturedIndex = wantedIndex;
         drawRotated(ctx, frame, cellW, cellH, rotation);
         pendingCaptures.push(
-          createImageBitmap(canvas).then((bitmap) => {
+          createImageBitmap(canvas).then((image) => {
             frames[capturedIndex] = {
               timestamp: wanted[capturedIndex],
               frameIndex: capturedIndex,
-              bitmap,
+              image,
             };
             capturedCount++;
             onProgress?.(capturedCount, wanted.length);
@@ -321,7 +293,7 @@ function createFrameCollector(
     completed,
     async settle() {
       await Promise.all(pendingCaptures);
-      const contiguous: ExtractedFrame[] = [];
+      const contiguous: CapturedFrame<ImageBitmap>[] = [];
       for (const frame of frames) {
         if (!frame) break;
         contiguous.push(frame);
@@ -354,12 +326,8 @@ async function feedDecoder(
   if (!isDecoderClosed(decoder)) await decoder.flush();
 }
 
-/**
- * Decodes [startIndex, endIndex] into the collector, returning once every wanted
- * frame is captured, the samples run out, or the decoder errors - whichever
- * comes first. Racing `collector.completed` lets us stop early even while
- * `feedDecoder` is parked waiting for decode-queue backpressure to ease.
- */
+// Racing `collector.completed` stops early even while `feedDecoder` is parked on
+// decode-queue backpressure.
 async function decodeSampleRange(
   decoderConfig: VideoDecoderConfig,
   samples: Sample[],
@@ -415,12 +383,8 @@ async function feedKeyframes(
   if (!isDecoderClosed(decoder)) await decoder.flush();
 }
 
-/**
- * Fast path: decodes ONLY the given keyframe samples (each an independently
- * decodable sync sample) instead of every frame in the range, skipping the P/B
- * frames the sparse sampling would throw away anyway. Each decoded frame maps
- * 1:1 to a wanted slot, timestamped at the keyframe's own composition time.
- */
+// Sync samples decode independently, so the P/B frames the sparse sampling would discard
+// need never be decoded at all.
 async function decodeKeyframes(
   decoderConfig: VideoDecoderConfig,
   samples: Sample[],
@@ -429,11 +393,11 @@ async function decodeKeyframes(
   cellH: number,
   rotation: number,
   onProgress?: ExtractionProgress,
-): Promise<ExtractedFrame[]> {
-  const cell = createCellCanvas(cellW, cellH);
-  if (!cell) return [];
+): Promise<CapturedFrame<ImageBitmap>[]> {
+  const cellCanvas = createCellCanvas(cellW, cellH);
+  if (!cellCanvas) return [];
 
-  const frames: (ExtractedFrame | undefined)[] = new Array(indices.length);
+  const frames: (CapturedFrame<ImageBitmap> | undefined)[] = new Array(indices.length);
   const pendingCaptures: Promise<void>[] = [];
   let outputIndex = 0;
   let capturedCount = 0;
@@ -447,14 +411,14 @@ async function decodeKeyframes(
     output: (frame) => {
       const captureIndex = outputIndex++;
       try {
-        drawRotated(cell.ctx, frame, cellW, cellH, rotation);
+        drawRotated(cellCanvas.ctx, frame, cellW, cellH, rotation);
         pendingCaptures.push(
-          createImageBitmap(cell.canvas).then((bitmap) => {
+          createImageBitmap(cellCanvas.canvas).then((image) => {
             const sample = samples[indices[captureIndex]];
             frames[captureIndex] = {
               timestamp: sample.cts / sample.timescale,
               frameIndex: captureIndex,
-              bitmap,
+              image,
             };
             capturedCount++;
             onProgress?.(capturedCount, indices.length);
@@ -475,7 +439,7 @@ async function decodeKeyframes(
   }
 
   await Promise.all(pendingCaptures);
-  const contiguous: ExtractedFrame[] = [];
+  const contiguous: CapturedFrame<ImageBitmap>[] = [];
   for (const frame of frames) {
     if (!frame) break;
     contiguous.push(frame);
@@ -484,14 +448,15 @@ async function decodeKeyframes(
 }
 
 export async function extractFramesWebCodecs(
+  file: File,
   config: CollageRequest,
-  layout: GridLayout | undefined,
+  cell: CellSize,
   onProgress?: ExtractionProgress,
   keyframeSampling?: boolean,
-): Promise<ExtractedFrame[] | null> {
+): Promise<CapturedFrame<ImageBitmap>[] | null> {
   if (typeof VideoDecoder === "undefined") return null;
 
-  const demuxed = await demuxCached(config.videoFile);
+  const demuxed = await demuxCached(file);
   if (!demuxed) return null;
   const { videoTrack, description, samples, durationSeconds, rotation } = demuxed;
 
@@ -508,16 +473,10 @@ export async function extractFramesWebCodecs(
   const support = await VideoDecoder.isConfigSupported(decoderConfig);
   if (!support.supported) return null;
 
-  // When no layout is supplied the cell defaults to the frame's own size, which
-  // is the *display* size - so swap coded dims for 90/270 rotations.
-  const swapsDimensions = rotation === 90 || rotation === 270;
-  const fallbackW = swapsDimensions ? codedHeight : codedWidth;
-  const fallbackH = swapsDimensions ? codedWidth : codedHeight;
-  const cellW = layout?.cellW ?? fallbackW;
-  const cellH = layout?.cellH ?? fallbackH;
+  const cellW = cell.width;
+  const cellH = cell.height;
 
-  // Fast mode: decode only the keyframes within the selected range, skipping every
-  // inter-frame. Frame count is whatever the video provides, not the requested FPS.
+  // Frame count is then whatever keyframes the video has, not the requested FPS.
   if (keyframeSampling) {
     const keyframeIndices = selectKeyframeIndices(samples, config.startTime, config.endTime);
     if (keyframeIndices.length > 0) {
@@ -536,12 +495,12 @@ export async function extractFramesWebCodecs(
   const wanted = buildWantedTimestamps(config, durationSeconds);
   if (wanted.length === 0) return [];
 
-  const cell = createCellCanvas(cellW, cellH);
-  if (!cell) return null;
+  const cellCanvas = createCellCanvas(cellW, cellH);
+  if (!cellCanvas) return null;
   const collector = createFrameCollector(
     wanted,
-    cell.canvas,
-    cell.ctx,
+    cellCanvas.canvas,
+    cellCanvas.ctx,
     cellW,
     cellH,
     rotation,

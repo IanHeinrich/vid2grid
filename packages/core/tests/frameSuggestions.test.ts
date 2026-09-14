@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GUTTER_PX } from "@vid2grid/core";
+import { GUTTER_PX } from "../src/grid/gridMaths";
 import {
   countBlankCells,
   countGridPackingBlanks,

@@ -1,15 +1,7 @@
-/**
- * Off-main-thread collage renderer + JPEG encoder.
- *
- * Receives one fully-described collage sheet (frames already decoded to
- * transferable `ImageBitmap`s), paints it onto an `OffscreenCanvas`, and encodes
- * it to a JPEG `Blob` so the render/encode phase runs in parallel across a
- * pool of these workers instead of blocking the UI thread.
- */
-import { paintCollageSheet, type CollageSheetInput } from "./renderer";
+import { paintCollageSheet, type CollageSheetInput } from "@vid2grid/core";
 
 export interface RenderSheetRequest {
-  input: CollageSheetInput;
+  input: CollageSheetInput<ImageBitmap>;
   jpegQuality: number;
 }
 
@@ -18,8 +10,8 @@ export interface RenderSheetResponse {
   error?: string;
 }
 
-// The DOM lib types `self` as a Window; cast to just the worker surface we use
-// so we don't have to pull in the conflicting WebWorker lib.
+// The DOM lib types `self` as a Window, so cast to just the surface used here rather
+// than pull in the conflicting WebWorker lib.
 interface RenderWorkerScope {
   onmessage: ((event: MessageEvent<RenderSheetRequest>) => void) | null;
   postMessage(message: RenderSheetResponse): void;
@@ -37,7 +29,7 @@ scope.onmessage = async (event) => {
     paintCollageSheet(ctx, input);
     const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: jpegQuality / 100 });
 
-    for (const bitmap of input.bitmaps) bitmap.close();
+    for (const image of input.images) image.close();
     scope.postMessage({ blob });
   } catch (err) {
     scope.postMessage({ error: (err as Error).message });
