@@ -13,7 +13,7 @@ Runs entirely in your browser, your video is never uploaded anywhere.
 
 - [Screenshots](#screenshots)
 - [What it does](#what-it-does)
-- [How it works](#how-it-works)
+- [Architecture](#architecture)
 - [Use it](#use-it)
 - [Development](#development)
 - [Contributing](#contributing)
@@ -84,10 +84,24 @@ instead of uploading hundreds of individual frames.
   downloadable as a single `.zip` (or saved folder) containing the JPEGs and
   any transcript files at a configurable quality.
 
-## How it works
+## Architecture
+
+Three layers:
+
+1. **The `RenderPlan` contract** — plain JSON from
+   [packages/core/src/plan/buildRenderPlan.ts](packages/core/src/plan/buildRenderPlan.ts):
+   exact capture timestamps, cell placement, watermark strings, file names.
+   Spec: [docs/render-plan.md](docs/render-plan.md).
+2. **`packages/core`** — DOM-free pure logic: grid layout, the planner, and
+   `paintSheetFromPlan` for drawing a plan onto any host's canvas. Drives the
+   pipeline through host-agnostic ports.
+3. **Per-host executors** implement those ports and only decode, scale,
+   paste, draw text and encode: `packages/browser` for this app, and the
+   [Python package](python/) headlessly. Sheets from different hosts match in
+   geometry and text, never in bytes.
 
 <details>
-<summary>Everything runs client-side via the <code>&lt;video&gt;</code>/<code>&lt;canvas&gt;</code> (and, where supported, WebCodecs and Web Workers) APIs — no server, no upload. Click to expand the pipeline.</summary>
+<summary>Click to expand the browser pipeline.</summary>
 
 See [packages/](packages/) and [web/](web/) for the full source:
 
@@ -141,6 +155,22 @@ See [packages/](packages/) and [web/](web/) for the full source:
 - **Hosted**: **[ianheinrich.github.io/vid2grid](https://ianheinrich.github.io/vid2grid/)**, no install required.
 - **Locally**: see [Development](#development) below for setup.
 
+### Use it from Python
+
+```bash
+pip install "git+https://github.com/IanHeinrich/vid2grid#subdirectory=python"
+```
+
+```python
+from vid2grid import render_single_sheet
+
+result = render_single_sheet("clip.mp4", out_path="sheet.jpg", frames=16)
+print(result.to_sheet_row())
+```
+
+Same `RenderPlan` contract as the browser app, no transcription. See
+[python/README.md](python/README.md) for the full API.
+
 <details>
 <summary>Known limitations</summary>
 
@@ -163,7 +193,9 @@ See [packages/](packages/) and [web/](web/) for the full source:
 This repo is an npm workspaces monorepo: `packages/core` holds the DOM-free
 pure logic, `packages/browser` implements its ports with browser APIs, and
 `web/` (a plain Vite + TypeScript project, no framework) is the app that uses
-them. All commands below are run from the repo root.
+them. `python/` is a separate, non-npm package — see
+[python/README.md](python/README.md). All commands below are run from the
+repo root.
 
 ```bash
 git clone https://github.com/IanHeinrich/vid2grid.git
@@ -185,8 +217,19 @@ There's no lint step. `npm run typecheck` (which `npm run build` runs first)
 is the type-check gate, `npm test` is the correctness gate, and `npm run
 format` is the format step. All three should be clean before opening a PR.
 
-The [pages.yml](.github/workflows/pages.yml) workflow runs `npm test` on
-every push/PR touching the workspaces. On `main`, if `web/package.json`'s
+`python/` has its own toolchain, run from that directory:
+
+```bash
+uv sync --all-groups && uv run pytest && uv run ruff check . && uv run ruff format --check .
+```
+
+(or a venv: `pip install -e . pytest ruff`, then `pytest`, `ruff check .` and
+`ruff format --check .`).
+
+The [pages.yml](.github/workflows/pages.yml) workflow runs a `test` job (npm
+install, `npm test`, `npm run typecheck`, then regenerates fixtures and fails
+on drift) and a `python` job (pytest + ruff across Ubuntu, Windows and macOS)
+on every push/PR touching the workspaces. On `main`, if `web/package.json`'s
 `version` has changed to a value with no existing `vX.Y.Z` git tag, it also
 tags the release, publishes a GitHub Release, and deploys `web/dist` to
 GitHub Pages.

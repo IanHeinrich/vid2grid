@@ -1,10 +1,11 @@
 # vid2grid
 
-A browser-only tool that turns a video into "collage sheets": grid images
-packing many timestamped frames into one JPEG, sized for feeding into AI vision
-models. Plain TypeScript and Vite, no framework. Everything runs client-side
-(`<video>`/`<canvas>`, WebCodecs, Web Workers, transformers.js) — there is no
-server and nothing is uploaded.
+Turns a video into "collage sheets": grid images packing many timestamped
+frames into one JPEG, sized for feeding into AI vision models. `web/` is the
+primary app: plain TypeScript and Vite, no framework, running entirely
+client-side (`<video>`/`<canvas>`, WebCodecs, Web Workers, transformers.js) —
+no server, nothing uploaded. `python/` is a headless executor of the same
+plan for use outside the browser.
 
 ## Commands — all of them run from the repo root, an npm workspaces monorepo
 
@@ -21,15 +22,15 @@ server and nothing is uploaded.
 `npm test` and `npm run build` must both pass before a change is done.
 
 The Python package is its own toolchain and does not go through npm:
-`cd python && uv sync --all-groups && uv run pytest && uv run ruff check .`.
+`cd python && uv sync --all-groups && uv run pytest && uv run ruff check . && uv run ruff format --check .`.
 
-| Package                  | What it is                                                                                                                                                                                                                                                             |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/core`          | `@vid2grid/core`, DOM-free pure logic. `tsconfig` sets `lib: ["ES2022"]` and `types: []` so any browser API is a compile error, and it must have no `dependencies` (enforced by `packages/core/tests/dependencies.test.ts`).                                           |
-| `packages/browser`       | `@vid2grid/browser`, the browser executor: core's ports implemented with `<video>`/`<canvas>`, WebCodecs + mp4box, an OffscreenCanvas worker pool, Web Audio and a transformers.js Whisper worker. Owns every browser-only dependency.                                 |
-| `web/`                   | The Vite app: UI markup, wiring, state, download. It calls `generateCollages` from `@vid2grid/core` with the ports from `@vid2grid/browser`.                                                                                                                           |
-| `python/`                | `vid2grid`, the headless executor: a line-by-line port of core's planner plus a PyAV/Pillow executor, `pip install`able and depending only on `av` and `Pillow`. No transcription. Its own tests and lint (`pytest`, `ruff`), run from `python/`, never through npm.   |
-| `fixtures/` + `scripts/` | `fixtures/render-plans/*.json` are golden `RenderPlan`s, written only by `scripts/generateRenderPlanFixtures.ts` (`npm run fixtures`) and read back by `packages/core/tests/renderPlanFixtures.test.ts`. Generated: Prettier ignores them, nothing edits them by hand. |
+| Package                  | What it is                                                                                                                                                                                                                                                                                              |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/core`          | `@vid2grid/core`, DOM-free pure logic. `tsconfig` sets `lib: ["ES2022"]` and `types: []` so any browser API is a compile error, and it must have no `dependencies` (enforced by `packages/core/tests/dependencies.test.ts`).                                                                            |
+| `packages/browser`       | `@vid2grid/browser`, the browser executor: core's ports implemented with `<video>`/`<canvas>`, WebCodecs + mp4box, an OffscreenCanvas worker pool, Web Audio and a transformers.js Whisper worker. Owns every browser-only dependency.                                                                  |
+| `web/`                   | The Vite app: UI markup, wiring, state, download. It calls `generateCollages` from `@vid2grid/core` with the ports from `@vid2grid/browser`.                                                                                                                                                            |
+| `python/`                | `vid2grid`, the headless executor: a line-by-line port of core's planner plus a PyAV/Pillow executor, `pip install`able and depending only on `av` and `Pillow`. No transcription.                                                                                                                      |
+| `fixtures/` + `scripts/` | `fixtures/render-plans/*.json` are golden `RenderPlan`s, written only by `scripts/generateRenderPlanFixtures.ts` (`npm run fixtures`) and read back by `packages/core/tests/renderPlanFixtures.test.ts` and `python/tests/test_planner.py`. Generated and Prettier-ignored: nothing edits them by hand. |
 
 ## Rules a worker may not read elsewhere
 
