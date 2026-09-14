@@ -1,5 +1,6 @@
-/** Structural so core names no DOM type; both canvas 2D contexts satisfy it as-is. The style
- * fields are `unknown` because the DOM lib's colour-or-gradient-or-pattern union rejects `string`. */
+// Structural so core names no DOM type; both canvas 2D contexts satisfy it as-is.
+// The style fields are `unknown` because the DOM lib's colour-or-gradient-or-pattern
+// union rejects `string`.
 export interface SheetContext2D<TImage> {
   fillStyle: unknown;
   strokeStyle: unknown;

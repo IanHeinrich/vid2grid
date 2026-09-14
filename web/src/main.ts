@@ -5,12 +5,17 @@ import {
   CUSTOM_OPTION,
   generateCollages,
   MODEL_RESOLUTION_PRESETS,
-  validateCollageRequest,
-  type CollageRequest,
+  validateCollagePlanRequest,
+  type CollagePlanRequest,
   type GenerationPhase,
   type VideoInfo,
 } from "@vid2grid/core";
-import { countKeyframesInRange, createBrowserPorts, probeVideo } from "@vid2grid/browser";
+import {
+  countKeyframesInRange,
+  createBrowserPorts,
+  looksLikeIsoBmff,
+  probeVideo,
+} from "@vid2grid/browser";
 import { updateFramePlanningUi } from "./ui/framePlanning";
 import { resetGallery, renderGallery, initLightbox } from "./ui/gallery";
 import {
@@ -119,7 +124,7 @@ async function handleFile(file: File | null): Promise<void> {
   els.statusEl.textContent = "Reading video metadata...";
   let videoInfo: VideoInfo;
   try {
-    videoInfo = await probeVideo(file);
+    videoInfo = await probeVideo(file, { keyframeTimestamps: false });
   } catch (err) {
     els.statusEl.textContent = `Failed to read video: ${(err as Error).message}`;
     state.videoInfo = null;
@@ -279,18 +284,9 @@ function updateKeyframeModeUi(): void {
 }
 
 // Keyframe mode only runs on the WebCodecs (ISO-BMFF) path, so it's offered only
-// for MP4/MOV. Mirrors looksLikeIsoBmff without importing webcodecsExtractor here
-// (which would pull mp4box into the main bundle).
+// for MP4/MOV.
 function fileSupportsKeyframeMode(file: File): boolean {
-  if (typeof VideoDecoder === "undefined") return false;
-  const name = file.name.toLowerCase();
-  return (
-    file.type === "video/mp4" ||
-    file.type === "video/quicktime" ||
-    name.endsWith(".mp4") ||
-    name.endsWith(".m4v") ||
-    name.endsWith(".mov")
-  );
+  return typeof VideoDecoder !== "undefined" && looksLikeIsoBmff(file);
 }
 
 function applyKeyframeModeAvailability(file: File): void {
@@ -347,24 +343,28 @@ async function handleGenerateClicked(): Promise<void> {
   els.generateButton.disabled = true;
   els.statusEl.textContent = "";
 
-  const config: CollageRequest = {
-    startTime: Number(els.startTimeInput.value),
-    endTime: Number(els.endTimeInput.value),
+  const transcriptOn = els.transcriptModeInput.checked;
+  const request: CollagePlanRequest = {
+    startSeconds: Number(els.startTimeInput.value),
+    endSeconds: Number(els.endTimeInput.value),
     targetFps: Number(els.targetFpsInput.value),
+    keyframeSampling: els.keyframeModeInput.checked,
     framesPerGrid: Math.trunc(Number(els.framesPerGridInput.value)),
     outputResolution: Math.trunc(Number(els.outputResolutionInput.value)),
     jpegQuality: Math.trunc(Number(els.jpegQualityInput.value)),
+    transcript: transcriptOn
+      ? { scope: els.transcriptCombinedInput.checked ? "combined" : "per-sheet" }
+      : undefined,
   };
 
   try {
-    validateCollageRequest(config);
+    validateCollagePlanRequest(request);
   } catch (err) {
     els.statusEl.textContent = (err as Error).message;
     els.generateButton.disabled = false;
     return;
   }
 
-  const transcriptOn = els.transcriptModeInput.checked;
   const phaseWeights = transcriptOn
     ? { extracting: 0.5, rendering: 0.2, transcribing: 0.3 }
     : { extracting: 0.7, rendering: 0.3, transcribing: 0 };
@@ -375,16 +375,12 @@ async function handleGenerateClicked(): Promise<void> {
   };
 
   try {
-    const { sheets, transcriptFiles } = await generateCollages(
+    const { plan, sheets, transcriptFiles } = await generateCollages(
       state.videoFile,
-      config,
+      request,
       createBrowserPorts(),
       {
         videoInfo: state.videoInfo ?? undefined,
-        keyframeSampling: els.keyframeModeInput.checked,
-        transcript: transcriptOn
-          ? { scope: els.transcriptCombinedInput.checked ? "combined" : "per-sheet" }
-          : undefined,
         onProgress: (phase, done, total, transcribeStage) => {
           setProgress(
             phaseStarts[phase] + (done / total) * phaseWeights[phase],
@@ -400,7 +396,7 @@ async function handleGenerateClicked(): Promise<void> {
 
     state.sheets = sheets;
     state.transcriptFiles = transcriptFiles;
-    renderGallery();
+    renderGallery(plan);
     els.saveToFolderButton.hidden = !isFolderSaveSupported();
   } catch (err) {
     els.statusEl.textContent = `Failed to generate collages: ${(err as Error).message}`;

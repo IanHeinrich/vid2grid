@@ -1,0 +1,255 @@
+{
+  "name": "landscape-3s-fps2-4up-512",
+  "request": {
+    "startSeconds": 0,
+    "endSeconds": 3,
+    "targetFps": 2,
+    "framesPerGrid": 4,
+    "outputResolution": 512,
+    "jpegQuality": 85,
+    "transcript": {
+      "scope": "per-sheet"
+    }
+  },
+  "info": {
+    "durationSeconds": 3,
+    "width": 320,
+    "height": 240
+  },
+  "plan": {
+    "version": 1,
+    "canvas": {
+      "width": 512,
+      "height": 512
+    },
+    "cell": {
+      "width": 244,
+      "height": 183
+    },
+    "layout": {
+      "cols": 2,
+      "rows": 2,
+      "offsetX": 0,
+      "offsetY": 61
+    },
+    "style": {
+      "background": "black",
+      "textFill": "black",
+      "textStroke": "white",
+      "fontFamily": "sans-serif",
+      "textBaseline": "top"
+    },
+    "jpegQuality": 85,
+    "timestampFormat": {
+      "showHours": false,
+      "showMinutes": false,
+      "showMilliseconds": true
+    },
+    "frames": [
+      {
+        "frameIndex": 0,
+        "timestampSeconds": 0
+      },
+      {
+        "frameIndex": 1,
+        "timestampSeconds": 0.5
+      },
+      {
+        "frameIndex": 2,
+        "timestampSeconds": 1
+      },
+      {
+        "frameIndex": 3,
+        "timestampSeconds": 1.5
+      },
+      {
+        "frameIndex": 4,
+        "timestampSeconds": 2
+      },
+      {
+        "frameIndex": 5,
+        "timestampSeconds": 2.5
+      }
+    ],
+    "sheets": [
+      {
+        "sheetIndex": 0,
+        "fileName": "grid_0001.jpg",
+        "cells": [
+          {
+            "frameIndex": 0,
+            "timestampSeconds": 0,
+            "x": 8,
+            "y": 69,
+            "width": 244,
+            "height": 183,
+            "watermarks": [
+              {
+                "text": "00.000",
+                "anchor": "top-left",
+                "x": 12,
+                "y": 73,
+                "fontSizePx": 11,
+                "strokeWidthPx": 1
+              },
+              {
+                "text": "0",
+                "anchor": "top-right",
+                "x": 248,
+                "y": 73,
+                "fontSizePx": 11,
+                "strokeWidthPx": 1
+              }
+            ]
+          },
+          {
+            "frameIndex": 1,
+            "timestampSeconds": 0.5,
+            "x": 260,
+            "y": 69,
+            "width": 244,
+            "height": 183,
+            "watermarks": [
+              {
+                "text": "00.500",
+                "anchor": "top-left",
+                "x": 264,
+                "y": 73,
+                "fontSizePx": 11,
+                "strokeWidthPx": 1
+              },
+              {
+                "text": "1",
+                "anchor": "top-right",
+                "x": 500,
+                "y": 73,
+                "fontSizePx": 11,
+                "strokeWidthPx": 1
+              }
+            ]
+          },
+          {
+            "frameIndex": 2,
+            "timestampSeconds": 1,
+            "x": 8,
+            "y": 260,
+            "width": 244,
+            "height": 183,
+            "watermarks": [
+              {
+                "text": "01.000",
+                "anchor": "top-left",
+                "x": 12,
+                "y": 264,
+                "fontSizePx": 11,
+                "strokeWidthPx": 1
+              },
+              {
+                "text": "2",
+                "anchor": "top-right",
+                "x": 248,
+                "y": 264,
+                "fontSizePx": 11,
+                "strokeWidthPx": 1
+              }
+            ]
+          },
+          {
+            "frameIndex": 3,
+            "timestampSeconds": 1.5,
+            "x": 260,
+            "y": 260,
+            "width": 244,
+            "height": 183,
+            "watermarks": [
+              {
+                "text": "01.500",
+                "anchor": "top-left",
+                "x": 264,
+                "y": 264,
+                "fontSizePx": 11,
+                "strokeWidthPx": 1
+              },
+              {
+                "text": "3",
+                "anchor": "top-right",
+                "x": 500,
+                "y": 264,
+                "fontSizePx": 11,
+                "strokeWidthPx": 1
+              }
+            ]
+          }
+        ],
+        "transcript": {
+          "startSeconds": 0,
+          "endSeconds": 1.75,
+          "fileName": "grid_0001.vtt"
+        }
+      },
+      {
+        "sheetIndex": 1,
+        "fileName": "grid_0002.jpg",
+        "cells": [
+          {
+            "frameIndex": 4,
+            "timestampSeconds": 2,
+            "x": 8,
+            "y": 69,
+            "width": 244,
+            "height": 183,
+            "watermarks": [
+              {
+                "text": "02.000",
+                "anchor": "top-left",
+                "x": 12,
+                "y": 73,
+                "fontSizePx": 11,
+                "strokeWidthPx": 1
+              },
+              {
+                "text": "4",
+                "anchor": "top-right",
+                "x": 248,
+                "y": 73,
+                "fontSizePx": 11,
+                "strokeWidthPx": 1
+              }
+            ]
+          },
+          {
+            "frameIndex": 5,
+            "timestampSeconds": 2.5,
+            "x": 260,
+            "y": 69,
+            "width": 244,
+            "height": 183,
+            "watermarks": [
+              {
+                "text": "02.500",
+                "anchor": "top-left",
+                "x": 264,
+                "y": 73,
+                "fontSizePx": 11,
+                "strokeWidthPx": 1
+              },
+              {
+                "text": "5",
+                "anchor": "top-right",
+                "x": 500,
+                "y": 73,
+                "fontSizePx": 11,
+                "strokeWidthPx": 1
+              }
+            ]
+          }
+        ],
+        "transcript": {
+          "startSeconds": 1.75,
+          "endSeconds": 3,
+          "fileName": "grid_0002.vtt"
+        }
+      }
+    ]
+  }
+}

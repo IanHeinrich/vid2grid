@@ -4,7 +4,7 @@
  */
 import { els } from "../dom";
 import { state } from "../state";
-import { gridTranscriptFileName, vttToPlainText, type GeneratedFile } from "@vid2grid/core";
+import { vttToPlainText, type GeneratedFile, type RenderPlan } from "@vid2grid/core";
 
 type PreviewSlot = { el: HTMLElement; file: GeneratedFile<Blob> } | null;
 
@@ -19,7 +19,7 @@ export function resetGallery(): void {
   els.saveToFolderButton.hidden = true;
 }
 
-export function renderGallery(): void {
+export function renderGallery(plan: RenderPlan): void {
   els.gallery.innerHTML = "";
   state.galleryUrls = state.sheets.map((sheet) => URL.createObjectURL(sheet.data));
   const previewSlots: PreviewSlot[] = [];
@@ -36,7 +36,8 @@ export function renderGallery(): void {
     caption.textContent = img.alt;
     figure.append(img, caption);
 
-    const transcriptFile = state.transcriptFiles.find((f) => f.name === gridTranscriptFileName(i));
+    const transcriptName = plan.sheets[i]?.transcript?.fileName;
+    const transcriptFile = state.transcriptFiles.find((file) => file.name === transcriptName);
     if (transcriptFile) {
       const block = document.createElement("div");
       block.className = "transcript-block";

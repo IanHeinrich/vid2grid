@@ -1,38 +1,40 @@
-import type { CollageRequest, VideoInfo } from "../types";
-import type { CollageSheetInput } from "../render/sheetInput";
+import type { PlannedSheet, RenderPlan } from "../plan/renderPlan";
 import type { TranscriptCue } from "../transcript/vtt";
+import type { VideoInfo } from "../types";
 
-export interface ProbePort<TSource> {
-  probe(source: TSource): Promise<VideoInfo>;
+export type ProgressCallback = (done: number, total: number) => void;
+
+// Reading keyframe times means demuxing the whole file, so it is asked for only
+// when keyframe mode needs them rather than on every probe.
+export interface ProbeOptions {
+  keyframeTimestamps: boolean;
 }
 
-export interface CapturedFrame<TImage> {
-  timestamp: number;
-  frameIndex: number;
-  image: TImage;
+export interface ProbePort<TSource> {
+  probe(source: TSource, options: ProbeOptions): Promise<VideoInfo>;
 }
 
 export interface FrameCapturePort<TSource, TImage> {
-  /** Frames in ascending time order, already scaled to `cell`. Keyframe mode picks its own timestamps. */
-  capture(
-    source: TSource,
-    request: CollageRequest,
-    cell: { width: number; height: number },
-    keyframeSampling: boolean,
-    onProgress?: (done: number, total: number) => void,
-  ): Promise<CapturedFrame<TImage>[]>;
+  /** One image per `plan.frames` entry, in order, scaled to `plan.cell`. Fewer only when the stream ends early. */
+  capture(source: TSource, plan: RenderPlan, onProgress?: ProgressCallback): Promise<TImage[]>;
+}
+
+/** `images` is aligned to `sheet.cells`; an entry is undefined when that frame was never captured. */
+export interface SheetRenderJob<TImage> {
+  sheet: PlannedSheet;
+  images: (TImage | undefined)[];
 }
 
 export interface SheetEncoderPort<TImage, TBinary> {
   encodeSheets(
-    sheets: CollageSheetInput<TImage>[],
-    jpegQuality: number,
-    onProgress?: (done: number, total: number) => void,
+    plan: RenderPlan,
+    jobs: SheetRenderJob<TImage>[],
+    onProgress?: ProgressCallback,
   ): Promise<TBinary[]>;
 }
 
-/** Separate stages because "model" (the one-time weights download) reports byte-accurate
- * progress while "transcribe" only has an approximate heartbeat. */
+// Separate stages because "model" (the one-time weights download) reports a
+// byte-accurate percentage while "transcribe" only has an approximate heartbeat.
 export type TranscribeStage = "model" | "transcribe";
 
 export interface TranscriptPort<TSource> {

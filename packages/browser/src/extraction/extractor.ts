@@ -1,18 +1,14 @@
-import type { CapturedFrame, CollageRequest } from "@vid2grid/core";
-
-export interface CellSize {
-  width: number;
-  height: number;
-}
+import type { RenderPlan } from "@vid2grid/core";
 
 export type ExtractionProgress = (done: number, total: number) => void;
 
+/** `currentTime` lands on the nearest frame, not the first at/after the timestamp: the one
+ * place this path's semantics differ from the WebCodecs one. */
 export async function extractFrames(
   file: File,
-  config: CollageRequest,
-  cell: CellSize,
+  plan: RenderPlan,
   onProgress?: ExtractionProgress,
-): Promise<CapturedFrame<ImageBitmap>[]> {
+): Promise<ImageBitmap[]> {
   const video = document.createElement("video");
   video.preload = "auto";
   video.muted = true;
@@ -23,30 +19,25 @@ export async function extractFrames(
     video.src = url;
     await waitForEvent(video, "loadedmetadata");
 
-    const duration = config.endTime - config.startTime;
-    const frameCount = Math.max(1, Math.floor(duration * config.targetFps));
-
     // Cell-sized, not source-sized, so no frame is downscaled twice.
     const canvas = document.createElement("canvas");
-    canvas.width = cell.width;
-    canvas.height = cell.height;
+    canvas.width = plan.cell.width;
+    canvas.height = plan.cell.height;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvas 2D context unavailable");
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
 
-    const frames: CapturedFrame<ImageBitmap>[] = [];
-    for (let i = 0; i < frameCount; i++) {
-      const timestamp = config.startTime + i / config.targetFps;
-      if (timestamp >= video.duration) break;
+    const images: ImageBitmap[] = [];
+    for (const frame of plan.frames) {
+      if (frame.timestampSeconds >= video.duration) break;
 
-      await seekTo(video, timestamp);
+      await seekTo(video, frame.timestampSeconds);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const image = await createImageBitmap(canvas);
-      frames.push({ timestamp, frameIndex: i, image });
-      onProgress?.(i + 1, frameCount);
+      images.push(await createImageBitmap(canvas));
+      onProgress?.(images.length, plan.frames.length);
     }
-    return frames;
+    return images;
   } finally {
     URL.revokeObjectURL(url);
   }

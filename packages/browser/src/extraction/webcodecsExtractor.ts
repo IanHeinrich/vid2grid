@@ -12,8 +12,9 @@ import {
   type Track,
   type VisualSampleEntry,
 } from "mp4box";
-import type { CapturedFrame, CollageRequest } from "@vid2grid/core";
-import type { CellSize, ExtractionProgress } from "./extractor";
+import { roundToMicroseconds, type PlannedFrame, type RenderPlan } from "@vid2grid/core";
+import type { ExtractionProgress } from "./extractor";
+import { looksLikeIsoBmff } from "./isoBmff";
 
 // Generous upper bound on B-frame reorder depth: without the padding, composition-order
 // reordering could cut off a wanted frame at the end of the range.
@@ -21,23 +22,10 @@ const REORDER_PADDING_SAMPLES = 16;
 // Bounds memory on long clips rather than queuing the whole video at once.
 const MAX_DECODE_QUEUE_SIZE = 30;
 
-export function looksLikeIsoBmff(file: File): boolean {
-  const name = file.name.toLowerCase();
-  return (
-    file.type === "video/mp4" ||
-    file.type === "video/quicktime" ||
-    name.endsWith(".mp4") ||
-    name.endsWith(".m4v") ||
-    name.endsWith(".mov")
-  );
-}
-
 interface DemuxResult {
   videoTrack: Track;
   description: Uint8Array;
   samples: Sample[];
-  durationSeconds: number;
-  /** Container display rotation (tkhd matrix) in degrees clockwise: 0, 90, 180 or 270. */
   rotation: number;
 }
 
@@ -109,7 +97,6 @@ async function demux(file: File): Promise<DemuxResult | null> {
             videoTrack,
             description,
             samples,
-            durationSeconds: movie.duration / movie.timescale,
             rotation: rotationFromMatrix(videoTrack.matrix),
           });
         }
@@ -124,50 +111,23 @@ async function demux(file: File): Promise<DemuxResult | null> {
   });
 }
 
-function buildWantedTimestamps(config: CollageRequest, videoDurationSeconds: number): number[] {
-  const duration = config.endTime - config.startTime;
-  const frameCount = Math.max(1, Math.floor(duration * config.targetFps));
-  const timestamps: number[] = [];
-  for (let i = 0; i < frameCount; i++) {
-    const timestamp = config.startTime + i / config.targetFps;
-    if (timestamp >= videoDurationSeconds) break;
-    timestamps.push(timestamp);
-  }
-  return timestamps;
+/** Every sync sample's composition time, ascending, rounded the way the planner rounds. */
+export function keyframeTimestampsFromSamples(samples: Sample[]): number[] {
+  return samples
+    .filter((sample) => sample.is_sync)
+    .map((sample) => roundToMicroseconds(sample.cts / sample.timescale))
+    .sort((a, b) => a - b);
 }
 
-function findDecodeStartIndex(samples: Sample[], startTime: number): number {
-  let index = 0;
-  for (let i = 0; i < samples.length; i++) {
-    if (samples[i].is_sync && samples[i].cts / samples[i].timescale <= startTime) {
-      index = i;
-    }
+export async function readKeyframeTimestamps(file: File): Promise<number[] | null> {
+  if (typeof VideoDecoder === "undefined" || !looksLikeIsoBmff(file)) return null;
+  try {
+    const demuxed = await demuxCached(file);
+    if (!demuxed) return null;
+    return keyframeTimestampsFromSamples(demuxed.samples);
+  } catch {
+    return null;
   }
-  return index;
-}
-
-function findDecodeEndIndex(samples: Sample[], endTime: number): number {
-  for (let i = 0; i < samples.length; i++) {
-    if (samples[i].dts / samples[i].timescale > endTime) {
-      return Math.min(samples.length - 1, i + REORDER_PADDING_SAMPLES);
-    }
-  }
-  return samples.length - 1;
-}
-
-export function selectKeyframeIndices(
-  samples: Sample[],
-  startTime: number,
-  endTime: number,
-): number[] {
-  const indices: number[] = [];
-  for (let i = 0; i < samples.length; i++) {
-    const time = samples[i].cts / samples[i].timescale;
-    if (samples[i].is_sync && time >= startTime && time <= endTime) {
-      indices.push(i);
-    }
-  }
-  return indices;
 }
 
 export async function countKeyframesInRange(
@@ -175,14 +135,32 @@ export async function countKeyframesInRange(
   startTime: number,
   endTime: number,
 ): Promise<number | null> {
-  if (typeof VideoDecoder === "undefined" || !looksLikeIsoBmff(file)) return null;
-  try {
-    const demuxed = await demuxCached(file);
-    if (!demuxed) return null;
-    return selectKeyframeIndices(demuxed.samples, startTime, endTime).length;
-  } catch {
-    return null;
+  const timestamps = await readKeyframeTimestamps(file);
+  if (!timestamps) return null;
+  return timestamps.filter((time) => time >= startTime && time <= endTime).length;
+}
+
+/** Every planned timestamp being a sync sample's own composition time is what identifies a
+ * keyframe-sampled plan; `null` means the plan needs a full decode pass. */
+export function selectKeyframeSampleIndices(
+  samples: Sample[],
+  frames: PlannedFrame[],
+): number[] | null {
+  if (frames.length === 0) return null;
+  const indexByTime = new Map<number, number>();
+  samples.forEach((sample, index) => {
+    if (!sample.is_sync) return;
+    const time = roundToMicroseconds(sample.cts / sample.timescale);
+    if (!indexByTime.has(time)) indexByTime.set(time, index);
+  });
+
+  const indices: number[] = [];
+  for (const frame of frames) {
+    const index = indexByTime.get(frame.timestampSeconds);
+    if (index === undefined) return null;
+    indices.push(index);
   }
+  return indices;
 }
 
 // A wrapper because TS otherwise carries stale "state !== closed" narrowing across an `await`.
@@ -238,11 +216,26 @@ export function drawRotated(
   ctx.restore();
 }
 
+/** The wanted indices a frame at `timestampSeconds` fills, given the next unfilled one:
+ * the first frame at or after a wanted timestamp is the one kept, so a sample the decoder
+ * never emitted shifts none of the others. */
+export function planIndicesForFrame(
+  wanted: number[],
+  nextIndex: number,
+  timestampSeconds: number,
+): number[] {
+  const filled: number[] = [];
+  for (let i = nextIndex; i < wanted.length && timestampSeconds >= wanted[i]; i++) {
+    filled.push(i);
+  }
+  return filled;
+}
+
 interface FrameCollector {
   consume(frame: VideoFrame): void;
   isComplete(): boolean;
   completed: Promise<void>;
-  settle(): Promise<CapturedFrame<ImageBitmap>[]>;
+  settle(): Promise<ImageBitmap[]>;
 }
 
 // Keeps the first frame at or after each wanted timestamp, matching the seek-based
@@ -256,7 +249,7 @@ function createFrameCollector(
   rotation: number,
   onProgress?: ExtractionProgress,
 ): FrameCollector {
-  const frames: (CapturedFrame<ImageBitmap> | undefined)[] = new Array(wanted.length);
+  const images: (ImageBitmap | undefined)[] = new Array(wanted.length);
   const pendingCaptures: Promise<void>[] = [];
   let wantedIndex = 0;
   let capturedCount = 0;
@@ -268,21 +261,16 @@ function createFrameCollector(
 
   return {
     consume(frame) {
-      while (wantedIndex < wanted.length && frame.timestamp / 1e6 >= wanted[wantedIndex]) {
-        const capturedIndex = wantedIndex;
+      for (const capturedIndex of planIndicesForFrame(wanted, wantedIndex, frame.timestamp / 1e6)) {
         drawRotated(ctx, frame, cellW, cellH, rotation);
         pendingCaptures.push(
           createImageBitmap(canvas).then((image) => {
-            frames[capturedIndex] = {
-              timestamp: wanted[capturedIndex],
-              frameIndex: capturedIndex,
-              image,
-            };
+            images[capturedIndex] = image;
             capturedCount++;
             onProgress?.(capturedCount, wanted.length);
           }),
         );
-        wantedIndex++;
+        wantedIndex = capturedIndex + 1;
       }
       if (wantedIndex >= wanted.length && !complete) {
         complete = true;
@@ -293,27 +281,30 @@ function createFrameCollector(
     completed,
     async settle() {
       await Promise.all(pendingCaptures);
-      const contiguous: CapturedFrame<ImageBitmap>[] = [];
-      for (const frame of frames) {
-        if (!frame) break;
-        contiguous.push(frame);
-      }
-      return contiguous;
+      return contiguousPrefix(images);
     },
   };
 }
 
-async function feedDecoder(
+function contiguousPrefix(images: (ImageBitmap | undefined)[]): ImageBitmap[] {
+  const captured: ImageBitmap[] = [];
+  for (const image of images) {
+    if (!image) break;
+    captured.push(image);
+  }
+  return captured;
+}
+
+async function feedSamples(
   decoder: VideoDecoder,
   samples: Sample[],
-  startIndex: number,
-  endIndex: number,
+  indices: Iterable<number>,
   shouldStop: () => boolean,
 ): Promise<void> {
-  for (let i = startIndex; i <= endIndex; i++) {
+  for (const index of indices) {
     if (shouldStop()) break;
     if (isDecoderClosed(decoder)) break;
-    const chunk = toEncodedVideoChunk(samples[i]);
+    const chunk = toEncodedVideoChunk(samples[index]);
     if (!chunk) continue;
     if (decoder.decodeQueueSize > MAX_DECODE_QUEUE_SIZE) {
       await new Promise<void>((resolve) =>
@@ -326,13 +317,35 @@ async function feedDecoder(
   if (!isDecoderClosed(decoder)) await decoder.flush();
 }
 
-// Racing `collector.completed` stops early even while `feedDecoder` is parked on
-// decode-queue backpressure.
-async function decodeSampleRange(
+function* range(startIndex: number, endIndex: number): Generator<number> {
+  for (let i = startIndex; i <= endIndex; i++) yield i;
+}
+
+function findDecodeStartIndex(samples: Sample[], startTime: number): number {
+  let index = 0;
+  for (let i = 0; i < samples.length; i++) {
+    if (samples[i].is_sync && samples[i].cts / samples[i].timescale <= startTime) {
+      index = i;
+    }
+  }
+  return index;
+}
+
+function findDecodeEndIndex(samples: Sample[], endTime: number): number {
+  for (let i = 0; i < samples.length; i++) {
+    if (samples[i].dts / samples[i].timescale > endTime) {
+      return Math.min(samples.length - 1, i + REORDER_PADDING_SAMPLES);
+    }
+  }
+  return samples.length - 1;
+}
+
+// Racing collector.completed lets the pass stop early even while feedSamples is
+// parked on decode-queue backpressure.
+async function decodeIntoCollector(
   decoderConfig: VideoDecoderConfig,
   samples: Sample[],
-  startIndex: number,
-  endIndex: number,
+  indices: Iterable<number>,
   collector: FrameCollector,
 ): Promise<void> {
   let onDecoderError!: (error: DOMException) => void;
@@ -354,7 +367,7 @@ async function decodeSampleRange(
 
   try {
     await Promise.race([
-      feedDecoder(decoder, samples, startIndex, endIndex, collector.isComplete),
+      feedSamples(decoder, samples, indices, collector.isComplete),
       collector.completed,
       failed,
     ]);
@@ -363,43 +376,24 @@ async function decodeSampleRange(
   }
 }
 
-async function feedKeyframes(
-  decoder: VideoDecoder,
-  samples: Sample[],
-  indices: number[],
-): Promise<void> {
-  for (const index of indices) {
-    if (isDecoderClosed(decoder)) break;
-    const chunk = toEncodedVideoChunk(samples[index]);
-    if (!chunk) continue;
-    if (decoder.decodeQueueSize > MAX_DECODE_QUEUE_SIZE) {
-      await new Promise<void>((resolve) =>
-        decoder.addEventListener("dequeue", () => resolve(), { once: true }),
-      );
-    }
-    if (isDecoderClosed(decoder)) break;
-    decoder.decode(chunk);
-  }
-  if (!isDecoderClosed(decoder)) await decoder.flush();
-}
-
 // Sync samples decode independently, so the P/B frames the sparse sampling would discard
 // need never be decoded at all.
 async function decodeKeyframes(
   decoderConfig: VideoDecoderConfig,
   samples: Sample[],
   indices: number[],
+  wanted: number[],
   cellW: number,
   cellH: number,
   rotation: number,
   onProgress?: ExtractionProgress,
-): Promise<CapturedFrame<ImageBitmap>[]> {
+): Promise<ImageBitmap[]> {
   const cellCanvas = createCellCanvas(cellW, cellH);
   if (!cellCanvas) return [];
 
-  const frames: (CapturedFrame<ImageBitmap> | undefined)[] = new Array(indices.length);
+  const images: (ImageBitmap | undefined)[] = new Array(wanted.length);
   const pendingCaptures: Promise<void>[] = [];
-  let outputIndex = 0;
+  let nextIndex = 0;
   let capturedCount = 0;
 
   let onDecoderError!: (error: DOMException) => void;
@@ -409,21 +403,18 @@ async function decodeKeyframes(
 
   const decoder = new VideoDecoder({
     output: (frame) => {
-      const captureIndex = outputIndex++;
       try {
-        drawRotated(cellCanvas.ctx, frame, cellW, cellH, rotation);
-        pendingCaptures.push(
-          createImageBitmap(cellCanvas.canvas).then((image) => {
-            const sample = samples[indices[captureIndex]];
-            frames[captureIndex] = {
-              timestamp: sample.cts / sample.timescale,
-              frameIndex: captureIndex,
-              image,
-            };
-            capturedCount++;
-            onProgress?.(capturedCount, indices.length);
-          }),
-        );
+        for (const captureIndex of planIndicesForFrame(wanted, nextIndex, frame.timestamp / 1e6)) {
+          drawRotated(cellCanvas.ctx, frame, cellW, cellH, rotation);
+          pendingCaptures.push(
+            createImageBitmap(cellCanvas.canvas).then((image) => {
+              images[captureIndex] = image;
+              capturedCount++;
+              onProgress?.(capturedCount, wanted.length);
+            }),
+          );
+          nextIndex = captureIndex + 1;
+        }
       } finally {
         frame.close();
       }
@@ -433,32 +424,26 @@ async function decodeKeyframes(
   decoder.configure(decoderConfig);
 
   try {
-    await Promise.race([feedKeyframes(decoder, samples, indices), failed]);
+    await Promise.race([feedSamples(decoder, samples, indices, () => false), failed]);
   } finally {
     if (!isDecoderClosed(decoder)) decoder.close();
   }
 
   await Promise.all(pendingCaptures);
-  const contiguous: CapturedFrame<ImageBitmap>[] = [];
-  for (const frame of frames) {
-    if (!frame) break;
-    contiguous.push(frame);
-  }
-  return contiguous;
+  return contiguousPrefix(images);
 }
 
 export async function extractFramesWebCodecs(
   file: File,
-  config: CollageRequest,
-  cell: CellSize,
+  plan: RenderPlan,
   onProgress?: ExtractionProgress,
-  keyframeSampling?: boolean,
-): Promise<CapturedFrame<ImageBitmap>[] | null> {
+): Promise<ImageBitmap[] | null> {
   if (typeof VideoDecoder === "undefined") return null;
+  if (plan.frames.length === 0) return [];
 
   const demuxed = await demuxCached(file);
   if (!demuxed) return null;
-  const { videoTrack, description, samples, durationSeconds, rotation } = demuxed;
+  const { videoTrack, description, samples, rotation } = demuxed;
 
   const codedWidth = videoTrack.video?.width;
   const codedHeight = videoTrack.video?.height;
@@ -473,27 +458,22 @@ export async function extractFramesWebCodecs(
   const support = await VideoDecoder.isConfigSupported(decoderConfig);
   if (!support.supported) return null;
 
-  const cellW = cell.width;
-  const cellH = cell.height;
+  const { width: cellW, height: cellH } = plan.cell;
+  const wanted = plan.frames.map((frame) => frame.timestampSeconds);
 
-  // Frame count is then whatever keyframes the video has, not the requested FPS.
-  if (keyframeSampling) {
-    const keyframeIndices = selectKeyframeIndices(samples, config.startTime, config.endTime);
-    if (keyframeIndices.length > 0) {
-      return decodeKeyframes(
-        decoderConfig,
-        samples,
-        keyframeIndices,
-        cellW,
-        cellH,
-        rotation,
-        onProgress,
-      );
-    }
+  const keyframeIndices = selectKeyframeSampleIndices(samples, plan.frames);
+  if (keyframeIndices) {
+    return decodeKeyframes(
+      decoderConfig,
+      samples,
+      keyframeIndices,
+      wanted,
+      cellW,
+      cellH,
+      rotation,
+      onProgress,
+    );
   }
-
-  const wanted = buildWantedTimestamps(config, durationSeconds);
-  if (wanted.length === 0) return [];
 
   const cellCanvas = createCellCanvas(cellW, cellH);
   if (!cellCanvas) return null;
@@ -506,8 +486,14 @@ export async function extractFramesWebCodecs(
     rotation,
     onProgress,
   );
-  const startIndex = findDecodeStartIndex(samples, config.startTime);
-  const endIndex = findDecodeEndIndex(samples, config.endTime);
-  await decodeSampleRange(decoderConfig, samples, startIndex, endIndex, collector);
+  await decodeIntoCollector(
+    decoderConfig,
+    samples,
+    range(
+      findDecodeStartIndex(samples, wanted[0]),
+      findDecodeEndIndex(samples, wanted[wanted.length - 1]),
+    ),
+    collector,
+  );
   return collector.settle();
 }

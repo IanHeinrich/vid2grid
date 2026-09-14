@@ -28,7 +28,8 @@ export function createBrowserPorts(): CollagePorts<File, ImageBitmap, Blob> {
 
 export { probeVideo, countKeyframesInRange } from "./probe";
 export { extractFramesAuto } from "./extraction/frameExtraction";
+export { looksLikeIsoBmff } from "./extraction/isoBmff";
 export { renderSheetsToBlobs } from "./rendering/sheetRenderer";
 export { transcribeAudio } from "./transcription/transcription";
 export { decodeAudioForTranscription } from "./extraction/audioExtraction";
-export type { CellSize, ExtractionProgress } from "./extraction/extractor";
+export type { ExtractionProgress } from "./extraction/extractor";

@@ -1,4 +1,9 @@
-import { paintCollageSheet, type CollageSheetInput, type SheetContext2D } from "@vid2grid/core";
+import {
+  paintSheetFromPlan,
+  type RenderPlan,
+  type SheetContext2D,
+  type SheetRenderJob,
+} from "@vid2grid/core";
 import { canvasToJpegBlob } from "./canvasJpeg";
 import { WorkerPool } from "./workerPool";
 import type { RenderSheetRequest, RenderSheetResponse } from "./renderWorker";
@@ -31,36 +36,43 @@ function getPool(): RenderPool {
 }
 
 export async function renderSheetsToBlobs(
-  sheets: CollageSheetInput<ImageBitmap>[],
-  jpegQuality: number,
+  plan: RenderPlan,
+  jobs: SheetRenderJob<ImageBitmap>[],
   onProgress?: SheetProgress,
 ): Promise<Blob[]> {
-  if (sheets.length === 0) return [];
+  if (jobs.length === 0) return [];
   if (supportsWorkerRendering()) {
-    return renderWithWorkers(sheets, jpegQuality, onProgress);
+    return renderWithWorkers(plan, jobs, onProgress);
   }
-  return renderOnMainThread(sheets, jpegQuality, onProgress);
+  return renderOnMainThread(plan, jobs, onProgress);
 }
 
 async function renderWithWorkers(
-  sheets: CollageSheetInput<ImageBitmap>[],
-  jpegQuality: number,
+  plan: RenderPlan,
+  jobs: SheetRenderJob<ImageBitmap>[],
   onProgress?: SheetProgress,
 ): Promise<Blob[]> {
   const pool = getPool();
-  const blobs = new Array<Blob>(sheets.length);
+  const blobs = new Array<Blob>(jobs.length);
   let done = 0;
 
+  // paintSheetFromPlan reads none of the frame or sheet lists, and they would otherwise
+  // be structured-cloned once per sheet.
+  const sheetPlan: RenderPlan = { ...plan, frames: [], sheets: [] };
+
   await Promise.all(
-    sheets.map(async (sheet, index) => {
+    jobs.map(async (job, index) => {
       // The frames are transferred, not copied: the worker closes them once encoded.
-      const response = await pool.run({ input: sheet, jpegQuality }, sheet.images);
+      const response = await pool.run(
+        { plan: sheetPlan, sheet: job.sheet, images: job.images, jpegQuality: plan.jpegQuality },
+        presentImages(job.images),
+      );
       if (response.error || !response.blob) {
         throw new Error(response.error ?? "Render worker returned no image");
       }
       blobs[index] = response.blob;
       done++;
-      onProgress?.(done, sheets.length);
+      onProgress?.(done, jobs.length);
     }),
   );
 
@@ -68,30 +80,34 @@ async function renderWithWorkers(
 }
 
 async function renderOnMainThread(
-  sheets: CollageSheetInput<ImageBitmap>[],
-  jpegQuality: number,
+  plan: RenderPlan,
+  jobs: SheetRenderJob<ImageBitmap>[],
   onProgress?: SheetProgress,
 ): Promise<Blob[]> {
   const blobs: Blob[] = [];
-  for (const sheet of sheets) {
+  for (const job of jobs) {
     const canvas = document.createElement("canvas");
-    canvas.width = sheet.outputResolution;
-    canvas.height = sheet.outputResolution;
+    canvas.width = plan.canvas.width;
+    canvas.height = plan.canvas.height;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvas 2D context unavailable");
 
-    paintCollageSheet(ctx, sheet);
-    const blob = await canvasToJpegBlob(canvas, jpegQuality);
-    closeImages(sheet.images);
+    paintSheetFromPlan(ctx, plan, job.sheet, job.images);
+    const blob = await canvasToJpegBlob(canvas, plan.jpegQuality);
+    closeImages(job.images);
 
     blobs.push(blob);
-    onProgress?.(blobs.length, sheets.length);
+    onProgress?.(blobs.length, jobs.length);
   }
   return blobs;
 }
 
-function closeImages(images: ImageBitmap[]): void {
-  for (const image of images) {
+function presentImages(images: (ImageBitmap | undefined)[]): ImageBitmap[] {
+  return images.filter((image): image is ImageBitmap => image !== undefined);
+}
+
+function closeImages(images: (ImageBitmap | undefined)[]): void {
+  for (const image of presentImages(images)) {
     if (typeof image.close === "function") image.close();
   }
 }

@@ -1,4 +1,4 @@
-export { validateCollageRequest, type CollageRequest, type VideoInfo } from "./types";
+export { validateCollagePlanRequest, type CollagePlanRequest, type VideoInfo } from "./types";
 
 export { computeOptimalGrid, GUTTER_PX, type GridLayout } from "./grid/gridMaths";
 export {
@@ -17,14 +17,14 @@ export {
 export { CUSTOM_OPTION, MODEL_RESOLUTION_PRESETS } from "./grid/modelProfiles";
 
 export {
+  chooseTimestampFormat,
   formatTimestamp,
   FONT_HEIGHT_DIVISOR,
   MIN_FONT_SIZE,
   type TimestampFormat,
 } from "./render/timestampFormat";
-export type { CollageSheetInput } from "./render/sheetInput";
 export type { SheetContext2D } from "./render/sheetContext";
-export { paintCollageSheet } from "./render/paintCollageSheet";
+export { paintSheetFromPlan } from "./render/paintSheetFromPlan";
 
 export {
   cuesInWindow,
@@ -34,15 +34,30 @@ export {
   type TranscriptCue,
 } from "./transcript/vtt";
 
+export { buildRenderPlan } from "./plan/buildRenderPlan";
+export { planFrameTimestamps, roundToMicroseconds, subsampleEvenly } from "./plan/framePlanning";
 export { computeSheetWindows } from "./plan/sheetWindows";
+export {
+  RENDER_PLAN_VERSION,
+  type PlannedCell,
+  type PlannedFrame,
+  type PlannedGridLayout,
+  type PlannedSheet,
+  type PlannedWatermark,
+  type RenderPlan,
+  type RenderPlanStyle,
+  type TranscriptWindow,
+} from "./plan/renderPlan";
 
 export type {
-  CapturedFrame,
   ClockPort,
   CollagePorts,
   FrameCapturePort,
+  ProbeOptions,
   ProbePort,
+  ProgressCallback,
   SheetEncoderPort,
+  SheetRenderJob,
   TextPort,
   TranscribeStage,
   TranscriptPort,
@@ -54,5 +69,4 @@ export {
   type GenerateCollagesResult,
   type GenerationPhase,
   type GenerationTimings,
-  type TranscriptOptions,
 } from "./pipeline/generateCollages";
