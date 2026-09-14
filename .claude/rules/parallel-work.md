@@ -27,15 +27,23 @@ single pair of hands. Each line names where the full rule lives.
   `packages/core/src/plan/renderPlan.ts` (the contract types),
   `scripts/generateRenderPlanFixtures.ts` and `fixtures/render-plans/**`
   (generated: one worker regenerates them, via `npm run fixtures`).
-  Route edits to those through the orchestrator.
+  A worker can also own `python/src/vid2grid/` plus the
+  `python/tests/test_*.py` files covering it, but
+  `python/src/vid2grid/contract.py` and `python/src/vid2grid/planner.py`
+  are **contract twins** of `packages/core/src/plan/`: they only move
+  together with the TypeScript and the regenerated fixtures, so they
+  belong to whoever owns that change and to no second worker at the same
+  time. Route edits to any of these through the orchestrator.
 - **Checks a worker runs, and checks it must not.** A worker runs only its own
   targeted tests: `npx vitest run tests/<module>.test.ts` from the owning
-  package directory (`packages/core`, `packages/browser` or `web`). The
+  package directory (`packages/core`, `packages/browser` or `web`), or
+  `uv run pytest tests/test_<module>.py` from `python/`. The
   whole-project runs —
   `npm test`, `npm run typecheck` and `npm run build`, which typecheck every
   source file including the ones other workers are still editing — belong to
   one verifier at the end. A build failing on a file the worker does not own
   is noise, not a finding. (`CLAUDE.md`, "Commands".)
 - **Shell quirks.** npm commands now run from the repo root — there is a root
-  `package.json` — not from `web/`. A brief must name the repo root as the
+  `package.json` — not from `web/`; every Python command runs from
+  `python/`. A brief must name the repo root as the
   working directory or the command fails with a misleading error.
