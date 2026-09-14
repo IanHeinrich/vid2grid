@@ -162,10 +162,10 @@ pip install "git+https://github.com/IanHeinrich/vid2grid#subdirectory=python"
 ```
 
 ```python
-from vid2grid import probe, render_single_sheet
+from vid2grid import render_single_sheet
 
-info = probe("clip.mp4")
 result = render_single_sheet("clip.mp4", out_path="sheet.jpg", frames=16)
+print(result.to_sheet_row())
 ```
 
 Same `RenderPlan` contract as the browser app, no transcription. See
@@ -220,10 +220,11 @@ format` is the format step. All three should be clean before opening a PR.
 `python/` has its own toolchain, run from that directory:
 
 ```bash
-uv sync --all-groups && uv run pytest && uv run ruff check .
+uv sync --all-groups && uv run pytest && uv run ruff check . && uv run ruff format --check .
 ```
 
-(or a venv: `pip install -e . pytest ruff`, then `pytest` and `ruff check .`).
+(or a venv: `pip install -e . pytest ruff`, then `pytest`, `ruff check .` and
+`ruff format --check .`).
 
 The [pages.yml](.github/workflows/pages.yml) workflow runs a `test` job (npm
 install, `npm test`, `npm run typecheck`, then regenerates fixtures and fails

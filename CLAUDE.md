@@ -22,7 +22,7 @@ plan for use outside the browser.
 `npm test` and `npm run build` must both pass before a change is done.
 
 The Python package is its own toolchain and does not go through npm:
-`cd python && uv sync --all-groups && uv run pytest && uv run ruff check .`.
+`cd python && uv sync --all-groups && uv run pytest && uv run ruff check . && uv run ruff format --check .`.
 
 | Package                  | What it is                                                                                                                                                                                                                                                                                              |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

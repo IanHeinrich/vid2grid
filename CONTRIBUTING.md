@@ -33,8 +33,9 @@ For larger changes, consider opening an issue first to discuss the approach.
 ## Contributing to the Python package
 
 From [python](python): `uv sync --all-groups && uv run pytest && uv run ruff
-check .` (or a venv: `pip install -e . pytest ruff`, then `pytest` and
-`ruff check .`). Both `pytest` and `ruff` must be clean before opening a PR.
+check . && uv run ruff format --check .` (or a venv: `pip install -e . pytest ruff`,
+then `pytest`, `ruff check .` and `ruff format --check .`). All three must be clean
+before opening a PR.
 `python/tests/test_planner.py` checks the planner against the same
 `fixtures/render-plans/` goldens as the TypeScript planner, so a planner
 change must keep both in sync (see step 4 above).
