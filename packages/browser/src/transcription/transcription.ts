@@ -1,7 +1,5 @@
-import type { TranscribeStage, TranscriptCue } from "@vid2grid/core";
+import type { TranscribeProgressCallback, TranscriptCue } from "@vid2grid/core";
 import type { TranscribeRequest, TranscribeWorkerMessage } from "./transcriptionWorker";
-
-export type TranscribeProgress = (stage: TranscribeStage, percent: number) => void;
 
 let sharedWorker: Worker | null = null;
 
@@ -18,7 +16,7 @@ function getWorker(): Worker {
 export function transcribeAudio(
   samples: Float32Array,
   offsetSeconds: number,
-  onProgress?: TranscribeProgress,
+  onProgress?: TranscribeProgressCallback,
 ): Promise<TranscriptCue[]> {
   return new Promise((resolve, reject) => {
     const worker = getWorker();

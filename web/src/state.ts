@@ -3,8 +3,6 @@ import type { FramesPerGridSuggestion, GeneratedFile, VideoInfo } from "@vid2gri
 export const state = {
   videoFile: null as File | null,
   videoInfo: null as VideoInfo | null,
-  videoDuration: 0,
-  sourceAspect: 0,
   sheets: [] as GeneratedFile<Blob>[],
   transcriptFiles: [] as GeneratedFile<Blob>[],
   galleryUrls: [] as string[],

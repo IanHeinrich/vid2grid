@@ -14,20 +14,20 @@ import {
 // so we surface a warning.
 const KEYFRAME_DENSE_PER_SECOND = 2;
 
-/**
- * Recomputes the frame count once and drives both the frames-per-grid hint and
- * the Generate button's live grid-image count from it. In normal mode the count
- * is estimated from Target FPS; in keyframe mode it's the real keyframe count
- * (state.keyframeCount, demuxed asynchronously) so the same suggestions and grid
- * count stay accurate.
- */
+function sourceAspect(): number {
+  const info = state.videoInfo;
+  return info ? info.width / info.height : 0;
+}
+
+// One frame count drives both the frames-per-grid hint and the Generate button's
+// live grid-image count, so the two can never disagree.
 export function updateFramePlanningUi(options: { recomputeSuggestions?: boolean } = {}): void {
   const currentValue = Math.trunc(Number(els.framesPerGridInput.value));
   const outputResolution = Math.trunc(Number(els.outputResolutionInput.value));
   const keyframeMode = els.keyframeModeInput.checked;
 
-  // In keyframe mode the count comes from the video's keyframes, demuxed async;
-  // show a placeholder while pending, and a fallback note if it can't be read.
+  // Keyframe mode's count is demuxed asynchronously, so it has a pending and an
+  // unreadable state of its own before there is anything to plan with.
   if (keyframeMode && state.videoFile) {
     if (state.keyframeCounting) {
       renderCountingHint();
@@ -48,17 +48,17 @@ export function updateFramePlanningUi(options: { recomputeSuggestions?: boolean 
           Number(els.startTimeInput.value),
           Number(els.endTimeInput.value),
           Number(els.targetFpsInput.value),
-          state.videoDuration,
+          state.videoInfo?.durationSeconds,
         )
       : 0;
 
   if (options.recomputeSuggestions ?? true) {
     state.cachedSuggestions =
-      totalFrames > 0 && state.sourceAspect > 0
+      totalFrames > 0 && sourceAspect() > 0
         ? suggestFramesPerGrid(
             totalFrames,
             currentValue,
-            state.sourceAspect,
+            sourceAspect(),
             outputResolution,
             GUTTER_PX,
           )
@@ -124,8 +124,8 @@ function renderFramesPerGridHint(
   }
 
   const wastedCells =
-    state.sourceAspect > 0
-      ? countGridPackingBlanks(currentValue, state.sourceAspect, outputResolution, GUTTER_PX)
+    sourceAspect() > 0
+      ? countGridPackingBlanks(currentValue, sourceAspect(), outputResolution, GUTTER_PX)
       : null;
   const status = document.createElement("div");
   status.className = "frames-hint-status";

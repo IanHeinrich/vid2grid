@@ -121,7 +121,6 @@ def subsample_evenly(values: Sequence[T], max_kept: int) -> list[T]:
 
 
 def plan_frame_timestamps(request: CollageRequest, info: VideoInfo) -> list[PlannedFrame]:
-    """The ascending capture list, keyframe-sampled or time-sampled."""
     timestamps = (
         _keyframe_timestamps(request, info)
         if request.keyframe_sampling
@@ -189,7 +188,6 @@ def choose_timestamp_format(
 
 
 def format_timestamp(seconds: float, timestamp_format: TimestampFormat) -> str:
-    """Render a timestamp with the components the batch chose."""
     total_ms = math.floor(seconds * 1000 + 0.5)
     hours = total_ms // 3_600_000
     after_hours_ms = total_ms % 3_600_000
@@ -241,12 +239,10 @@ def grid_transcript_file_name(index: int) -> str:
 
 
 def combined_transcript_file_name() -> str:
-    """The single transcript covering the whole range."""
     return "transcript.vtt"
 
 
 def validate_request(request: CollageRequest) -> None:
-    """Raise `ValueError` for a request the planner cannot honour."""
     if request.end_seconds <= request.start_seconds:
         raise ValueError("end_time must be greater than start_time")
     if request.target_fps <= 0:

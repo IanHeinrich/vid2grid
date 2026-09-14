@@ -51,8 +51,6 @@ const systemClock: ClockPort = { now: () => Date.now() };
 
 const KEYFRAMES_UNAVAILABLE_WARNING = "Keyframes unavailable; sampled by target FPS instead";
 
-// Keyframe times cost a full demux, so a caller's videoInfo is taken as it comes and
-// topped up only when keyframe mode actually needs the field.
 async function resolveVideoInfo<TSource>(
   source: TSource,
   request: CollagePlanRequest,

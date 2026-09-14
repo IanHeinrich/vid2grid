@@ -12,9 +12,13 @@ import {
   type Track,
   type VisualSampleEntry,
 } from "mp4box";
-import { roundToMicroseconds, type PlannedFrame, type RenderPlan } from "@vid2grid/core";
-import type { ExtractionProgress } from "./extractor";
-import { looksLikeIsoBmff } from "./isoBmff";
+import {
+  roundToMicroseconds,
+  type PlannedFrame,
+  type ProgressCallback,
+  type RenderPlan,
+} from "@vid2grid/core";
+import { supportsWebCodecs } from "./isoBmff";
 
 // Generous upper bound on B-frame reorder depth: without the padding, composition-order
 // reordering could cut off a wanted frame at the end of the range.
@@ -120,7 +124,7 @@ export function keyframeTimestampsFromSamples(samples: Sample[]): number[] {
 }
 
 export async function readKeyframeTimestamps(file: File): Promise<number[] | null> {
-  if (typeof VideoDecoder === "undefined" || !looksLikeIsoBmff(file)) return null;
+  if (!supportsWebCodecs(file)) return null;
   try {
     const demuxed = await demuxCached(file);
     if (!demuxed) return null;
@@ -247,7 +251,7 @@ function createFrameCollector(
   cellW: number,
   cellH: number,
   rotation: number,
-  onProgress?: ExtractionProgress,
+  onProgress?: ProgressCallback,
 ): FrameCollector {
   const images: (ImageBitmap | undefined)[] = new Array(wanted.length);
   const pendingCaptures: Promise<void>[] = [];
@@ -376,67 +380,36 @@ async function decodeIntoCollector(
   }
 }
 
-// Sync samples decode independently, so the P/B frames the sparse sampling would discard
-// need never be decoded at all.
-async function decodeKeyframes(
+async function decodeToImages(
   decoderConfig: VideoDecoderConfig,
   samples: Sample[],
-  indices: number[],
+  indices: Iterable<number>,
   wanted: number[],
   cellW: number,
   cellH: number,
   rotation: number,
-  onProgress?: ExtractionProgress,
-): Promise<ImageBitmap[]> {
+  onProgress?: ProgressCallback,
+): Promise<ImageBitmap[] | null> {
   const cellCanvas = createCellCanvas(cellW, cellH);
-  if (!cellCanvas) return [];
+  if (!cellCanvas) return null;
 
-  const images: (ImageBitmap | undefined)[] = new Array(wanted.length);
-  const pendingCaptures: Promise<void>[] = [];
-  let nextIndex = 0;
-  let capturedCount = 0;
-
-  let onDecoderError!: (error: DOMException) => void;
-  const failed = new Promise<never>((_, reject) => {
-    onDecoderError = reject;
-  });
-
-  const decoder = new VideoDecoder({
-    output: (frame) => {
-      try {
-        for (const captureIndex of planIndicesForFrame(wanted, nextIndex, frame.timestamp / 1e6)) {
-          drawRotated(cellCanvas.ctx, frame, cellW, cellH, rotation);
-          pendingCaptures.push(
-            createImageBitmap(cellCanvas.canvas).then((image) => {
-              images[captureIndex] = image;
-              capturedCount++;
-              onProgress?.(capturedCount, wanted.length);
-            }),
-          );
-          nextIndex = captureIndex + 1;
-        }
-      } finally {
-        frame.close();
-      }
-    },
-    error: onDecoderError,
-  });
-  decoder.configure(decoderConfig);
-
-  try {
-    await Promise.race([feedSamples(decoder, samples, indices, () => false), failed]);
-  } finally {
-    if (!isDecoderClosed(decoder)) decoder.close();
-  }
-
-  await Promise.all(pendingCaptures);
-  return contiguousPrefix(images);
+  const collector = createFrameCollector(
+    wanted,
+    cellCanvas.canvas,
+    cellCanvas.ctx,
+    cellW,
+    cellH,
+    rotation,
+    onProgress,
+  );
+  await decodeIntoCollector(decoderConfig, samples, indices, collector);
+  return collector.settle();
 }
 
 export async function extractFramesWebCodecs(
   file: File,
   plan: RenderPlan,
-  onProgress?: ExtractionProgress,
+  onProgress?: ProgressCallback,
 ): Promise<ImageBitmap[] | null> {
   if (typeof VideoDecoder === "undefined") return null;
   if (plan.frames.length === 0) return [];
@@ -461,39 +434,23 @@ export async function extractFramesWebCodecs(
   const { width: cellW, height: cellH } = plan.cell;
   const wanted = plan.frames.map((frame) => frame.timestampSeconds);
 
+  // Sync samples decode independently, so a keyframe-sampled plan never has to decode
+  // the P/B frames in between.
   const keyframeIndices = selectKeyframeSampleIndices(samples, plan.frames);
-  if (keyframeIndices) {
-    return decodeKeyframes(
-      decoderConfig,
-      samples,
-      keyframeIndices,
-      wanted,
-      cellW,
-      cellH,
-      rotation,
-      onProgress,
+  const indices =
+    keyframeIndices ??
+    range(
+      findDecodeStartIndex(samples, wanted[0]),
+      findDecodeEndIndex(samples, wanted[wanted.length - 1]),
     );
-  }
-
-  const cellCanvas = createCellCanvas(cellW, cellH);
-  if (!cellCanvas) return null;
-  const collector = createFrameCollector(
+  return decodeToImages(
+    decoderConfig,
+    samples,
+    indices,
     wanted,
-    cellCanvas.canvas,
-    cellCanvas.ctx,
     cellW,
     cellH,
     rotation,
     onProgress,
   );
-  await decodeIntoCollector(
-    decoderConfig,
-    samples,
-    range(
-      findDecodeStartIndex(samples, wanted[0]),
-      findDecodeEndIndex(samples, wanted[wanted.length - 1]),
-    ),
-    collector,
-  );
-  return collector.settle();
 }

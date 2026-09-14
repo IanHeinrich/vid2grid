@@ -4,7 +4,6 @@ export interface RenderSheetRequest {
   plan: RenderPlan;
   sheet: PlannedSheet;
   images: (ImageBitmap | undefined)[];
-  jpegQuality: number;
 }
 
 export interface RenderSheetResponse {
@@ -22,14 +21,17 @@ interface RenderWorkerScope {
 const scope = self as unknown as RenderWorkerScope;
 
 scope.onmessage = async (event) => {
-  const { plan, sheet, images, jpegQuality } = event.data;
+  const { plan, sheet, images } = event.data;
   try {
     const canvas = new OffscreenCanvas(plan.canvas.width, plan.canvas.height);
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("OffscreenCanvas 2D context unavailable");
 
     paintSheetFromPlan(ctx, plan, sheet, images);
-    const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: jpegQuality / 100 });
+    const blob = await canvas.convertToBlob({
+      type: "image/jpeg",
+      quality: plan.jpegQuality / 100,
+    });
 
     for (const image of images) image?.close();
     scope.postMessage({ blob });

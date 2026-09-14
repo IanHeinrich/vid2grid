@@ -2,8 +2,9 @@ import json
 from pathlib import Path
 
 import pytest
+from conftest import collage_request
 
-from vid2grid.contract import CollageRequest, TimestampFormat, VideoInfo
+from vid2grid.contract import CollageRequest, RenderPlan, TimestampFormat, VideoInfo
 from vid2grid.planner import (
     GUTTER_PX,
     build_render_plan,
@@ -46,6 +47,7 @@ def test_fixture_plan_is_reproduced(path: Path) -> None:
     request = CollageRequest.from_dict(fixture["request"])
     info = VideoInfo.from_dict(fixture["info"])
     assert build_render_plan(request, info).to_dict() == fixture["plan"]
+    assert RenderPlan.from_dict(fixture["plan"]).to_dict() == fixture["plan"]
 
 
 def test_compute_optimal_grid_matches_the_worked_example() -> None:
@@ -180,19 +182,6 @@ def test_file_names() -> None:
     assert combined_transcript_file_name() == "transcript.vtt"
 
 
-def _request(**overrides: object) -> CollageRequest:
-    fields: dict[str, object] = {
-        "start_seconds": 0.0,
-        "end_seconds": 10.0,
-        "target_fps": 1.0,
-        "frames_per_grid": 4,
-        "output_resolution": 512,
-        "jpeg_quality": 85,
-    }
-    fields.update(overrides)
-    return CollageRequest(**fields)  # type: ignore[arg-type]
-
-
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [
@@ -209,11 +198,11 @@ def _request(**overrides: object) -> CollageRequest:
 )
 def test_validate_request_rejects(overrides: dict[str, object], message: str) -> None:
     with pytest.raises(ValueError, match=message):
-        validate_request(_request(**overrides))
+        validate_request(collage_request(**overrides))
 
 
 def test_keyframe_sampling_without_probed_keyframes_raises() -> None:
-    request = _request(keyframe_sampling=True)
+    request = collage_request(keyframe_sampling=True)
     info = VideoInfo(duration_seconds=10.0, width=640, height=480)
     with pytest.raises(ValueError, match="keyframe_sampling needs keyframe_timestamps_seconds"):
         build_render_plan(request, info)
@@ -221,7 +210,8 @@ def test_keyframe_sampling_without_probed_keyframes_raises() -> None:
 
 def test_a_trailing_partial_sheet_keeps_the_full_layout() -> None:
     plan = build_render_plan(
-        _request(end_seconds=7.0), VideoInfo(duration_seconds=7.0, width=640, height=480)
+        collage_request(end_seconds=7.0, target_fps=1.0),
+        VideoInfo(duration_seconds=7.0, width=640, height=480),
     )
     assert len(plan.sheets) == 2
     assert len(plan.sheets[0].cells) == 4

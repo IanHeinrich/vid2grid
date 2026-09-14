@@ -1,10 +1,5 @@
-/**
- * Dual-handle timeline slider for the start/end time range. Two overlaid
- * native <input type="range"> handles (kept keyboard-accessible and
- * screen-reader-friendly for free) sit over a track whose fill shows the
- * selected span. The number inputs in the sidebar remain the source of truth;
- * this is just a second, draggable view of the same two values.
- */
+// Two overlaid native range inputs, for keyboard and screen-reader support for free.
+// The sidebar's number inputs stay the source of truth; this is a second view of them.
 import { els } from "../dom";
 
 const THUMB_PX = 16;
@@ -35,11 +30,6 @@ function handlePosition(input: HTMLInputElement): HandlePosition {
   };
 }
 
-/**
- * Wires the two handles. `onScrub` fires while a handle is grabbed or
- * arrow-keyed (with the live time and the handle's screen position);
- * `onScrubEnd` fires on release / blur so the caller can hide the preview.
- */
 export function initRangeSlider(callbacks: {
   onScrub: (which: "start" | "end", seconds: number, pos: HandlePosition) => void;
   onScrubEnd: () => void;

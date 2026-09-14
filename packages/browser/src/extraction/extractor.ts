@@ -1,13 +1,11 @@
-import type { RenderPlan } from "@vid2grid/core";
-
-export type ExtractionProgress = (done: number, total: number) => void;
+import type { ProgressCallback, RenderPlan } from "@vid2grid/core";
 
 /** `currentTime` lands on the nearest frame, not the first at/after the timestamp: the one
  * place this path's semantics differ from the WebCodecs one. */
 export async function extractFrames(
   file: File,
   plan: RenderPlan,
-  onProgress?: ExtractionProgress,
+  onProgress?: ProgressCallback,
 ): Promise<ImageBitmap[]> {
   const video = document.createElement("video");
   video.preload = "auto";

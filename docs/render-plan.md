@@ -8,9 +8,10 @@ call the output files.
 `packages/core` is the only place that decides any of it
 ([`plan/buildRenderPlan.ts`](../packages/core/src/plan/buildRenderPlan.ts),
 typed in [`plan/renderPlan.ts`](../packages/core/src/plan/renderPlan.ts)). An
-**executor** — the browser one in `packages/browser`, a Python one later — only
-decodes, scales, pastes, draws text and encodes. That keeps the policy in one
-implementation and one set of tests, whatever language the host is written in.
+**executor** — the browser one in `packages/browser`, the headless one in
+`python/` — only decodes, scales, pastes, draws text and encodes. That keeps
+the policy in one implementation and one set of tests, whatever language the
+host is written in.
 
 ```
 CollagePlanRequest + VideoInfo  ->  buildRenderPlan  ->  RenderPlan  ->  executor  ->  JPEG sheets (+ .vtt)

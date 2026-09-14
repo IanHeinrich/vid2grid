@@ -1,8 +1,9 @@
 from dataclasses import replace
 
+from conftest import collage_request
 from PIL import Image
 
-from vid2grid.contract import CollageRequest, RenderPlan, VideoInfo
+from vid2grid.contract import RenderPlan, VideoInfo
 from vid2grid.paint import paint_sheet
 from vid2grid.planner import build_render_plan
 
@@ -10,14 +11,7 @@ FLAT_FILL = (128, 128, 128)
 
 
 def _plan() -> RenderPlan:
-    request = CollageRequest(
-        start_seconds=0.0,
-        end_seconds=2.0,
-        target_fps=2.0,
-        frames_per_grid=4,
-        output_resolution=512,
-        jpeg_quality=85,
-    )
+    request = collage_request(end_seconds=2.0, target_fps=2.0)
     return build_render_plan(request, VideoInfo(duration_seconds=2.0, width=320, height=240))
 
 

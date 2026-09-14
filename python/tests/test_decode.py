@@ -3,22 +3,20 @@ from dataclasses import replace
 from pathlib import Path
 
 import av
+from conftest import collage_request
 from PIL import Image
 
-from vid2grid.contract import CollageRequest, PlannedFrame, RenderPlan, VideoInfo
+from vid2grid.contract import PlannedFrame, RenderPlan, VideoInfo
 from vid2grid.decode import capture_frames
 from vid2grid.planner import build_render_plan
 from vid2grid.probe import probe
 
 
 def _plan(info: VideoInfo, *, end_seconds: float, frame_count: int) -> RenderPlan:
-    request = CollageRequest(
-        start_seconds=0.0,
+    request = collage_request(
         end_seconds=end_seconds,
         target_fps=frame_count / end_seconds,
         frames_per_grid=frame_count,
-        output_resolution=512,
-        jpeg_quality=85,
         frame_count=frame_count,
     )
     return build_render_plan(request, info)
@@ -76,14 +74,8 @@ def test_a_keyframe_plan_captures_every_probed_keyframe(tiny_video: Path) -> Non
     info = probe(tiny_video, keyframes=True)
     keyframes = info.keyframe_timestamps_seconds
     assert keyframes is not None
-    request = CollageRequest(
-        start_seconds=0.0,
-        end_seconds=info.duration_seconds,
-        target_fps=1.0,
-        frames_per_grid=4,
-        output_resolution=512,
-        jpeg_quality=85,
-        keyframe_sampling=True,
+    request = collage_request(
+        end_seconds=info.duration_seconds, target_fps=1.0, keyframe_sampling=True
     )
     plan = build_render_plan(request, info)
 

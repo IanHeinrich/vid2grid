@@ -1,13 +1,13 @@
-import type { RenderPlan } from "@vid2grid/core";
-import { extractFrames, type ExtractionProgress } from "./extractor";
-import { looksLikeIsoBmff } from "./isoBmff";
+import type { ProgressCallback, RenderPlan } from "@vid2grid/core";
+import { extractFrames } from "./extractor";
+import { supportsWebCodecs } from "./isoBmff";
 
 export async function extractFramesAuto(
   file: File,
   plan: RenderPlan,
-  onProgress?: ExtractionProgress,
+  onProgress?: ProgressCallback,
 ): Promise<ImageBitmap[]> {
-  if (typeof VideoDecoder !== "undefined" && looksLikeIsoBmff(file)) {
+  if (supportsWebCodecs(file)) {
     try {
       const { extractFramesWebCodecs } = await import("./webcodecsExtractor");
       const images = await extractFramesWebCodecs(file, plan, onProgress);

@@ -32,10 +32,9 @@ For larger changes, consider opening an issue first to discuss the approach.
 
 ## Contributing to the Python package
 
-From [python](python): `uv sync --all-groups && uv run pytest && uv run ruff
-check . && uv run ruff format --check .` (or a venv: `pip install -e . pytest ruff`,
-then `pytest`, `ruff check .` and `ruff format --check .`). All three must be clean
-before opening a PR.
+Its toolchain lives outside npm and runs from [python](python) —
+[python/README.md](python/README.md) has the commands; pytest and both ruff
+checks must be clean before opening a PR.
 `python/tests/test_planner.py` checks the planner against the same
 `fixtures/render-plans/` goldens as the TypeScript planner, so a planner
 change must keep both in sync (see step 4 above).
@@ -47,5 +46,7 @@ directly. Every change lands via a pull request that must have:
 
 - A passing `test` CI check (runs `npm test` from the repo root, from
   [.github/workflows/pages.yml](.github/workflows/pages.yml)).
+- A passing `python` CI check (pytest and ruff for `python/` across Ubuntu,
+  Windows and macOS, from the same workflow).
 - An approving review from the code owner defined in
   [.github/CODEOWNERS](.github/CODEOWNERS) (@IanHeinrich).

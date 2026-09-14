@@ -8,6 +8,12 @@ export interface PlannedFrame {
   timestampSeconds: number;
 }
 
+export interface TimestampFormat {
+  showHours: boolean;
+  showMinutes: boolean;
+  showMilliseconds: boolean;
+}
+
 export interface PlannedGridLayout {
   cols: number;
   rows: number;
@@ -69,7 +75,7 @@ export interface RenderPlan {
   layout: PlannedGridLayout;
   style: RenderPlanStyle;
   jpegQuality: number;
-  timestampFormat: { showHours: boolean; showMinutes: boolean; showMilliseconds: boolean };
+  timestampFormat: TimestampFormat;
   /** The capture list, ascending. */
   frames: PlannedFrame[];
   sheets: PlannedSheet[];

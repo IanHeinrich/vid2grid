@@ -11,23 +11,16 @@ from .planner import round_to_microseconds
 _QUARTER_TURNS = (90, 270)
 
 
-def pyav_attr(obj: object, name: str) -> Any:
-    """Read a PyAV attribute, naming it if a wheel bump moved it."""
-    try:
-        return getattr(obj, name)
-    except AttributeError as exc:
-        raise RuntimeError(f"PyAV {av.__version__} has no {type(obj).__name__}.{name}") from exc
-
-
 def probe(path: str | Path, *, keyframes: bool = False) -> VideoInfo:
     """Read one video's duration, display-oriented size, frame rate, codec and rotation."""
     with av.open(str(path)) as container:
         stream = container.streams.video[0]
         rotation = normalize_rotation_clockwise(_display_rotation_ccw(container, stream))
         width, height = display_size(
-            pyav_attr(stream.codec_context, "width"),
-            pyav_attr(stream.codec_context, "height"),
-            pyav_attr(stream, "sample_aspect_ratio"),
+            stream.codec_context.width,
+            stream.codec_context.height,
+            # Absent on a container that never wrote one, where display_size wants None anyway.
+            getattr(stream, "sample_aspect_ratio", None),
             rotation,
         )
         return VideoInfo(
@@ -38,7 +31,7 @@ def probe(path: str | Path, *, keyframes: bool = False) -> VideoInfo:
                 _keyframe_timestamps(container, stream) if keyframes else None
             ),
             fps=_frame_rate(stream),
-            codec=pyav_attr(stream.codec_context, "name"),
+            codec=stream.codec_context.name,
             rotation=rotation,
         )
 
@@ -82,7 +75,7 @@ def _display_rotation_ccw(container: Any, stream: Any) -> float:
         return 0.0
     finally:
         container.seek(0)
-    return 0.0 if frame is None else float(pyav_attr(frame, "rotation"))
+    return 0.0 if frame is None else float(frame.rotation)
 
 
 def _duration_seconds(container: Any, stream: Any) -> float:
@@ -94,7 +87,7 @@ def _duration_seconds(container: Any, stream: Any) -> float:
 
 
 def _frame_rate(stream: Any) -> float:
-    rate = pyav_attr(stream, "average_rate") or pyav_attr(stream, "guessed_rate")
+    rate = stream.average_rate or stream.guessed_rate
     return 0.0 if rate is None else float(rate)
 
 

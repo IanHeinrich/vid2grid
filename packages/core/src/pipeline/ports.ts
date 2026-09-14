@@ -37,12 +37,14 @@ export interface SheetEncoderPort<TImage, TBinary> {
 // byte-accurate percentage while "transcribe" only has an approximate heartbeat.
 export type TranscribeStage = "model" | "transcribe";
 
+export type TranscribeProgressCallback = (stage: TranscribeStage, percent: number) => void;
+
 export interface TranscriptPort<TSource> {
   transcribe(
     source: TSource,
     startSeconds: number,
     endSeconds: number,
-    onProgress?: (stage: TranscribeStage, percent: number) => void,
+    onProgress?: TranscribeProgressCallback,
   ): Promise<TranscriptCue[]>;
 }
 

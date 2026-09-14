@@ -10,3 +10,7 @@ export function looksLikeIsoBmff(file: File): boolean {
     name.endsWith(".mov")
   );
 }
+
+export function supportsWebCodecs(file: File): boolean {
+  return typeof VideoDecoder !== "undefined" && looksLikeIsoBmff(file);
+}

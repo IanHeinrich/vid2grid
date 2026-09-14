@@ -1,7 +1,3 @@
-/**
- * Gallery + lightbox rendering: owns the generated grid images' object URLs
- * and the click-to-zoom overlay.
- */
 import { els } from "../dom";
 import { state } from "../state";
 import { vttToPlainText, type GeneratedFile, type RenderPlan } from "@vid2grid/core";
@@ -61,13 +57,8 @@ export function renderGallery(plan: RenderPlan): void {
   els.emptyState.hidden = true;
 }
 
-/**
- * Fills every per-sheet transcript preview. A low frames-per-grid + high FPS
- * makes each sheet span a fraction of a second, so one multi-second speech cue
- * overlaps a whole run of consecutive sheets and repeats verbatim. To avoid a
- * wall of duplicated text, the full transcript is shown on the first sheet of
- * each run and the repeats collapse to a reference back to it.
- */
+// One multi-second cue overlaps a whole run of short sheets and would repeat verbatim
+// on each, so only the run's first sheet shows it and the rest point back at that one.
 function populateTranscriptPreviews(slots: PreviewSlot[]): void {
   const texts = slots.map((slot) => (slot ? slot.file.data.text() : Promise.resolve(null)));
   void Promise.all(texts).then((vtts) => {
