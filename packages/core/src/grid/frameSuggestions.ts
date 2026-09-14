@@ -1,30 +1,34 @@
 // The suggestions judge a full sheet's packing only: a partially-filled trailing sheet is
 // expected, so its leftover cells are deliberately ignored.
 import { computeOptimalGrid } from "./gridMaths";
+import { planFrameTimestamps } from "../plan/framePlanning";
+import type { CollagePlanRequest, VideoInfo } from "../types";
 
+// Runs the planner's own sampling so the UI's estimate cannot drift from the plan.
+// The fields the sampling never reads are filled with placeholders.
 export function estimateExtractedFrameCount(
-  startTime: number,
-  endTime: number,
+  startSeconds: number,
+  endSeconds: number,
   targetFps: number,
-  videoDuration?: number,
+  durationSeconds?: number,
+  frameCount?: number,
 ): number {
-  const duration = endTime - startTime;
-  if (duration <= 0 || targetFps <= 0) return 0;
-  const naiveCount = Math.max(1, Math.floor(duration * targetFps));
-  if (videoDuration === undefined) return naiveCount;
-
-  let count = 0;
-  for (let i = 0; i < naiveCount; i++) {
-    const timestamp = startTime + i / targetFps;
-    if (timestamp >= videoDuration) break;
-    count++;
-  }
-  return Math.max(1, count);
-}
-
-export function countBlankCells(totalFrames: number, framesPerGrid: number): number {
-  const remainder = totalFrames % framesPerGrid;
-  return remainder === 0 ? 0 : framesPerGrid - remainder;
+  if (endSeconds <= startSeconds || targetFps <= 0) return 0;
+  const request: CollagePlanRequest = {
+    startSeconds,
+    endSeconds,
+    targetFps,
+    frameCount,
+    framesPerGrid: 1,
+    outputResolution: 1,
+    jpegQuality: 1,
+  };
+  const info: VideoInfo = {
+    durationSeconds: durationSeconds ?? Infinity,
+    width: 1,
+    height: 1,
+  };
+  return planFrameTimestamps(request, info).length;
 }
 
 export function estimateSheetCount(totalFrames: number, framesPerGrid: number): number {

@@ -27,7 +27,6 @@ class VideoInfo:
     rotation: int = 0
 
     def to_dict(self) -> dict[str, Any]:
-        """The contract's `VideoInfo` JSON, without the executor-only fields."""
         info: dict[str, Any] = {
             "durationSeconds": self.duration_seconds,
             "width": self.width,
@@ -84,7 +83,6 @@ class CollageRequest:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "CollageRequest":
-        """Read the contract's `CollagePlanRequest` JSON."""
         transcript = data.get("transcript")
         return cls(
             start_seconds=data["startSeconds"],
@@ -353,7 +351,6 @@ class RenderPlan:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "RenderPlan":
-        """Read the contract's `RenderPlan` JSON."""
         combined = data.get("combinedTranscript")
         return cls(
             version=data["version"],

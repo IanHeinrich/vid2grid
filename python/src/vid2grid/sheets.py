@@ -14,30 +14,26 @@ _KEYFRAME_FALLBACK_WARNING = (
 )
 
 
-@dataclass(frozen=True, slots=True)
-class RenderResult:
+@dataclass(frozen=True, slots=True, kw_only=True)
+class _Rendered:
+    info: VideoInfo
+    frame_count: int
+    first_timestamp_seconds: float | None
+    last_timestamp_seconds: float | None
+    timings_ms: dict[str, int]
+    vid2grid_version: str
+    plan: RenderPlan
+    warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RenderResult(_Rendered):
     sheet_paths: tuple[Path, ...]
-    info: VideoInfo
-    frame_count: int
-    first_timestamp_seconds: float | None
-    last_timestamp_seconds: float | None
-    timings_ms: dict[str, int]
-    vid2grid_version: str
-    plan: RenderPlan
-    warnings: tuple[str, ...] = ()
 
 
-@dataclass(frozen=True, slots=True)
-class SheetResult:
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SheetResult(_Rendered):
     sheet_path: Path
-    info: VideoInfo
-    frame_count: int
-    first_timestamp_seconds: float | None
-    last_timestamp_seconds: float | None
-    timings_ms: dict[str, int]
-    vid2grid_version: str
-    plan: RenderPlan
-    warnings: tuple[str, ...] = ()
 
     def to_sheet_row(self, sheet_path: str | None = None) -> dict[str, Any]:
         """Curator's `sheet` row, whose key names are the only place `_s` suffixes appear."""
@@ -67,40 +63,22 @@ def render_sheets(
     info: VideoInfo | None = None,
 ) -> RenderResult:
     """Write one JPEG per planned sheet into `out_dir` and report what went onto them."""
-    validate_request(request)
-    video_info = _resolve_video_info(path, request, info)
-    plan, warnings = _plan_with_keyframe_fallback(request, video_info)
-
     directory = Path(out_dir)
-    directory.mkdir(parents=True, exist_ok=True)
-
-    started = time.perf_counter()
-    images = capture_frames(path, plan, video_info)
-    extracting_ms = _elapsed_ms(started)
+    captured = _capture(path, request, info, directory)
 
     started = time.perf_counter()
     sheet_paths = []
-    for sheet in plan.sheets:
-        cell_images = [images[cell.frame_index] for cell in sheet.cells]
+    for sheet in captured.plan.sheets:
+        cell_images = [captured.images[cell.frame_index] for cell in sheet.cells]
         if not cell_images or cell_images[0] is None:
             continue
         sheet_path = directory / sheet.file_name
-        save_jpeg(paint_sheet(plan, sheet, cell_images), sheet_path, plan.jpeg_quality)
+        save_jpeg(
+            paint_sheet(captured.plan, sheet, cell_images), sheet_path, captured.plan.jpeg_quality
+        )
         sheet_paths.append(sheet_path)
-    rendering_ms = _elapsed_ms(started)
 
-    captured = _captured_timestamps(plan, images)
-    return RenderResult(
-        sheet_paths=tuple(sheet_paths),
-        info=video_info,
-        frame_count=len(captured),
-        first_timestamp_seconds=captured[0] if captured else None,
-        last_timestamp_seconds=captured[-1] if captured else None,
-        timings_ms={"extracting": extracting_ms, "rendering": rendering_ms},
-        vid2grid_version=VID2GRID_VERSION,
-        plan=plan,
-        warnings=warnings,
-    )
+    return RenderResult(sheet_paths=tuple(sheet_paths), **_rendered_fields(captured, started))
 
 
 def render_single_sheet(
@@ -118,6 +96,7 @@ def render_single_sheet(
     info = probe(path, keyframes=keyframes)
     end = info.duration_seconds if end_seconds is None else end_seconds
     span_seconds = end - start_seconds
+    # Ahead of validate_request because target_fps below would divide by zero first.
     if span_seconds <= 0:
         raise ValueError("end_time must be greater than start_time")
 
@@ -133,36 +112,68 @@ def render_single_sheet(
         keyframe_sampling=keyframes,
         max_keyframes=frames if keyframes else None,
     )
-    plan, warnings = _plan_with_keyframe_fallback(request, info)
 
     sheet_path = Path(out_path)
-    sheet_path.parent.mkdir(parents=True, exist_ok=True)
+    captured = _capture(path, request, info, sheet_path.parent)
 
-    started = time.perf_counter()
-    images = capture_frames(path, plan, info)
-    extracting_ms = _elapsed_ms(started)
-
-    if not plan.sheets or not images or images[0] is None:
+    if not captured.plan.sheets or not captured.images or captured.images[0] is None:
         raise ValueError("no frames could be captured in the requested range")
 
     started = time.perf_counter()
-    sheet = plan.sheets[0]
-    cell_images = [images[cell.frame_index] for cell in sheet.cells]
-    save_jpeg(paint_sheet(plan, sheet, cell_images), sheet_path, plan.jpeg_quality)
-    rendering_ms = _elapsed_ms(started)
+    sheet = captured.plan.sheets[0]
+    cell_images = [captured.images[cell.frame_index] for cell in sheet.cells]
+    save_jpeg(
+        paint_sheet(captured.plan, sheet, cell_images), sheet_path, captured.plan.jpeg_quality
+    )
 
-    captured = _captured_timestamps(plan, images)
-    return SheetResult(
-        sheet_path=sheet_path,
-        info=info,
-        frame_count=len(captured),
-        first_timestamp_seconds=captured[0] if captured else None,
-        last_timestamp_seconds=captured[-1] if captured else None,
-        timings_ms={"extracting": extracting_ms, "rendering": rendering_ms},
-        vid2grid_version=VID2GRID_VERSION,
+    return SheetResult(sheet_path=sheet_path, **_rendered_fields(captured, started))
+
+
+@dataclass(frozen=True, slots=True)
+class _Captured:
+    info: VideoInfo
+    plan: RenderPlan
+    warnings: tuple[str, ...]
+    images: list[Any]
+    extracting_ms: int
+
+
+def _capture(
+    path: str | Path,
+    request: CollageRequest,
+    info: VideoInfo | None,
+    destination_dir: Path,
+) -> _Captured:
+    validate_request(request)
+    video_info = _resolve_video_info(path, request, info)
+    plan, warnings = _plan_with_keyframe_fallback(request, video_info)
+
+    destination_dir.mkdir(parents=True, exist_ok=True)
+
+    started = time.perf_counter()
+    images = capture_frames(path, plan, video_info)
+    return _Captured(
+        info=video_info,
         plan=plan,
         warnings=warnings,
+        images=images,
+        extracting_ms=_elapsed_ms(started),
     )
+
+
+def _rendered_fields(captured: _Captured, rendering_started: float) -> dict[str, Any]:
+    rendering_ms = _elapsed_ms(rendering_started)
+    timestamps = _captured_timestamps(captured.plan, captured.images)
+    return {
+        "info": captured.info,
+        "frame_count": len(timestamps),
+        "first_timestamp_seconds": timestamps[0] if timestamps else None,
+        "last_timestamp_seconds": timestamps[-1] if timestamps else None,
+        "timings_ms": {"extracting": captured.extracting_ms, "rendering": rendering_ms},
+        "vid2grid_version": VID2GRID_VERSION,
+        "plan": captured.plan,
+        "warnings": captured.warnings,
+    }
 
 
 # Keyframe times cost a full demux, so a caller's info is taken as it comes and topped up

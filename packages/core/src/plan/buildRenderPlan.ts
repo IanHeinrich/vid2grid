@@ -1,11 +1,10 @@
-import { computeOptimalGrid, GUTTER_PX } from "../grid/gridMaths";
+import { computeOptimalGrid, GUTTER_PX, type GridLayout } from "../grid/gridMaths";
 import { combinedTranscriptFileName, gridFileName } from "../grid/gridFileName";
 import {
   chooseTimestampFormat,
   formatTimestamp,
   FONT_HEIGHT_DIVISOR,
   MIN_FONT_SIZE,
-  type TimestampFormat,
 } from "../render/timestampFormat";
 import { roundToMicroseconds, planFrameTimestamps } from "./framePlanning";
 import { computeSheetWindows } from "./sheetWindows";
@@ -17,6 +16,7 @@ import {
   type PlannedWatermark,
   type RenderPlan,
   type RenderPlanStyle,
+  type TimestampFormat,
 } from "./renderPlan";
 import { validateCollagePlanRequest, type CollagePlanRequest, type VideoInfo } from "../types";
 
@@ -103,7 +103,7 @@ export function buildRenderPlan(request: CollagePlanRequest, info: VideoInfo): R
 function planCell(
   frame: PlannedFrame,
   cellIndex: number,
-  layout: { cols: number; cellW: number; cellH: number; offsetX: number; offsetY: number },
+  layout: GridLayout,
   timestampFormat: TimestampFormat,
   fontSizePx: number,
   strokeWidthPx: number,

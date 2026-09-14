@@ -3,9 +3,10 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from conftest import collage_request
 from PIL import Image
 
-from vid2grid.contract import CollageRequest
+import vid2grid
 from vid2grid.probe import probe
 from vid2grid.sheets import render_sheets, render_single_sheet
 
@@ -20,21 +21,8 @@ SHEET_ROW_KEYS = {
 }
 
 
-def _request(**overrides: object) -> CollageRequest:
-    fields: dict[str, object] = {
-        "start_seconds": 0.0,
-        "end_seconds": 3.0,
-        "target_fps": 4.0,
-        "frames_per_grid": 4,
-        "output_resolution": 512,
-        "jpeg_quality": 85,
-    }
-    fields.update(overrides)
-    return CollageRequest(**fields)  # type: ignore[arg-type]
-
-
 def test_render_sheets_writes_one_numbered_jpeg_per_sheet(tiny_video: Path, tmp_path: Path) -> None:
-    result = render_sheets(tiny_video, _request(), tmp_path)
+    result = render_sheets(tiny_video, collage_request(), tmp_path)
 
     expected = math.ceil(len(result.plan.frames) / 4)
     assert len(result.sheet_paths) == expected
@@ -66,7 +54,7 @@ def test_render_single_sheet_reports_curators_row(tiny_video: Path, tmp_path: Pa
     assert row["first_timestamp_s"] == 0.0
     assert row["last_timestamp_s"] > 0
     assert all(isinstance(value, int) for value in row["timings_ms"].values())
-    assert row["vid2grid_version"] == result.vid2grid_version
+    assert row["vid2grid_version"] == vid2grid.__version__
     assert result.to_sheet_row()["sheet_path"] == str(out_path)
 
 
@@ -75,7 +63,7 @@ def test_keyframe_sampling_falls_back_to_time_sampling(tiny_video: Path, tmp_pat
     without_keyframes = replace(probed, keyframe_timestamps_seconds=())
 
     result = render_sheets(
-        tiny_video, _request(keyframe_sampling=True), tmp_path, info=without_keyframes
+        tiny_video, collage_request(keyframe_sampling=True), tmp_path, info=without_keyframes
     )
 
     assert len(result.warnings) == 1
@@ -91,7 +79,7 @@ def test_a_supplied_info_is_topped_up_with_keyframes(tiny_video: Path, tmp_path:
     assert keyframes is not None
 
     result = render_sheets(
-        tiny_video, _request(keyframe_sampling=True), tmp_path, info=without_keyframes
+        tiny_video, collage_request(keyframe_sampling=True), tmp_path, info=without_keyframes
     )
 
     assert result.warnings == ()
@@ -102,7 +90,7 @@ def test_a_supplied_info_is_topped_up_with_keyframes(tiny_video: Path, tmp_path:
 
 def test_render_sheets_validates_before_probing(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="jpeg_quality must be between 1 and 100"):
-        render_sheets(tmp_path / "missing.mp4", _request(jpeg_quality=0), tmp_path)
+        render_sheets(tmp_path / "missing.mp4", collage_request(jpeg_quality=0), tmp_path)
 
 
 def test_keyframes_outside_the_range_fall_back_too(tiny_video: Path, tmp_path: Path) -> None:
@@ -111,7 +99,7 @@ def test_keyframes_outside_the_range_fall_back_too(tiny_video: Path, tmp_path: P
 
     result = render_sheets(
         tiny_video,
-        _request(start_seconds=1.0, keyframe_sampling=True),
+        collage_request(start_seconds=1.0, keyframe_sampling=True),
         tmp_path,
         info=only_at_the_start,
     )
@@ -129,7 +117,7 @@ def test_a_sheet_whose_frames_were_never_captured_is_dropped(
 
     result = render_sheets(
         tiny_video,
-        _request(end_seconds=overlong.duration_seconds, frame_count=8, frames_per_grid=4),
+        collage_request(end_seconds=overlong.duration_seconds, frame_count=8, frames_per_grid=4),
         tmp_path,
         info=overlong,
     )

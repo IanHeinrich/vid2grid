@@ -9,7 +9,6 @@ from PIL import Image
 
 from .contract import RenderPlan, Size, VideoInfo
 from .planner import round_to_microseconds
-from .probe import pyav_attr
 
 _DEFAULT_KEYFRAME_INTERVAL_SECONDS = 2.0
 
@@ -123,7 +122,7 @@ def _keyframe_interval_seconds(info: VideoInfo) -> float:
 
 def _to_cell_image(frame: Any, cell: Size, rotation: int) -> Image.Image:
     turned = rotation in (90, 270)
-    scaled = pyav_attr(frame, "reformat")(
+    scaled = frame.reformat(
         width=cell.height if turned else cell.width,
         height=cell.width if turned else cell.height,
         format="rgb24",

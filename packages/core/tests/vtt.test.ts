@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  cuesInWindow,
   cuesToVtt,
   formatVttTimestamp,
   vttToPlainText,
@@ -49,5 +50,18 @@ describe("vttToPlainText", () => {
 
   it("returns an empty string for a header-only document", () => {
     expect(vttToPlainText("WEBVTT\n")).toBe("");
+  });
+});
+
+describe("cuesInWindow", () => {
+  const cue: TranscriptCue = { start: 1, end: 2, text: "hello there" };
+
+  it("excludes a cue that only touches the window at its edge", () => {
+    expect(cuesInWindow([cue], 2, 3)).toEqual([]);
+    expect(cuesInWindow([cue], 0, 1)).toEqual([]);
+  });
+
+  it("includes a cue that overlaps the window", () => {
+    expect(cuesInWindow([cue], 1.5, 2.5)).toEqual([cue]);
   });
 });

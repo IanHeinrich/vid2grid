@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from functools import lru_cache
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -6,8 +7,6 @@ from PIL import Image, ImageDraw, ImageFont
 from .contract import PlannedSheet, RenderPlan
 
 _ANCHORS = {"top-left": "la", "top-right": "ra"}
-
-_fonts: dict[int, ImageFont.FreeTypeFont] = {}
 
 
 def paint_sheet(
@@ -39,9 +38,6 @@ def save_jpeg(image: Image.Image, path: str | Path, quality: int) -> None:
     image.save(path, format="JPEG", quality=quality)
 
 
+@lru_cache
 def _font(size: int) -> ImageFont.FreeTypeFont:
-    font = _fonts.get(size)
-    if font is None:
-        font = ImageFont.load_default(size=size)
-        _fonts[size] = font
-    return font
+    return ImageFont.load_default(size=size)

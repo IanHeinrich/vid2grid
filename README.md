@@ -217,14 +217,8 @@ There's no lint step. `npm run typecheck` (which `npm run build` runs first)
 is the type-check gate, `npm test` is the correctness gate, and `npm run
 format` is the format step. All three should be clean before opening a PR.
 
-`python/` has its own toolchain, run from that directory:
-
-```bash
-uv sync --all-groups && uv run pytest && uv run ruff check . && uv run ruff format --check .
-```
-
-(or a venv: `pip install -e . pytest ruff`, then `pytest`, `ruff check .` and
-`ruff format --check .`).
+`python/` has its own toolchain, run from that directory — see
+[python/README.md](python/README.md) for the uv (or venv) commands.
 
 The [pages.yml](.github/workflows/pages.yml) workflow runs a `test` job (npm
 install, `npm test`, `npm run typecheck`, then regenerates fixtures and fails

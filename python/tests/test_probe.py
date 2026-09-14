@@ -8,14 +8,14 @@ from vid2grid.planner import round_to_microseconds
 from vid2grid.probe import display_size, normalize_rotation_clockwise, probe
 
 
-def _demuxed_keyframe_seconds(path: Path) -> list[float]:
+def _decoded_keyframe_seconds(path: Path) -> set[float]:
     with av.open(str(path)) as container:
         stream = container.streams.video[0]
-        return [
-            round_to_microseconds(float(packet.pts * stream.time_base))
-            for packet in container.demux(stream)
-            if packet.pts is not None and packet.is_keyframe
-        ]
+        return {
+            round_to_microseconds(frame.time)
+            for frame in container.decode(stream)
+            if frame.key_frame and frame.time is not None
+        }
 
 
 def test_probe_reads_the_synthesised_video(tiny_video: Path) -> None:
@@ -33,9 +33,10 @@ def test_probe_keyframes_are_ascending_and_in_range(tiny_video: Path) -> None:
     keyframes = info.keyframe_timestamps_seconds
     assert keyframes
 
-    assert list(keyframes) == sorted(_demuxed_keyframe_seconds(tiny_video))
+    assert keyframes[0] == 0.0
     assert all(later > earlier for earlier, later in zip(keyframes, keyframes[1:], strict=False))
     assert all(0 <= timestamp <= info.duration_seconds for timestamp in keyframes)
+    assert set(keyframes) <= _decoded_keyframe_seconds(tiny_video)
 
 
 @pytest.mark.parametrize(

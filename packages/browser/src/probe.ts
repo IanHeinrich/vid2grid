@@ -1,6 +1,6 @@
 import type { ProbeOptions, VideoInfo } from "@vid2grid/core";
 import { waitForEvent } from "./extraction/extractor";
-import { looksLikeIsoBmff } from "./extraction/isoBmff";
+import { supportsWebCodecs } from "./extraction/isoBmff";
 
 export async function probeVideo(
   file: File,
@@ -34,7 +34,7 @@ export async function probeVideo(
 }
 
 async function readKeyframeTimestampsIfAvailable(file: File): Promise<number[] | null> {
-  if (typeof VideoDecoder === "undefined" || !looksLikeIsoBmff(file)) return null;
+  if (!supportsWebCodecs(file)) return null;
   try {
     const { readKeyframeTimestamps } = await import("./extraction/webcodecsExtractor");
     return await readKeyframeTimestamps(file);

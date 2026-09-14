@@ -8,13 +8,14 @@ import {
   validateCollagePlanRequest,
   type CollagePlanRequest,
   type GenerationPhase,
+  type TranscribeStage,
   type VideoInfo,
 } from "@vid2grid/core";
 import {
   countKeyframesInRange,
   createBrowserPorts,
-  looksLikeIsoBmff,
   probeVideo,
+  supportsWebCodecs,
 } from "@vid2grid/browser";
 import { updateFramePlanningUi } from "./ui/framePlanning";
 import { resetGallery, renderGallery, initLightbox } from "./ui/gallery";
@@ -105,6 +106,13 @@ function setPreview(file: File | null): void {
   }
 }
 
+function clearVideoState(): void {
+  state.videoInfo = null;
+  els.generateButton.disabled = true;
+  disableRangeSlider();
+  updateFramePlanningUi();
+}
+
 async function handleFile(file: File | null): Promise<void> {
   state.videoFile = file;
   els.dropzoneFilename.textContent = file?.name ?? "";
@@ -112,12 +120,7 @@ async function handleFile(file: File | null): Promise<void> {
   setPreview(file);
   resetResults();
   if (!file) {
-    state.videoInfo = null;
-    state.videoDuration = 0;
-    state.sourceAspect = 0;
-    els.generateButton.disabled = true;
-    disableRangeSlider();
-    updateFramePlanningUi();
+    clearVideoState();
     return;
   }
 
@@ -127,20 +130,13 @@ async function handleFile(file: File | null): Promise<void> {
     videoInfo = await probeVideo(file, { keyframeTimestamps: false });
   } catch (err) {
     els.statusEl.textContent = `Failed to read video: ${(err as Error).message}`;
-    state.videoInfo = null;
-    state.videoDuration = 0;
-    state.sourceAspect = 0;
-    els.generateButton.disabled = true;
-    disableRangeSlider();
     setPreview(null);
-    updateFramePlanningUi();
+    clearVideoState();
     return;
   }
 
   els.statusEl.textContent = "";
   state.videoInfo = videoInfo;
-  state.videoDuration = videoInfo.durationSeconds;
-  state.sourceAspect = videoInfo.width / videoInfo.height;
   const roundedDuration = Math.floor(videoInfo.durationSeconds * 10) / 10;
   const end = Math.max(roundedDuration, 0.1);
   els.startTimeInput.disabled = false;
@@ -162,7 +158,10 @@ const PREVIEW_MARGIN = 10;
 
 function seekPreview(seconds: number): void {
   if (state.previewUrl && !Number.isNaN(seconds)) {
-    els.videoPreview.currentTime = Math.min(Math.max(0, seconds), state.videoDuration);
+    els.videoPreview.currentTime = Math.min(
+      Math.max(0, seconds),
+      state.videoInfo?.durationSeconds ?? 0,
+    );
   }
 }
 
@@ -197,7 +196,7 @@ const numberOr = (raw: string, fallback: number): number => {
 // boundary back into its number input (the source of truth), and show the
 // floating preview at that frame.
 function onScrub(which: "start" | "end", seconds: number, pos: HandlePosition): void {
-  const duration = state.videoDuration || 0;
+  const duration = state.videoInfo?.durationSeconds ?? 0;
   let start = numberOr(els.startTimeInput.value, 0);
   let end = numberOr(els.endTimeInput.value, duration);
   if (which === "start") {
@@ -226,7 +225,7 @@ initRangeSlider({ onScrub, onScrubEnd });
 // field mid-keystroke (validation still guards start < end).
 function onNumberInput(): void {
   const start = numberOr(els.startTimeInput.value, 0);
-  const end = numberOr(els.endTimeInput.value, state.videoDuration || 0);
+  const end = numberOr(els.endTimeInput.value, state.videoInfo?.durationSeconds ?? 0);
   setRangeValues(start, end);
   refreshFramePlanning();
 }
@@ -268,7 +267,7 @@ function hideProgress(): void {
   els.progressContainer.hidden = true;
 }
 
-function progressLabel(phase: GenerationPhase, transcribeStage?: "model" | "transcribe"): string {
+function progressLabel(phase: GenerationPhase, transcribeStage?: TranscribeStage): string {
   if (phase === "extracting") return "Extracting frames...";
   if (phase === "rendering") return "Rendering collage sheets...";
   if (transcribeStage === "model") return "Downloading speech model (first use only)...";
@@ -283,14 +282,8 @@ function updateKeyframeModeUi(): void {
   els.keyframeModeCaption.hidden = !on;
 }
 
-// Keyframe mode only runs on the WebCodecs (ISO-BMFF) path, so it's offered only
-// for MP4/MOV.
-function fileSupportsKeyframeMode(file: File): boolean {
-  return typeof VideoDecoder !== "undefined" && looksLikeIsoBmff(file);
-}
-
 function applyKeyframeModeAvailability(file: File): void {
-  const supported = fileSupportsKeyframeMode(file);
+  const supported = supportsWebCodecs(file);
   els.keyframeModeInput.disabled = !supported;
   if (!supported) els.keyframeModeInput.checked = false;
   els.keyframeModeInput.title = supported

@@ -1,11 +1,7 @@
+import type { TimestampFormat } from "../plan/renderPlan";
+
 export const FONT_HEIGHT_DIVISOR = 16;
 export const MIN_FONT_SIZE = 8;
-
-export interface TimestampFormat {
-  showHours: boolean;
-  showMinutes: boolean;
-  showMilliseconds: boolean;
-}
 
 // Decided once per batch from its last timestamp, so components stay consistent
 // across every sheet instead of flipping mid-batch. No frames means no text.

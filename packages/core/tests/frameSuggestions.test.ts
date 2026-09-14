@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GUTTER_PX } from "../src/grid/gridMaths";
 import {
-  countBlankCells,
   countGridPackingBlanks,
   estimateExtractedFrameCount,
   estimateSheetCount,
@@ -13,7 +12,7 @@ const PORTRAIT_ASPECT = 9 / 16;
 const SQUARE_ASPECT = 1;
 
 describe("estimateExtractedFrameCount", () => {
-  it("matches the extractor's sampling formula", () => {
+  it("matches the planner's sampling formula", () => {
     expect(estimateExtractedFrameCount(0, 10, 2)).toBe(20);
     expect(estimateExtractedFrameCount(5, 5.4, 1)).toBe(1); // floors up to a minimum of 1
   });
@@ -23,27 +22,24 @@ describe("estimateExtractedFrameCount", () => {
     expect(estimateExtractedFrameCount(0, 10, 0)).toBe(0);
   });
 
-  it("drops the trailing sample that the real extractor would also skip", () => {
-    // endTime == the video's full duration: a naive floor(duration*fps) predicts
+  it("drops the trailing sample that the planner would also skip", () => {
+    // endSeconds == the video's full duration: a naive floor(duration*fps) predicts
     // 10 samples (0,1,...,9s), but the 10th sample's timestamp (9s) lands right at
-    // video.duration, which extractFrames' `timestamp >= video.duration` check
-    // would skip - so the estimate must drop it too once duration is known.
+    // the real duration, which the planner's `timestamp >= durationSeconds` check
+    // skips - so the estimate must drop it too once duration is known.
     expect(estimateExtractedFrameCount(0, 10, 1)).toBe(10); // no video duration given: naive
     expect(estimateExtractedFrameCount(0, 10, 1, 9)).toBe(9); // real duration is only 9s
   });
 
-  it("matches extractFrames when the last sample lands before the real duration", () => {
+  it("matches the planner when the last sample lands before the real duration", () => {
     expect(estimateExtractedFrameCount(0, 10, 1, 10.5)).toBe(10);
   });
-});
 
-describe("countBlankCells", () => {
-  it("is 0 when framesPerGrid evenly divides the total", () => {
-    expect(countBlankCells(100, 10)).toBe(0);
-  });
-
-  it("is the gap to the next full sheet otherwise", () => {
-    expect(countBlankCells(10, 4)).toBe(2); // 3 sheets of 4 -> last sheet has 2 real + 2 blank
+  it("honours an explicit frame count instead of the target FPS", () => {
+    // frameCount spreads that many frames over the range, so a 10s range at 2fps
+    // yields 3, not 20.
+    expect(estimateExtractedFrameCount(0, 10, 2, 10.5, 3)).toBe(3);
+    expect(estimateExtractedFrameCount(0, 10, 2, 5, 3)).toBe(2); // 0s and 3.333333s fit under 5s
   });
 });
 
