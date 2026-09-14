@@ -15,8 +15,8 @@ single pair of hands. Each line names where the full rule lives.
 - **Chunk boundaries that do not collide.** A worker can own one
   `web/src/ui/` directory plus the `web/tests/*.test.ts` files covering it,
   `packages/core/src/` plus its `packages/core/tests/*.test.ts` files, or one
-  `packages/browser/src/<area>/` directory — `extraction/`, `rendering/`,
-  `transcription/` — plus the `packages/browser/tests/*.test.ts` files
+  `packages/browser/src/<area>/` directory (`extraction/`, `rendering/` or
+  `transcription/`) plus the `packages/browser/tests/*.test.ts` files
   covering it. Shared files no two workers may touch at once:
   `web/index.html` (all UI markup), `web/src/main.ts` (the wiring),
   `web/src/style.css`, `web/src/state.ts`, `web/package.json`, root
@@ -38,12 +38,12 @@ single pair of hands. Each line names where the full rule lives.
   targeted tests: `npx vitest run tests/<module>.test.ts` from the owning
   package directory (`packages/core`, `packages/browser` or `web`), or
   `uv run pytest tests/test_<module>.py` from `python/`. The
-  whole-project runs —
-  `npm test`, `npm run typecheck` and `npm run build`, which typecheck every
-  source file including the ones other workers are still editing — belong to
-  one verifier at the end. A build failing on a file the worker does not own
+  whole-project runs belong to one verifier at the end:
+  `npm test`, `npm run typecheck` and `npm run build` typecheck every
+  source file, including the ones other workers are still editing.
+  A build failing on a file the worker does not own
   is noise, not a finding. (`CLAUDE.md`, "Commands".)
-- **Shell quirks.** npm commands now run from the repo root — there is a root
-  `package.json` — not from `web/`; every Python command runs from
+- **Shell quirks.** npm commands now run from the repo root, where there is a
+  root `package.json`, not from `web/`; every Python command runs from
   `python/`. A brief must name the repo root as the
   working directory or the command fails with a misleading error.

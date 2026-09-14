@@ -8,8 +8,8 @@ call the output files.
 `packages/core` is the only place that decides any of it
 ([`plan/buildRenderPlan.ts`](../packages/core/src/plan/buildRenderPlan.ts),
 typed in [`plan/renderPlan.ts`](../packages/core/src/plan/renderPlan.ts)). An
-**executor** — the browser one in `packages/browser`, the headless one in
-`python/` — only decodes, scales, pastes, draws text and encodes. That keeps
+**executor** (the browser one in `packages/browser`, the headless one in
+`python/`) only decodes, scales, pastes, draws text and encodes. That keeps
 the policy in one implementation and one set of tests, whatever language the
 host is written in.
 
@@ -119,8 +119,9 @@ startSeconds) * targetFps))` frames at `startSeconds + i / targetFps`. With
 startSeconds) / frameCount`. Either way a timestamp at or past
 `durationSeconds` ends the list. Keyframe mode (`keyframeSampling`) takes every
 `keyframeTimestampsSeconds` inside `[startSeconds, endSeconds]` inclusive, then,
-with `maxKeyframes`, thins them to the values at index `floor(i * n / m)` —
-first one always kept. It throws when the probe supplied no keyframe times.
+with `maxKeyframes`, thins them to the values at index `floor(i * n / m)`,
+keeping the first one always. It throws when the probe supplied no keyframe
+times.
 `frameIndex` is 0-based across the whole export, so it keeps counting up across
 sheets. `targetFps` still matters in keyframe mode: it decides whether the
 burned-in timestamp shows milliseconds.
@@ -145,7 +146,7 @@ background, they are not reflowed.
 `top-left` and its **right** edge for `top-right`: core has no font metrics, and
 a canvas and Pillow measure the same string differently, so the executor
 resolves the right-anchored case itself. Sheets are therefore **not byte
-identical across hosts** — the contract fixes geometry and strings, not pixels.
+identical across hosts**: the contract fixes geometry and strings, not pixels.
 Never compare rendered bytes between executors; compare cell rectangles,
 watermark text and file names.
 
@@ -166,8 +167,8 @@ in the plan; hosts must not recompute them.
    the first frame **at or after** each `timestampSeconds`. Returning fewer
    images than planned is allowed (the stream ended early); more is not.
 2. Scale each captured frame to exactly `plan.cell`, preserving the display
-   orientation (any container rotation already applied — `VideoInfo.width` and
-   `height` are display dimensions).
+   orientation (any container rotation already applied, so `VideoInfo.width`
+   and `height` are display dimensions).
 3. Per sheet, fill a `plan.canvas`-sized surface with `style.background`, then
    paste each cell's image at its `x`/`y`/`width`/`height`. A cell with no
    captured image is left as background.
@@ -185,7 +186,7 @@ sheet windows come from the planned frames, not the captured ones: a stream that
 ends early keeps the watermark format the full range asked for, and
 `generateCollages` stretches the last surviving sheet's window to
 `endSeconds` so the dropped sheets' cues still land somewhere. Keyframe mode is
-likewise settled before capture — `generateCollages` plans a request whose
+likewise settled before capture: `generateCollages` plans a request whose
 keyframes it cannot read, or that selects none in `[startSeconds, endSeconds]`,
 as a sampled one instead and reports a warning, where `buildRenderPlan` on its
 own throws.
