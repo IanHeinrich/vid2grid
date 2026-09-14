@@ -6,7 +6,7 @@ from typing import Any
 from .contract import VID2GRID_VERSION, CollageRequest, RenderPlan, VideoInfo
 from .decode import capture_frames
 from .paint import paint_sheet, save_jpeg
-from .planner import build_render_plan
+from .planner import build_render_plan, validate_request
 from .probe import probe
 
 _KEYFRAME_FALLBACK_WARNING = (
@@ -39,10 +39,10 @@ class SheetResult:
     plan: RenderPlan
     warnings: tuple[str, ...] = ()
 
-    def to_sheet_row(self, sheet_path: str) -> dict[str, Any]:
+    def to_sheet_row(self, sheet_path: str | None = None) -> dict[str, Any]:
         """Curator's `sheet` row, whose key names are the only place `_s` suffixes appear."""
         return {
-            "sheet_path": sheet_path,
+            "sheet_path": str(self.sheet_path) if sheet_path is None else sheet_path,
             "info": {
                 "duration_s": self.info.duration_seconds,
                 "width": self.info.width,
@@ -67,7 +67,8 @@ def render_sheets(
     info: VideoInfo | None = None,
 ) -> RenderResult:
     """Write one JPEG per planned sheet into `out_dir` and report what went onto them."""
-    video_info = probe(path, keyframes=request.keyframe_sampling) if info is None else info
+    validate_request(request)
+    video_info = _resolve_video_info(path, request, info)
     plan, warnings = _plan_with_keyframe_fallback(request, video_info)
 
     directory = Path(out_dir)
@@ -162,6 +163,22 @@ def render_single_sheet(
         plan=plan,
         warnings=warnings,
     )
+
+
+# Keyframe times cost a full demux, so a caller's info is taken as it comes and topped up
+# only when keyframe mode actually needs the field.
+def _resolve_video_info(
+    path: str | Path, request: CollageRequest, supplied: VideoInfo | None
+) -> VideoInfo:
+    if supplied is None:
+        return probe(path, keyframes=request.keyframe_sampling)
+    if not request.keyframe_sampling or supplied.keyframe_timestamps_seconds is not None:
+        return supplied
+
+    probed = probe(path, keyframes=True)
+    if probed.keyframe_timestamps_seconds is None:
+        return supplied
+    return replace(supplied, keyframe_timestamps_seconds=probed.keyframe_timestamps_seconds)
 
 
 def _plan_with_keyframe_fallback(

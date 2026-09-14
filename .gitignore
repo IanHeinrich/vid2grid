@@ -8,6 +8,7 @@ dist/
 
 python/.venv/
 python/dist/
+python/uv.lock
 **/__pycache__/
 .pytest_cache/
 .ruff_cache/

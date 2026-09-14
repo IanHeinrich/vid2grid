@@ -65,7 +65,7 @@ jobs:
       - run: uv run ruff format --check .
 
   check-version:
-    needs: test
+    needs: [test, python]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:

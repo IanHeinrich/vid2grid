@@ -96,8 +96,6 @@ def compute_optimal_grid(
                 rows=rows,
                 cell_w=cell_w_int,
                 cell_h=cell_h_int,
-                # math.floor mirrors the TS Math.floor; int() would truncate toward zero
-                # should a future gutter or cell rule ever overflow the canvas.
                 offset_x=math.floor((output_resolution - grid_w) / 2),
                 offset_y=math.floor((output_resolution - grid_h) / 2),
             )
@@ -112,7 +110,6 @@ def compute_optimal_grid(
 # Spelled out because JavaScript's Math.round rounds a half up where Python's round
 # rounds a half to even: the two ports would disagree on exact half-microseconds.
 def round_to_microseconds(seconds: float) -> float:
-    """Quantise a timestamp the way the TypeScript planner does."""
     return math.floor(seconds * 1e6 + 0.5) / 1e6
 
 
@@ -182,7 +179,6 @@ def _sampled_timestamps(request: CollageRequest, info: VideoInfo) -> list[float]
 def choose_timestamp_format(
     last_timestamp_seconds: float | None, target_fps: float
 ) -> TimestampFormat:
-    """Which timestamp components every sheet in this batch burns in."""
     if last_timestamp_seconds is None:
         return TimestampFormat(show_hours=False, show_minutes=False, show_milliseconds=False)
     return TimestampFormat(
@@ -218,7 +214,6 @@ def compute_sheet_windows(
     start_seconds: float,
     end_seconds: float,
 ) -> list[TranscriptWindow]:
-    """One transcript window per sheet, covering the whole requested range without overlap."""
     firsts = [timestamps[0] for timestamps in sheet_timestamps]
     lasts = [timestamps[-1] for timestamps in sheet_timestamps]
     return [

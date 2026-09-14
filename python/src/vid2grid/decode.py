@@ -8,13 +8,10 @@ import av
 from PIL import Image
 
 from .contract import RenderPlan, Size, VideoInfo
+from .planner import round_to_microseconds
 from .probe import pyav_attr
 
 _DEFAULT_KEYFRAME_INTERVAL_SECONDS = 2.0
-
-# Planned timestamps are rounded to microseconds, so the very frame a timestamp was derived
-# from can sit a fraction of a microsecond below it and fail a bare at-or-after test.
-_TIMESTAMP_EPSILON = 1e-6
 
 # Pillow's ROTATE_n turns counter-clockwise; VideoInfo.rotation is clockwise.
 _ROTATION_TRANSPOSE = {
@@ -85,7 +82,8 @@ def _match_sampled(
         if frame is None:
             return
         last_time = frame.time
-        while next_index < len(wanted) and frame.time >= wanted[next_index] - _TIMESTAMP_EPSILON:
+        # Rounded because the browser matches against whole-microsecond VideoFrame timestamps.
+        while next_index < len(wanted) and round_to_microseconds(frame.time) >= wanted[next_index]:
             yield next_index, frame
             next_index += 1
 
@@ -93,7 +91,7 @@ def _match_sampled(
 def _match_in_order(frames: Iterator[Any], wanted: Sequence[float]) -> Iterator[tuple[int, Any]]:
     next_index = 0
     for frame in frames:
-        while next_index < len(wanted) and frame.time >= wanted[next_index] - _TIMESTAMP_EPSILON:
+        while next_index < len(wanted) and round_to_microseconds(frame.time) >= wanted[next_index]:
             yield next_index, frame
             next_index += 1
         if next_index >= len(wanted):

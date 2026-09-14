@@ -1,4 +1,5 @@
 import math
+from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
@@ -23,13 +24,16 @@ def probe(path: str | Path, *, keyframes: bool = False) -> VideoInfo:
     with av.open(str(path)) as container:
         stream = container.streams.video[0]
         rotation = normalize_rotation_clockwise(_display_rotation_ccw(container, stream))
-        coded_width = pyav_attr(stream.codec_context, "width")
-        coded_height = pyav_attr(stream.codec_context, "height")
-        turned = rotation in _QUARTER_TURNS
+        width, height = display_size(
+            pyav_attr(stream.codec_context, "width"),
+            pyav_attr(stream.codec_context, "height"),
+            pyav_attr(stream, "sample_aspect_ratio"),
+            rotation,
+        )
         return VideoInfo(
             duration_seconds=_duration_seconds(container, stream),
-            width=coded_height if turned else coded_width,
-            height=coded_width if turned else coded_height,
+            width=width,
+            height=height,
             keyframe_timestamps_seconds=(
                 _keyframe_timestamps(container, stream) if keyframes else None
             ),
@@ -37,6 +41,24 @@ def probe(path: str | Path, *, keyframes: bool = False) -> VideoInfo:
             codec=pyav_attr(stream.codec_context, "name"),
             rotation=rotation,
         )
+
+
+def display_size(
+    coded_width: int,
+    coded_height: int,
+    sample_aspect_ratio: Fraction | None,
+    rotation: int,
+) -> tuple[int, int]:
+    """The size a player shows, matching the browser's `video.videoWidth/videoHeight`."""
+    # ffmpeg's convention stretches the width by the sample aspect ratio, never the height.
+    width = (
+        coded_width
+        if sample_aspect_ratio is None or sample_aspect_ratio == 1
+        else round(coded_width * sample_aspect_ratio)
+    )
+    if rotation in _QUARTER_TURNS:
+        return coded_height, width
+    return width, coded_height
 
 
 def normalize_rotation_clockwise(ccw_degrees: float) -> int:

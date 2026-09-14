@@ -67,6 +67,7 @@ def test_render_single_sheet_reports_curators_row(tiny_video: Path, tmp_path: Pa
     assert row["last_timestamp_s"] > 0
     assert all(isinstance(value, int) for value in row["timings_ms"].values())
     assert row["vid2grid_version"] == result.vid2grid_version
+    assert result.to_sheet_row()["sheet_path"] == str(out_path)
 
 
 def test_keyframe_sampling_falls_back_to_time_sampling(tiny_video: Path, tmp_path: Path) -> None:
@@ -81,6 +82,27 @@ def test_keyframe_sampling_falls_back_to_time_sampling(tiny_video: Path, tmp_pat
     assert "keyframe" in result.warnings[0]
     assert result.plan.frames
     assert result.sheet_paths
+
+
+def test_a_supplied_info_is_topped_up_with_keyframes(tiny_video: Path, tmp_path: Path) -> None:
+    without_keyframes = probe(tiny_video)
+    assert without_keyframes.keyframe_timestamps_seconds is None
+    keyframes = probe(tiny_video, keyframes=True).keyframe_timestamps_seconds
+    assert keyframes is not None
+
+    result = render_sheets(
+        tiny_video, _request(keyframe_sampling=True), tmp_path, info=without_keyframes
+    )
+
+    assert result.warnings == ()
+    assert [frame.timestamp_seconds for frame in result.plan.frames] == [
+        timestamp for timestamp in keyframes if 0.0 <= timestamp <= 3.0
+    ]
+
+
+def test_render_sheets_validates_before_probing(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="jpeg_quality must be between 1 and 100"):
+        render_sheets(tmp_path / "missing.mp4", _request(jpeg_quality=0), tmp_path)
 
 
 def test_keyframes_outside_the_range_fall_back_too(tiny_video: Path, tmp_path: Path) -> None:

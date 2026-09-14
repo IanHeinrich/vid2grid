@@ -36,5 +36,5 @@ compare rendered pixels between the two executors.
 Development, from this directory:
 
 ```
-uv sync --all-groups && uv run pytest && uv run ruff check .
+uv sync --all-groups && uv run pytest && uv run ruff check . && uv run ruff format --check .
 ```
