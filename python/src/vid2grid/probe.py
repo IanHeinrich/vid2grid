@@ -19,8 +19,7 @@ def probe(path: str | Path, *, keyframes: bool = False) -> VideoInfo:
         width, height = display_size(
             stream.codec_context.width,
             stream.codec_context.height,
-            # Absent on a container that never wrote one, where display_size wants None anyway.
-            getattr(stream, "sample_aspect_ratio", None),
+            _sample_aspect_ratio(stream),
             rotation,
         )
         return VideoInfo(
@@ -60,6 +59,14 @@ def normalize_rotation_clockwise(ccw_degrees: float) -> int:
     # contract rotates clockwise, so the sign flips. floor(x + 0.5) is JavaScript's Math.round.
     quarters = math.floor(-ccw_degrees / 90 + 0.5)
     return int(quarters * 90) % 360
+
+
+def _sample_aspect_ratio(stream: Any) -> Fraction | None:
+    # PyAV 19 reports an unset ratio as ffmpeg's 0/1 where PyAV 18 gave None.
+    ratio = getattr(stream, "sample_aspect_ratio", None)
+    if ratio is None or ratio.numerator == 0:
+        return None
+    return Fraction(ratio.numerator, ratio.denominator)
 
 
 def _display_rotation_ccw(container: Any, stream: Any) -> float:
