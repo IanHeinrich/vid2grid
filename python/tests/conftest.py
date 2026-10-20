@@ -26,6 +26,12 @@ def collage_request(**overrides: object) -> CollageRequest:
     return CollageRequest(**fields)  # type: ignore[arg-type]
 
 
+@pytest.fixture(scope="session")
+def curator_mp4() -> Path:
+    # Curator's own test asset: 160x120 h264 that never wrote a sample aspect ratio.
+    return Path(__file__).parent / "assets" / "tiny.mp4"
+
+
 @pytest.fixture(scope="session", params=["mpeg4", "libx264"])
 def tiny_video(request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPathFactory) -> Path:
     codec = request.param

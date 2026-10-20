@@ -58,6 +58,20 @@ def test_render_single_sheet_reports_curators_row(tiny_video: Path, tmp_path: Pa
     assert result.to_sheet_row()["sheet_path"] == str(out_path)
 
 
+def test_render_single_sheet_on_curators_mp4(curator_mp4: Path, tmp_path: Path) -> None:
+    out_path = tmp_path / "sheet.jpg"
+
+    result = render_single_sheet(
+        curator_mp4, out_path=out_path, frames=16, output_resolution=1024, jpeg_quality=85
+    )
+
+    with Image.open(out_path) as sheet:
+        assert sheet.format == "JPEG"
+    row = result.to_sheet_row()
+    assert row["frame_count"] == 16
+    assert (row["info"]["width"], row["info"]["height"]) == (160, 120)
+
+
 def test_keyframe_sampling_falls_back_to_time_sampling(tiny_video: Path, tmp_path: Path) -> None:
     probed = probe(tiny_video, keyframes=True)
     without_keyframes = replace(probed, keyframe_timestamps_seconds=())

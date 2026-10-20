@@ -28,6 +28,14 @@ def test_probe_reads_the_synthesised_video(tiny_video: Path) -> None:
     assert info.keyframe_timestamps_seconds is None
 
 
+def test_probe_treats_an_unset_sample_aspect_ratio_as_square(curator_mp4: Path) -> None:
+    info = probe(curator_mp4, keyframes=True)
+    assert (info.width, info.height) == (160, 120)
+    assert abs(info.duration_seconds - 3.0) < 0.2
+    assert abs(info.fps - 10) < 0.1
+    assert info.keyframe_timestamps_seconds
+
+
 def test_probe_keyframes_are_ascending_and_in_range(tiny_video: Path) -> None:
     info = probe(tiny_video, keyframes=True)
     keyframes = info.keyframe_timestamps_seconds
