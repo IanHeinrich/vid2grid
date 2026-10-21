@@ -102,16 +102,20 @@ function decodeFrames(
     if (!ffmpeg) return;
     const stream = createFrameStream(frameBytes, onFrame);
     let failed = false;
+    // SIGKILL because ffmpeg 7 on Linux traps SIGTERM and still decodes the rest of the input.
+    const stop = (): void => {
+      if (!ffmpeg.killed) ffmpeg.kill("SIGKILL");
+    };
     const guarded =
       <T>(handle: (value: T) => void) =>
       (value: T): void => {
         if (failed) return;
         try {
           handle(value);
-          if (stream.stopped) ffmpeg.kill();
+          if (stream.stopped) stop();
         } catch (error) {
           failed = true;
-          ffmpeg.kill();
+          stop();
           reject(error instanceof Error ? error : new Vid2GridError("internal", String(error)));
         }
       };

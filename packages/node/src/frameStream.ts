@@ -61,9 +61,14 @@ export function createFrameStream(frameBytes: number, onFrame: FrameHandler): Fr
     pair();
   });
 
+  // Once stopped, ffmpeg is being killed and may die partway through a frame or a line.
   return {
-    writePixels: (chunk) => splitter.write(chunk),
-    readLogLine: (line) => log.read(line),
+    writePixels(chunk) {
+      if (!stopped) splitter.write(chunk);
+    },
+    readLogLine(line) {
+      if (!stopped) log.read(line);
+    },
     finish() {
       if (stopped) return;
       const partialBytes = splitter.partialBytes();
@@ -113,20 +118,30 @@ export function showinfoChecksum(pixels: Uint8Array): number {
 
 function showinfoLog(onFrame: (frame: LoggedFrame) => void) {
   let timeBase: { num: number; den: number } | undefined;
+  // ffmpeg 7 logs from several threads, so another message can land inside a frame's line
+  // and push its checksum onto the next line.
+  let awaitingChecksum: number | undefined;
   const tail: string[] = [];
   return {
     read(line: string): void {
       const config = SHOWINFO_TIME_BASE.exec(line);
-      const frame = SHOWINFO_FRAME.exec(line);
       if (config) {
         timeBase = { num: Number(config[1]), den: Number(config[2]) };
-      } else if (frame) {
+        return;
+      }
+      const frame = SHOWINFO_FRAME.exec(line);
+      if (frame) {
         if (!timeBase) throw internal("ffmpeg's showinfo logged a frame before its time base");
-        const checksum = SHOWINFO_CHECKSUM.exec(line)?.[1];
-        if (checksum === undefined) throw internal("ffmpeg's showinfo logged no frame checksum");
-        const exactSeconds = (Number(frame[1]) * timeBase.num) / timeBase.den;
-        onFrame({ exactSeconds, checksum: parseInt(checksum, 16) });
-      } else if (!line.startsWith("[Parsed_showinfo")) {
+        if (awaitingChecksum !== undefined) {
+          throw internal("ffmpeg's showinfo logged no frame checksum");
+        }
+        awaitingChecksum = (Number(frame[1]) * timeBase.num) / timeBase.den;
+      }
+      const checksum = SHOWINFO_CHECKSUM.exec(line)?.[1];
+      if (awaitingChecksum !== undefined && checksum !== undefined) {
+        onFrame({ exactSeconds: awaitingChecksum, checksum: parseInt(checksum, 16) });
+        awaitingChecksum = undefined;
+      } else if (!frame && !line.startsWith("[Parsed_showinfo")) {
         tail.push(line);
         if (tail.length > STDERR_LINES_KEPT) tail.shift();
       }

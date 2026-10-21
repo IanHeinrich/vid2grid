@@ -65,6 +65,25 @@ async function capturedTimes(
   return images.map((image) => image.decodedTimestampSeconds);
 }
 
+interface KilledChild {
+  exited: Promise<unknown>;
+  bytesAfterKill: number;
+}
+
+// Records each killed child and what it still writes to stdout before it exits.
+function watchKills() {
+  const realKill = Reflect.get(ChildProcess.prototype, "kill");
+  const killed: KilledChild[] = [];
+  const spy = vi.spyOn(ChildProcess.prototype, "kill");
+  spy.mockImplementation(function (this: ChildProcess, signal) {
+    const child: KilledChild = { exited: once(this, "close"), bytesAfterKill: 0 };
+    this.stdout?.on("data", (chunk: Buffer) => (child.bytesAfterKill += chunk.length));
+    killed.push(child);
+    return realKill.call(this, signal);
+  });
+  return { killed, restore: () => spy.mockRestore() };
+}
+
 // conformance.test.ts checks the shared fixtures/frames cases. These expected times are
 // what Python's capture_frames picked on the same generated file, recorded once by hand.
 describe("captureFrames on a container that starts at 1.4 s", () => {
@@ -115,13 +134,15 @@ describe("captureFrames", () => {
     ]);
   });
 
-  // keyframes-20s.mp4 takes far longer to decode than the first frame, so a child that
-  // was killed exits on a signal rather than with ffmpeg's own exit code.
+  // How ffmpeg exits after a kill differs by build (Linux's traps SIGTERM and finishes the
+  // input), so what proves the kill is how little it wrote afterwards.
   it("kills ffmpeg and rejects with the progress callback's error", async () => {
     const video = fixtureVideo("keyframes-20s.mp4");
+    const videoFrames = 200; // 20 s at 10 fps
     const info = await probeVideo(video);
     const plan = buildRenderPlan(request({ endSeconds: 20 }), info);
-    const kill = vi.spyOn(ChildProcess.prototype, "kill");
+    const frameBytes = plan.cell.width * plan.cell.height * 4;
+    const { killed, restore } = watchKills();
     const failure = new Error("progress sink closed");
     try {
       await expect(
@@ -129,13 +150,13 @@ describe("captureFrames", () => {
           throw failure;
         }),
       ).rejects.toBe(failure);
-      const [child] = kill.mock.contexts;
-      if (!(child instanceof ChildProcess)) throw new Error("ffmpeg was never killed");
-      if (child.exitCode === null && child.signalCode === null) await once(child, "exit");
-      expect(child.exitCode).toBeNull();
-      expect(child.signalCode).not.toBeNull();
+      const [child] = killed;
+      if (!child) throw new Error("ffmpeg was never killed");
+      expect(killed).toHaveLength(1);
+      await child.exited;
+      expect(child.bytesAfterKill / frameBytes).toBeLessThan(videoFrames / 2);
     } finally {
-      kill.mockRestore();
+      restore();
     }
   });
 
