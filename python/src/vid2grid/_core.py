@@ -4,6 +4,7 @@ import numbers
 import os
 import re
 import threading
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from fractions import Fraction
 from importlib.resources import files
@@ -64,6 +65,39 @@ class TextOp(TypedDict):
 
 
 DrawOp = FillRectOp | ImageOp | TextOp
+
+
+TranscriptOption = Literal["none", "per-sheet", "combined"]
+HostCapability = Literal["transcription"]
+
+
+class _OptionSpecBase(TypedDict):
+    name: str
+    flag: str
+    help: str
+    requires: NotRequired[HostCapability]
+
+
+class NumberOptionSpec(_OptionSpecBase):
+    type: Literal["number", "integer"]
+    default: NotRequired[float]
+    min: NotRequired[float]
+    max: NotRequired[float]
+    exclusiveMin: NotRequired[float]
+
+
+class BooleanOptionSpec(_OptionSpecBase):
+    type: Literal["boolean"]
+    default: bool
+
+
+class EnumOptionSpec(_OptionSpecBase):
+    type: Literal["enum"]
+    values: list[TranscriptOption]
+    default: TranscriptOption
+
+
+OptionSpec = NumberOptionSpec | BooleanOptionSpec | EnumOptionSpec
 
 
 class WarningJson(TypedDict):
@@ -174,6 +208,19 @@ def display_size(
 
 def normalize_rotation_clockwise(ccw_degrees: float) -> int:
     return cast("int", call("normalizeRotationClockwise", ccw_degrees))
+
+
+def option_specs(capabilities: Sequence[HostCapability] = ()) -> list[OptionSpec]:
+    return cast("list[OptionSpec]", call("optionSpecs", list(capabilities)))
+
+
+# Keyed by the specs' camelCase names; None stands for an unset flag, which core reads as absent.
+def request_from_options(
+    values: Mapping[str, object], info: VideoInfo, capabilities: Sequence[HostCapability] = ()
+) -> CollagePlanRequest:
+    given = {name: value for name, value in values.items() if value is not None}
+    request = call("requestFromOptions", given, info.to_dict(), list(capabilities))
+    return CollagePlanRequest.from_dict(cast("CollagePlanRequestJson", request))
 
 
 def _engine() -> MiniRacer:

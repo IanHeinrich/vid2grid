@@ -220,9 +220,9 @@ decode, scale, paste, draw text and encode as the plan says. A host that can
 run JavaScript can embed core's bundle the way the Python package does instead
 of porting the planner.
 [docs/render-plan.md](docs/render-plan.md) is the spec, including that embed
-surface, and the golden plans in
-[fixtures/render-plans/](fixtures/render-plans/) are test inputs you can pin a
-new executor to.
+surface, and [docs/adding-a-host.md](docs/adding-a-host.md) is the guide: what
+a host implements, the per-sheet loop, and the golden plans, draw ops and frame
+choices in [fixtures/](fixtures/) that prove a new executor conforms.
 
 <details>
 <summary>Known limitations</summary>
@@ -267,7 +267,7 @@ npm ci
 | `npm run build`                        | Type-check, then produce a production build in `apps/web/dist`.                                                                 |
 | `npm run preview --workspace apps/web` | Serve the `apps/web/dist` production build locally.                                                                             |
 | `npm run format`                       | Format the repo with Prettier.                                                                                                  |
-| `npm run fixtures`                     | Regenerate `fixtures/render-plans/` from the planner (required by any planner change).                                          |
+| `npm run fixtures`                     | Regenerate `fixtures/render-plans/` and `fixtures/draw-ops/` from core (required by any planner change).                        |
 | `npm run bundle`                       | Regenerate `python/src/vid2grid/_core.js`, the copy of core the Python package runs (required by any planner change).           |
 
 There's no lint step. `npm run typecheck` (which `npm run build` runs first)

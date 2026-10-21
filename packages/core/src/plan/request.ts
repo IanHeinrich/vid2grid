@@ -1,5 +1,8 @@
 import { Vid2GridError } from "../errors";
 
+export const TRANSCRIPT_SCOPES = ["per-sheet", "combined"] as const;
+export type TranscriptScope = (typeof TRANSCRIPT_SCOPES)[number];
+
 // Flat sampling fields rather than a discriminated union: targetFps still decides the
 // burned-in timestamp's precision in keyframe mode, where it plays no part in choosing frames.
 export interface CollagePlanRequest {
@@ -14,7 +17,7 @@ export interface CollagePlanRequest {
   framesPerGrid: number;
   outputResolution: number;
   jpegQuality: number;
-  transcript?: { scope: "per-sheet" | "combined" };
+  transcript?: { scope: TranscriptScope };
 }
 
 export type SamplingRange = Pick<CollagePlanRequest, "startSeconds" | "endSeconds" | "targetFps">;
@@ -38,6 +41,9 @@ export function collagePlanRequestProblem(request: CollagePlanRequest): string |
   }
   if (request.maxKeyframes !== undefined && !isPositiveInteger(request.maxKeyframes)) {
     return "max_keyframes must be a positive integer";
+  }
+  if (request.transcript !== undefined && !TRANSCRIPT_SCOPES.includes(request.transcript.scope)) {
+    return "transcript_scope must be per-sheet or combined";
   }
   return undefined;
 }

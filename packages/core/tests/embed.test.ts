@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { EmbeddedCore } from "../src/embed";
+import { OPTION_SPECS, optionSpecsFor } from "../src/plan/options";
 import "../src/embed";
 
 const { vid2gridCore } = globalThis as unknown as { vid2gridCore: EmbeddedCore };
@@ -95,5 +96,26 @@ describe("the functions vid2gridCore exposes", () => {
       value: { width: 480, height: 853 },
     });
     expect(call("normalizeRotationClockwise", -90)).toEqual({ ok: true, value: 90 });
+  });
+
+  it("include the option spec and the request built from options", () => {
+    expect(call("optionSpecs")).toEqual({ ok: true, value: optionSpecsFor() });
+    expect(call("optionSpecs", ["transcription"])).toEqual({ ok: true, value: OPTION_SPECS });
+    expect(call("requestFromOptions", { targetFps: 2 }, fixture.info)).toMatchObject({
+      ok: true,
+      value: { targetFps: 2, endSeconds: 3 },
+    });
+    expect(call("requestFromOptions", { fps: 2 }, fixture.info)).toEqual({
+      ok: false,
+      code: "invalid_request",
+      message: 'unknown option "fps"',
+    });
+    expect(
+      call("requestFromOptions", { transcript: "combined" }, fixture.info, ["transcription"]),
+    ).toMatchObject({ ok: true, value: { transcript: { scope: "combined" } } });
+    expect(call("requestFromOptions", { transcript: "combined" }, fixture.info)).toMatchObject({
+      ok: false,
+      code: "invalid_request",
+    });
   });
 });

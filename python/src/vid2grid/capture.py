@@ -1,6 +1,7 @@
 import itertools
 import statistics
 from collections.abc import Generator, Iterator, Sequence
+from contextlib import closing
 from pathlib import Path
 
 import av
@@ -31,6 +32,16 @@ def capture_frames(path: str | Path, plan: RenderPlan, info: VideoInfo) -> list[
 def iter_frame_images(
     path: str | Path, plan: RenderPlan, info: VideoInfo
 ) -> Generator[Image.Image, None, None]:
+    with closing(iter_source_frames(path, plan, info)) as frames:
+        for frame in frames:
+            yield _to_cell_image(frame, plan.cell, info.rotation)
+
+
+# The decoded source frame each planned frame picks, before scaling; conformance tests read
+# its presentation time.
+def iter_source_frames(
+    path: str | Path, plan: RenderPlan, info: VideoInfo
+) -> Generator[VideoFrame, None, None]:
     wanted = [frame.timestamp_seconds for frame in plan.frames]
     if not wanted:
         return
@@ -43,7 +54,7 @@ def iter_frame_images(
             else _match_sampled(container, stream, wanted, info)
         )
         for _, frame in matches:
-            yield _to_cell_image(frame, plan.cell, info.rotation)
+            yield frame
 
 
 def _is_keyframe_plan(wanted: Sequence[float], info: VideoInfo) -> bool:

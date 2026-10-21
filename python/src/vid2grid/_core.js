@@ -189,6 +189,7 @@
     }
     return info.width / info.height;
   }
+  const TRANSCRIPT_SCOPES = ["per-sheet", "combined"];
   function samplingRangeProblem(range) {
     if (range.endSeconds <= range.startSeconds) return "end_time must be greater than start_time";
     if (range.targetFps <= 0) return "target_fps must be positive";
@@ -207,6 +208,9 @@
     }
     if (request.maxKeyframes !== void 0 && !isPositiveInteger(request.maxKeyframes)) {
       return "max_keyframes must be a positive integer";
+    }
+    if (request.transcript !== void 0 && !TRANSCRIPT_SCOPES.includes(request.transcript.scope)) {
+      return "transcript_scope must be per-sheet or combined";
     }
     return void 0;
   }
@@ -350,6 +354,157 @@
       warning: keyframesUnavailable(keyframeFailure)
     };
   }
+  const MODEL_RESOLUTION_PRESETS = {
+    "OpenAI GPT-5.x (high detail)": 2048,
+    "OpenAI GPT-5.x (original/auto detail)": 3072,
+    "OpenAI GPT-4o / GPT-4.1 (tile-based)": 2048,
+    "Google Gemini 3.x": 2048,
+    "Anthropic Claude (standard tier)": 1536,
+    "Anthropic Claude (Opus 4.7+ / Sonnet 5 / Fable 5, high-res tier)": 2560,
+    "xAI Grok (direct API, file-size limited only, ~20MiB)": 3072,
+    "Venice: Venice Large (Qwen 3 VL, ~16MP ceiling)": 3840,
+    "Venice: Grok 4.5 / 4.20 (~4-8MP ceiling)": 2e3,
+    "Venice: Claude Sonnet 4.6 / 5 (~3.75MP, 2576px edge)": 2560,
+    "Venice: Venice Small (Llama 3.2 Vision, ~1.2MP)": 1088,
+    "Unknown model (conservative default)": 1536
+  };
+  function firstModelResolution() {
+    const [resolution] = Object.values(MODEL_RESOLUTION_PRESETS);
+    if (resolution === void 0) throw new Error("MODEL_RESOLUTION_PRESETS is empty");
+    return resolution;
+  }
+  const DEFAULTS = {
+    startSeconds: 0,
+    targetFps: 1,
+    framesPerGrid: 9,
+    outputResolution: firstModelResolution(),
+    jpegQuality: 80,
+    keyframeSampling: false,
+    transcript: "none"
+  };
+  const OPTION_SPECS = [
+    {
+      name: "startSeconds",
+      flag: "start",
+      type: "number",
+      default: DEFAULTS.startSeconds,
+      help: "start time in seconds"
+    },
+    {
+      name: "endSeconds",
+      flag: "end",
+      type: "number",
+      help: "end time in seconds, the video's duration when omitted"
+    },
+    {
+      name: "targetFps",
+      flag: "fps",
+      type: "number",
+      default: DEFAULTS.targetFps,
+      exclusiveMin: 0,
+      help: "frames sampled per second"
+    },
+    {
+      name: "framesPerGrid",
+      flag: "frames-per-grid",
+      type: "integer",
+      default: DEFAULTS.framesPerGrid,
+      exclusiveMin: 0,
+      help: "frames on each sheet"
+    },
+    {
+      name: "outputResolution",
+      flag: "resolution",
+      type: "integer",
+      default: DEFAULTS.outputResolution,
+      exclusiveMin: 0,
+      help: "sheet side in pixels"
+    },
+    {
+      name: "jpegQuality",
+      flag: "quality",
+      type: "integer",
+      default: DEFAULTS.jpegQuality,
+      min: 1,
+      max: 100,
+      help: "JPEG quality, 1 to 100"
+    },
+    {
+      name: "keyframeSampling",
+      flag: "keyframes",
+      type: "boolean",
+      default: DEFAULTS.keyframeSampling,
+      help: "capture the video's keyframes instead of sampling by fps"
+    },
+    {
+      name: "maxKeyframes",
+      flag: "max-keyframes",
+      type: "integer",
+      exclusiveMin: 0,
+      help: "with --keyframes, thin the keyframes evenly to at most this many"
+    },
+    {
+      name: "frameCount",
+      flag: "frame-count",
+      type: "integer",
+      exclusiveMin: 0,
+      help: "exactly this many evenly spaced frames, in place of --fps"
+    },
+    {
+      name: "transcript",
+      flag: "transcript",
+      type: "enum",
+      values: ["none", ...TRANSCRIPT_SCOPES],
+      default: DEFAULTS.transcript,
+      requires: "transcription",
+      help: "transcript files: none, one per sheet, or one combined"
+    }
+  ];
+  function optionSpecsFor(capabilities = []) {
+    return OPTION_SPECS.filter(
+      (spec) => spec.requires === void 0 || capabilities.includes(spec.requires)
+    );
+  }
+  function requestFromOptions(values, info, capabilities = []) {
+    const problem = optionInputProblem(values, optionSpecsFor(capabilities));
+    if (problem !== void 0) throw new Vid2GridError("invalid_request", problem);
+    const { frameCount, maxKeyframes } = values;
+    const transcript = values.transcript ?? DEFAULTS.transcript;
+    return {
+      startSeconds: values.startSeconds ?? DEFAULTS.startSeconds,
+      endSeconds: values.endSeconds ?? info.durationSeconds,
+      targetFps: values.targetFps ?? DEFAULTS.targetFps,
+      keyframeSampling: values.keyframeSampling ?? DEFAULTS.keyframeSampling,
+      framesPerGrid: values.framesPerGrid ?? DEFAULTS.framesPerGrid,
+      outputResolution: values.outputResolution ?? DEFAULTS.outputResolution,
+      jpegQuality: values.jpegQuality ?? DEFAULTS.jpegQuality,
+      ...frameCount !== void 0 && { frameCount },
+      ...maxKeyframes !== void 0 && { maxKeyframes },
+      ...transcript !== "none" && { transcript: { scope: transcript } }
+    };
+  }
+  function optionInputProblem(values, specs) {
+    for (const [name, value] of Object.entries(values)) {
+      const spec = specs.find((offered) => offered.name === name);
+      if (spec === void 0) return `unknown option "${name}"`;
+      if (value === void 0) continue;
+      const problem = optionValueProblem(spec, value);
+      if (problem !== void 0) return problem;
+    }
+    return void 0;
+  }
+  function optionValueProblem(spec, value) {
+    switch (spec.type) {
+      case "number":
+        return typeof value === "number" && Number.isFinite(value) ? void 0 : `${spec.name} must be a number`;
+      case "integer":
+        return Number.isInteger(value) ? void 0 : `${spec.name} must be an integer`;
+      case "boolean":
+        return typeof value === "boolean" ? void 0 : `${spec.name} must be true or false`;
+      case "enum":
+        return spec.values.some((allowed) => allowed === value) ? void 0 : `${spec.name} must be one of ${spec.values.join(", ")}`;
+    }
+  }
   const QUARTER_TURN_DEGREES = 90;
   const FULL_TURN_DEGREES = 360;
   function isQuarterTurn(rotation) {
@@ -431,6 +586,8 @@
     ["resolveKeyframeSampling", resolveKeyframeSampling],
     ["displaySize", displaySize],
     ["normalizeRotationClockwise", normalizeRotationClockwise],
+    ["optionSpecs", optionSpecsFor],
+    ["requestFromOptions", requestFromOptions],
     ["version", () => RENDER_PLAN_VERSION]
   ]);
   function invoke(name, argsJson) {

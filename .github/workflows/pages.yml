@@ -42,7 +42,10 @@ jobs:
       - run: npm run lint
       - run: npm run coverage --workspace packages/core
       - run: npm run fixtures
-      - run: git diff --exit-code fixtures/
+      # Intent-to-add makes a newly generated fixture show up in the diff too.
+      - run: |
+          git add --intent-to-add fixtures/
+          git diff --exit-code fixtures/
       - run: npm run bundle
       - run: git diff --exit-code python/src/vid2grid/_core.js
 

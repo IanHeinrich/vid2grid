@@ -22,6 +22,7 @@ headless Python executor, its own toolchain outside npm).
 4. A change under `packages/core/src/plan/` (or a helper it uses) changes the
    `RenderPlan` contract, so it isn't done until the same PR also runs
    `npm run fixtures` to regenerate `fixtures/render-plans/` and
+   `fixtures/draw-ops/` (a change to `render/drawOps.ts` moves the latter) and
    `npm run bundle` to regenerate `python/src/vid2grid/_core.js`, the copy of
    core the Python package runs. CI fails if either is stale. The Python
    package needs no matching edit. See

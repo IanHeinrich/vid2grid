@@ -1,0 +1,277 @@
+{
+  "name": "trailing-partial-sheet",
+  "sheets": [
+    [
+      {
+        "kind": "fillRect",
+        "x": 0,
+        "y": 0,
+        "width": 768,
+        "height": 768,
+        "color": "black"
+      },
+      {
+        "kind": "image",
+        "cellIndex": 0,
+        "x": 8,
+        "y": 101,
+        "width": 372,
+        "height": 279
+      },
+      {
+        "kind": "text",
+        "cellIndex": 0,
+        "text": "00",
+        "x": 12,
+        "y": 105,
+        "anchor": "top-left",
+        "baseline": "top",
+        "fontSizePx": 17,
+        "fontFamily": "sans-serif",
+        "fill": "black",
+        "stroke": "white",
+        "strokeWidthPx": 2
+      },
+      {
+        "kind": "text",
+        "cellIndex": 0,
+        "text": "0",
+        "x": 376,
+        "y": 105,
+        "anchor": "top-right",
+        "baseline": "top",
+        "fontSizePx": 17,
+        "fontFamily": "sans-serif",
+        "fill": "black",
+        "stroke": "white",
+        "strokeWidthPx": 2
+      },
+      {
+        "kind": "image",
+        "cellIndex": 1,
+        "x": 388,
+        "y": 101,
+        "width": 372,
+        "height": 279
+      },
+      {
+        "kind": "text",
+        "cellIndex": 1,
+        "text": "01",
+        "x": 392,
+        "y": 105,
+        "anchor": "top-left",
+        "baseline": "top",
+        "fontSizePx": 17,
+        "fontFamily": "sans-serif",
+        "fill": "black",
+        "stroke": "white",
+        "strokeWidthPx": 2
+      },
+      {
+        "kind": "text",
+        "cellIndex": 1,
+        "text": "1",
+        "x": 756,
+        "y": 105,
+        "anchor": "top-right",
+        "baseline": "top",
+        "fontSizePx": 17,
+        "fontFamily": "sans-serif",
+        "fill": "black",
+        "stroke": "white",
+        "strokeWidthPx": 2
+      },
+      {
+        "kind": "image",
+        "cellIndex": 2,
+        "x": 8,
+        "y": 388,
+        "width": 372,
+        "height": 279
+      },
+      {
+        "kind": "text",
+        "cellIndex": 2,
+        "text": "02",
+        "x": 12,
+        "y": 392,
+        "anchor": "top-left",
+        "baseline": "top",
+        "fontSizePx": 17,
+        "fontFamily": "sans-serif",
+        "fill": "black",
+        "stroke": "white",
+        "strokeWidthPx": 2
+      },
+      {
+        "kind": "text",
+        "cellIndex": 2,
+        "text": "2",
+        "x": 376,
+        "y": 392,
+        "anchor": "top-right",
+        "baseline": "top",
+        "fontSizePx": 17,
+        "fontFamily": "sans-serif",
+        "fill": "black",
+        "stroke": "white",
+        "strokeWidthPx": 2
+      },
+      {
+        "kind": "image",
+        "cellIndex": 3,
+        "x": 388,
+        "y": 388,
+        "width": 372,
+        "height": 279
+      },
+      {
+        "kind": "text",
+        "cellIndex": 3,
+        "text": "03",
+        "x": 392,
+        "y": 392,
+        "anchor": "top-left",
+        "baseline": "top",
+        "fontSizePx": 17,
+        "fontFamily": "sans-serif",
+        "fill": "black",
+        "stroke": "white",
+        "strokeWidthPx": 2
+      },
+      {
+        "kind": "text",
+        "cellIndex": 3,
+        "text": "3",
+        "x": 756,
+        "y": 392,
+        "anchor": "top-right",
+        "baseline": "top",
+        "fontSizePx": 17,
+        "fontFamily": "sans-serif",
+        "fill": "black",
+        "stroke": "white",
+        "strokeWidthPx": 2
+      }
+    ],
+    [
+      {
+        "kind": "fillRect",
+        "x": 0,
+        "y": 0,
+        "width": 768,
+        "height": 768,
+        "color": "black"
+      },
+      {
+        "kind": "image",
+        "cellIndex": 0,
+        "x": 8,
+        "y": 101,
+        "width": 372,
+        "height": 279
+      },
+      {
+        "kind": "text",
+        "cellIndex": 0,
+        "text": "04",
+        "x": 12,
+        "y": 105,
+        "anchor": "top-left",
+        "baseline": "top",
+        "fontSizePx": 17,
+        "fontFamily": "sans-serif",
+        "fill": "black",
+        "stroke": "white",
+        "strokeWidthPx": 2
+      },
+      {
+        "kind": "text",
+        "cellIndex": 0,
+        "text": "4",
+        "x": 376,
+        "y": 105,
+        "anchor": "top-right",
+        "baseline": "top",
+        "fontSizePx": 17,
+        "fontFamily": "sans-serif",
+        "fill": "black",
+        "stroke": "white",
+        "strokeWidthPx": 2
+      },
+      {
+        "kind": "image",
+        "cellIndex": 1,
+        "x": 388,
+        "y": 101,
+        "width": 372,
+        "height": 279
+      },
+      {
+        "kind": "text",
+        "cellIndex": 1,
+        "text": "05",
+        "x": 392,
+        "y": 105,
+        "anchor": "top-left",
+        "baseline": "top",
+        "fontSizePx": 17,
+        "fontFamily": "sans-serif",
+        "fill": "black",
+        "stroke": "white",
+        "strokeWidthPx": 2
+      },
+      {
+        "kind": "text",
+        "cellIndex": 1,
+        "text": "5",
+        "x": 756,
+        "y": 105,
+        "anchor": "top-right",
+        "baseline": "top",
+        "fontSizePx": 17,
+        "fontFamily": "sans-serif",
+        "fill": "black",
+        "stroke": "white",
+        "strokeWidthPx": 2
+      },
+      {
+        "kind": "image",
+        "cellIndex": 2,
+        "x": 8,
+        "y": 388,
+        "width": 372,
+        "height": 279
+      },
+      {
+        "kind": "text",
+        "cellIndex": 2,
+        "text": "06",
+        "x": 12,
+        "y": 392,
+        "anchor": "top-left",
+        "baseline": "top",
+        "fontSizePx": 17,
+        "fontFamily": "sans-serif",
+        "fill": "black",
+        "stroke": "white",
+        "strokeWidthPx": 2
+      },
+      {
+        "kind": "text",
+        "cellIndex": 2,
+        "text": "6",
+        "x": 376,
+        "y": 392,
+        "anchor": "top-right",
+        "baseline": "top",
+        "fontSizePx": 17,
+        "fontFamily": "sans-serif",
+        "fill": "black",
+        "stroke": "white",
+        "strokeWidthPx": 2
+      }
+    ]
+  ]
+}

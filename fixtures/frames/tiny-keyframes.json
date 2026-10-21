@@ -1,0 +1,31 @@
+{
+  "name": "tiny-keyframes",
+  "video": "fixtures/videos/tiny.mp4",
+  "request": {
+    "startSeconds": 0,
+    "endSeconds": 3,
+    "targetFps": 1,
+    "keyframeSampling": true,
+    "framesPerGrid": 4,
+    "outputResolution": 512,
+    "jpegQuality": 85
+  },
+  "info": {
+    "durationSeconds": 3,
+    "width": 160,
+    "height": 120,
+    "keyframeTimestampsSeconds": [
+      0
+    ]
+  },
+  "sourceFrameSeconds": [
+    0
+  ],
+  "frames": [
+    {
+      "frameIndex": 0,
+      "plannedSeconds": 0,
+      "decodedSeconds": 0
+    }
+  ]
+}
