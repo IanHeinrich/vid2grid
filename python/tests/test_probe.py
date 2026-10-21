@@ -6,8 +6,12 @@ import av
 import pytest
 
 import vid2grid
-from vid2grid.planner import round_to_microseconds
-from vid2grid.probe import display_size, normalize_rotation_clockwise, probe_video
+from vid2grid.probe import (
+    display_size,
+    normalize_rotation_clockwise,
+    probe_video,
+    round_to_microseconds,
+)
 
 
 def _decoded_keyframe_seconds(path: Path) -> set[float]:
@@ -34,6 +38,12 @@ def test_the_deprecated_probe_alias_warns_and_probes(tiny_video: Path) -> None:
     with pytest.warns(DeprecationWarning, match="probe_video"):
         info = vid2grid.probe(tiny_video, keyframes=True)
     assert info == probe_video(tiny_video, keyframes=True)
+
+
+def test_the_deprecated_probe_alias_imports_from_the_probe_module() -> None:
+    from vid2grid.probe import probe
+
+    assert probe is vid2grid.probe
 
 
 def test_probe_treats_an_unset_sample_aspect_ratio_as_square(curator_mp4: Path) -> None:
@@ -93,3 +103,17 @@ def test_display_size(
 )
 def test_normalize_rotation_clockwise(ccw_degrees: float, expected: int) -> None:
     assert normalize_rotation_clockwise(ccw_degrees) == expected
+
+
+@pytest.mark.parametrize(
+    ("seconds", "expected"),
+    [
+        (0, 0),
+        (1 / 3, 0.333333),
+        (0.0000005, 0.000001),
+        (2.0000004, 2.0),
+        (-0.0000016, -2e-06),
+    ],
+)
+def test_round_to_microseconds_matches_cores_rule(seconds: float, expected: float) -> None:
+    assert round_to_microseconds(seconds) == expected

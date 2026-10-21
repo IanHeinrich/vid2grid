@@ -2,13 +2,17 @@ import math
 from dataclasses import replace
 from pathlib import Path
 
+import av
 import pytest
 from helpers import CURATOR_FRAMES, CURATOR_OUTPUT_RESOLUTION, collage_request
 from PIL import Image
 
 import vid2grid
+from vid2grid import sheets
 from vid2grid.probe import probe_video
 from vid2grid.sheets import render_sheets, render_single_sheet
+
+KEYFRAMES_UNAVAILABLE = "Keyframes unavailable; sampled by target FPS instead"
 
 SHEET_ROW_KEYS = {
     "sheet_path",
@@ -90,8 +94,7 @@ def test_keyframe_sampling_falls_back_to_time_sampling(tiny_video: Path, tmp_pat
         tiny_video, collage_request(keyframe_sampling=True), tmp_path, info=without_keyframes
     )
 
-    assert len(result.warnings) == 1
-    assert "keyframe" in result.warnings[0]
+    assert result.warnings == (KEYFRAMES_UNAVAILABLE,)
     assert result.plan.frames
     assert result.sheet_paths
 
@@ -128,7 +131,7 @@ def test_keyframes_outside_the_range_fall_back_too(tiny_video: Path, tmp_path: P
         info=only_at_the_start,
     )
 
-    assert len(result.warnings) == 1
+    assert result.warnings == (KEYFRAMES_UNAVAILABLE,)
     assert result.sheet_paths
 
 
@@ -157,3 +160,20 @@ def test_render_single_sheet_rejects_an_empty_range(tiny_video: Path, tmp_path: 
         render_single_sheet(
             tiny_video, out_path=tmp_path / "sheet.jpg", start_seconds=1.0, end_seconds=1.0
         )
+
+
+def test_unreadable_keyframes_fall_back_with_the_reason(
+    tiny_video: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unreadable(path: str | Path) -> tuple[float, ...]:
+        raise av.InvalidDataError(1094995529, "Invalid data found when processing input")
+
+    monkeypatch.setattr(sheets, "read_keyframe_timestamps", unreadable)
+
+    result = render_sheets(tiny_video, collage_request(keyframe_sampling=True), tmp_path)
+
+    assert result.warnings == (
+        "Keyframes unavailable ([Errno 1094995529] Invalid data found when processing input);"
+        " sampled by target FPS instead",
+    )
+    assert result.sheet_paths

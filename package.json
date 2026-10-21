@@ -13,6 +13,7 @@
     "build": "npm run typecheck && npm run build --workspace apps/web",
     "format": "prettier --write .",
     "fixtures": "vite-node scripts/generateRenderPlanFixtures.ts",
+    "bundle": "vite-node scripts/buildCoreBundle.ts",
     "lint": "eslint ."
   },
   "devDependencies": {

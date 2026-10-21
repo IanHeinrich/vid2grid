@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildRenderPlan, type CollagePlanRequest, type VideoInfo } from "@vid2grid/core";
@@ -168,4 +168,12 @@ for (const { name, request, info } of CASES) {
     "utf-8",
   );
   console.log(`wrote fixtures/render-plans/${name}.json`);
+}
+
+const caseFileNames = new Set(CASES.map(({ name }) => `${name}.json`));
+for (const fileName of readdirSync(fixturesDir)) {
+  if (fileName.endsWith(".json") && !caseFileNames.has(fileName)) {
+    rmSync(join(fixturesDir, fileName));
+    console.log(`removed stale fixtures/render-plans/${fileName}`);
+  }
 }

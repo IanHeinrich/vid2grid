@@ -1,10 +1,10 @@
-from vid2grid.contract import CollageRequest
+from vid2grid.contract import CollagePlanRequest
 
 CURATOR_FRAMES = 16
 CURATOR_OUTPUT_RESOLUTION = 1024
 
 
-def collage_request(**overrides: object) -> CollageRequest:
+def collage_request(**overrides: object) -> CollagePlanRequest:
     """A request over the whole `tiny_video` range; pass overrides for anything else."""
     fields: dict[str, object] = {
         "start_seconds": 0.0,
@@ -15,4 +15,4 @@ def collage_request(**overrides: object) -> CollageRequest:
         "jpeg_quality": 85,
     }
     fields.update(overrides)
-    return CollageRequest(**fields)  # type: ignore[arg-type]
+    return CollagePlanRequest(**fields)  # type: ignore[arg-type]

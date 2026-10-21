@@ -19,3 +19,7 @@ class NoFramesError(Vid2GridError, ValueError):
 
 class InternalError(Vid2GridError, RuntimeError):
     code = "internal"
+
+
+class NoAudioError(Vid2GridError):
+    code = "no_audio"

@@ -1,3 +1,4 @@
+import logging
 import math
 import warnings
 from fractions import Fraction
@@ -7,14 +8,12 @@ import av
 from av.container import InputContainer
 from av.video.stream import VideoStream
 
+from ._core import display_size as display_size
+from ._core import normalize_rotation_clockwise as normalize_rotation_clockwise
 from .contract import VideoInfo
-from .planner import round_to_microseconds
+from .errors import InternalError
 
-QUARTER_TURNS = (90, 270)
-
-
-def is_quarter_turn(rotation: int) -> bool:
-    return rotation in QUARTER_TURNS
+_log = logging.getLogger(__name__)
 
 
 def probe_video(path: str | Path, *, keyframes: bool = False) -> VideoInfo:
@@ -40,29 +39,27 @@ def probe_video(path: str | Path, *, keyframes: bool = False) -> VideoInfo:
         )
 
 
-def display_size(
-    coded_width: int,
-    coded_height: int,
-    sample_aspect_ratio: Fraction | None,
-    rotation: int,
-) -> tuple[int, int]:
-    """The size a player shows, matching the browser's `video.videoWidth/videoHeight`."""
-    # ffmpeg's convention stretches the width by the sample aspect ratio, never the height.
-    width = (
-        coded_width
-        if sample_aspect_ratio is None or sample_aspect_ratio == 1
-        else round(coded_width * sample_aspect_ratio)
+def probe(path: str | Path, *, keyframes: bool = False) -> VideoInfo:
+    warnings.warn(
+        "vid2grid.probe is deprecated, use vid2grid.probe_video", DeprecationWarning, stacklevel=2
     )
-    if is_quarter_turn(rotation):
-        return coded_height, width
-    return width, coded_height
+    return probe_video(path, keyframes=keyframes)
 
 
-def normalize_rotation_clockwise(ccw_degrees: float) -> int:
-    # ffmpeg reports the rotation to apply counter-clockwise while every executor of this
-    # contract rotates clockwise, so the sign flips. floor(x + 0.5) is JavaScript's Math.round.
-    quarters = math.floor(-ccw_degrees / 90 + 0.5)
-    return int(quarters * 90) % 360
+def read_keyframe_timestamps(path: str | Path) -> tuple[float, ...]:
+    with av.open(str(path)) as container:
+        return _keyframe_timestamps(container, container.streams.video[0])
+
+
+def stream_time_base(stream: VideoStream) -> Fraction:
+    if stream.time_base is None:
+        raise InternalError("the video stream has no time base")
+    return stream.time_base
+
+
+# Per-frame calls into V8 would be slow, so core's rule, floor(x * 1e6 + 0.5), is mirrored here.
+def round_to_microseconds(seconds: float) -> float:
+    return math.floor(seconds * 1e6 + 0.5) / 1e6
 
 
 def _sample_aspect_ratio(stream: VideoStream) -> Fraction | None:
@@ -83,9 +80,8 @@ def _display_rotation_ccw(container: InputContainer, stream: VideoStream) -> flo
     try:
         frame = next(container.decode(stream), None)
     except av.FFmpegError as exc:
-        warnings.warn(
-            f"could not decode a frame to read the display rotation, assuming none: {exc}",
-            stacklevel=2,
+        _log.warning(
+            "could not decode a frame to read the display rotation, assuming none: %s", exc
         )
         return 0.0
     finally:
@@ -96,7 +92,7 @@ def _display_rotation_ccw(container: InputContainer, stream: VideoStream) -> flo
 def _duration_seconds(container: InputContainer, stream: VideoStream) -> float:
     if container.duration is not None:
         return float(container.duration / av.time_base)
-    if stream.duration is not None:
+    if stream.duration is not None and stream.time_base is not None:
         return float(stream.duration * stream.time_base)
     return 0.0
 
@@ -109,8 +105,9 @@ def _frame_rate(stream: VideoStream) -> float:
 def _keyframe_timestamps(container: InputContainer, stream: VideoStream) -> tuple[float, ...]:
     # Composition time, so it lines up with the browser demuxer's sample `cts`; demux order
     # is decode order, hence the sort.
+    time_base = stream_time_base(stream)
     timestamps = [
-        round_to_microseconds(float(packet.pts * stream.time_base))
+        round_to_microseconds(float(packet.pts * time_base))
         for packet in container.demux(stream)
         if packet.pts is not None and packet.is_keyframe
     ]

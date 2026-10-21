@@ -10,10 +10,9 @@ from av.video.frame import VideoFrame
 from av.video.stream import VideoStream
 from PIL import Image
 
-from .contract import RenderPlan, Size, VideoInfo
+from .contract import RenderPlan, Size, VideoInfo, is_quarter_turn
 from .errors import InternalError
-from .planner import round_to_microseconds
-from .probe import is_quarter_turn
+from .probe import round_to_microseconds, stream_time_base
 
 _DEFAULT_KEYFRAME_INTERVAL_SECONDS = 2.0
 _RESEEK_AFTER_KEYFRAME_INTERVALS = 2
@@ -112,7 +111,7 @@ def _reached_by(
 def _seeked_frames(
     container: InputContainer, stream: VideoStream, target: float
 ) -> Iterator[VideoFrame]:
-    container.seek(int(target / stream.time_base), stream=stream)
+    container.seek(int(target / stream_time_base(stream)), stream=stream)
     frames = _decoded_frames(container, stream)
     first = next(frames, None)
     if first is not None:

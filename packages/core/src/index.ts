@@ -9,6 +9,12 @@ export {
 } from "./plan/request";
 export { sourceAspect, type VideoInfo } from "./probe/videoInfo";
 export { rotationFromMatrix } from "./probe/rotation";
+export {
+  displaySize,
+  isQuarterTurn,
+  normalizeRotationClockwise,
+  type SampleAspectRatio,
+} from "./probe/displaySize";
 
 export { GUTTER_PX, type GridParams } from "./grid/gridMaths";
 export {
@@ -26,10 +32,18 @@ export { CUSTOM_OPTION, MODEL_RESOLUTION_PRESETS } from "./grid/modelProfiles";
 
 export type { SheetContext2D } from "./render/sheetContext";
 export { paintSheetFromPlan } from "./render/paintSheetFromPlan";
+export {
+  sheetDrawOps,
+  type DrawOp,
+  type FillRectOp,
+  type ImageOp,
+  type TextOp,
+} from "./render/drawOps";
 
 export { vttToPlainText, type TranscriptCue } from "./transcript/vtt";
 
 export { buildRenderPlan } from "./plan/buildRenderPlan";
+export { resolveKeyframeSampling, type KeyframeSamplingDecision } from "./plan/keyframeFallback";
 export {
   keyframesInRange,
   MICROSECONDS_PER_SECOND,

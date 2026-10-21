@@ -6,9 +6,9 @@ import av
 from helpers import collage_request
 from PIL import Image
 
+from vid2grid import build_render_plan
 from vid2grid.capture import capture_frames
 from vid2grid.contract import PlannedFrame, RenderPlan, VideoInfo
-from vid2grid.planner import build_render_plan
 from vid2grid.probe import probe_video
 
 

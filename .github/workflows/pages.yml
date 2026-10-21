@@ -43,6 +43,8 @@ jobs:
       - run: npm run coverage --workspace packages/core
       - run: npm run fixtures
       - run: git diff --exit-code fixtures/
+      - run: npm run bundle
+      - run: git diff --exit-code python/src/vid2grid/_core.js
 
   python:
     runs-on: ${{ matrix.os }}
