@@ -12,13 +12,11 @@ export class WorkerPool<TRequest, TResponse> {
   private readonly inFlight = new Map<Worker, PoolTask<TRequest, TResponse>>();
 
   constructor(createWorker: () => Worker, size: number) {
-    for (let i = 0; i < size; i++) {
-      const worker = createWorker();
-      worker.onmessage = (event: MessageEvent<TResponse>) =>
-        this.finish(worker, (task) => task.resolve(event.data));
-      worker.onerror = (event) =>
-        this.finish(worker, (task) => task.reject(event.error ?? new Error(event.message)));
-      this.idle.push(worker);
+    try {
+      for (let i = 0; i < size; i++) this.idle.push(this.adopt(createWorker()));
+    } catch (err) {
+      this.terminate();
+      throw err;
     }
   }
 
@@ -27,6 +25,23 @@ export class WorkerPool<TRequest, TResponse> {
       this.queue.push({ request, transfer, resolve, reject });
       this.pump();
     });
+  }
+
+  terminate(): void {
+    for (const worker of [...this.idle, ...this.inFlight.keys()]) worker.terminate();
+    const abandoned = [...this.queue, ...this.inFlight.values()];
+    this.idle.length = 0;
+    this.queue.length = 0;
+    this.inFlight.clear();
+    for (const task of abandoned) task.reject(new Error("Worker pool terminated"));
+  }
+
+  private adopt(worker: Worker): Worker {
+    worker.onmessage = (event: MessageEvent<TResponse>) =>
+      this.finish(worker, (task) => task.resolve(event.data));
+    worker.onerror = (event) =>
+      this.finish(worker, (task) => task.reject(event.error ?? new Error(event.message)));
+    return worker;
   }
 
   private finish(worker: Worker, settle: (task: PoolTask<TRequest, TResponse>) => void): void {
@@ -46,7 +61,14 @@ export class WorkerPool<TRequest, TResponse> {
       this.idle.pop();
       this.queue.shift();
       this.inFlight.set(worker, task);
-      worker.postMessage(task.request, task.transfer);
+      try {
+        worker.postMessage(task.request, task.transfer);
+      } catch (err) {
+        // Nothing reached the worker (a DataCloneError, say), so it is still free.
+        this.inFlight.delete(worker);
+        this.idle.push(worker);
+        task.reject(err);
+      }
     }
   }
 }

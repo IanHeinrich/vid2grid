@@ -211,7 +211,11 @@ JavaScript host by running the same draw ops on a canvas
 (`fixtures/render-plans/` pins steps 1-6's inputs, `fixtures/draw-ops/` step
 3's ops, and `fixtures/frames/` step 1's choice of source frame), and
 `generateCollages` drives the whole sequence through the ports in
-[`pipeline/ports.ts`](../packages/core/src/pipeline/ports.ts). Step 1's rule is
+[`pipeline/ports.ts`](../packages/core/src/pipeline/ports.ts) as a stream: the
+capture port yields frames in plan order, each sheet starts encoding as soon as
+its cells are captured, and up to the encoder's `concurrency` sheets encode at
+once, so memory stays at the sheets in flight whatever the video's length.
+Step 1's rule is
 core's too: `createFrameMatcher` decides which planned frames each decoded frame
 fills, and `isKeyframePlan` decides when a capture may decode keyframes alone.
 The capture port receives the `VideoInfo` the plan was built from for that

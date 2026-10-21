@@ -1,15 +1,14 @@
-import type { PortProgressCallback, RenderPlan } from "@vid2grid/core";
+import type { RenderPlan } from "@vid2grid/core";
 import { createCellCanvas } from "../shared/canvas";
-import { closeImages } from "../shared/images";
-import { createVideoElement, waitForEvent } from "./video";
+import { createVideoElement, releaseVideo, waitForEvent } from "./video";
 
 /** `currentTime` lands on the nearest frame, not the first at/after the timestamp: the one
  * place this path's semantics differ from the WebCodecs one. */
-export async function extractFrames(
+export async function* extractFrames(
   file: File,
   plan: RenderPlan,
-  onProgress?: PortProgressCallback,
-): Promise<ImageBitmap[]> {
+  fromFrame = 0,
+): AsyncGenerator<ImageBitmap, void, undefined> {
   const video = createVideoElement("auto");
   const url = URL.createObjectURL(file);
 
@@ -20,22 +19,15 @@ export async function extractFrames(
     // Cell-sized, not source-sized, so no frame is downscaled twice.
     const { canvas, ctx } = createCellCanvas(plan.cell.width, plan.cell.height);
 
-    const images: ImageBitmap[] = [];
-    try {
-      for (const frame of plan.frames) {
-        if (frame.timestampSeconds >= video.duration) break;
+    for (const frame of plan.frames.slice(fromFrame)) {
+      if (frame.timestampSeconds >= video.duration) break;
 
-        await seekTo(video, frame.timestampSeconds);
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        images.push(await createImageBitmap(canvas));
-        onProgress?.({ done: images.length, total: plan.frames.length });
-      }
-    } catch (err) {
-      closeImages(images);
-      throw err;
+      await seekTo(video, frame.timestampSeconds);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      yield await createImageBitmap(canvas);
     }
-    return images;
   } finally {
+    releaseVideo(video);
     URL.revokeObjectURL(url);
   }
 }

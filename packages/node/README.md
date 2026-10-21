@@ -69,20 +69,28 @@ run `generateCollages` itself and keep the JPEG buffers in memory.
   log, and every frame that is kept has its pixels checked against the
   checksum logged with that time, so a frame lost between the two outputs
   fails the run. ffmpeg is stopped as soon as the last planned frame is
-  filled.
+  filled. Frames are yielded in plan order as ffmpeg produces them, and its
+  output is paused while a frame waits to be pulled, so ffmpeg blocks rather
+  than decoding ahead.
 - **Render**: each sheet is painted by core's `paintSheetFromPlan` onto an
-  `@napi-rs/canvas` canvas and encoded as JPEG at the plan's quality.
+  `@napi-rs/canvas` canvas and encoded as JPEG at the plan's quality. Two
+  sheets encode at once, so painting one on the main thread overlaps the JPEG
+  encode of the other on libuv's thread pool. `renderVideo` writes each sheet
+  to disk as soon as it is encoded, through core's `streamCollages`. Because
+  sheets are written as they finish, a run that fails leaves the sheets
+  written before the failure on disk.
+- **Memory**: it stays flat however many frames are planned. At most three
+  sheets' frames are held at once, each frame raw RGBA at the cell size: two
+  sheets encoding or waiting to be written, and the one being captured. A
+  1024 px sheet of 9 frames has cells of roughly 330 by 250 pixels, about
+  330 KB each, so the frames stay under about 9 MB, plus two sheet canvases,
+  for a clip of any length.
 
 ## What it does not do
 
 - **No transcription.** The transcript port is optional in core and this host
   leaves it out. A request with `transcript` set still renders its sheets and
   reports a `no_transcription_port` warning.
-- **Memory grows with the number of planned frames.** `generateCollages`
-  captures every planned frame, each held as raw RGBA at the cell size, before
-  it renders the first sheet. A 1024 px sheet of 9 frames has cells of roughly
-  330 by 250 pixels, about 330 KB each, so 3,000 planned frames hold about
-  1 GB. The Python package keeps one sheet's frames at a time instead.
 - Within one run ffmpeg decodes every frame between the first and the last
   planned time. The Python package seeks across long gaps instead, so a very
   low frame rate over a long video is slower here.

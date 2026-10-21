@@ -28,28 +28,26 @@ export interface ProbePort<TSource> {
 }
 
 export interface FrameCapturePort<TSource, TImage> {
-  // One image per plan.frames entry, in order, scaled to plan.cell; fewer only when the
-  // stream ends early. info is what the plan was built from, for isKeyframePlan.
-  capture(
-    source: TSource,
-    plan: RenderPlan,
-    info: VideoInfo,
-    onProgress?: PortProgressCallback,
-  ): Promise<TImage[]>;
+  // Yields one image per plan.frames entry, in plan order, scaled to plan.cell; it stops
+  // early only when the stream ends. A host keeps only a small, bounded buffer ahead of
+  // what the pipeline pulls, so memory stays at the sheets in flight, and the pipeline
+  // counts progress itself. info is what the plan was built from, for isKeyframePlan.
+  capture(source: TSource, plan: RenderPlan, info: VideoInfo): AsyncIterable<TImage>;
+  // Frees an image the pipeline pulled but will never encode (a failed or abandoned run).
+  release?(image: TImage): void;
 }
 
 export interface SheetRenderJob<TImage> {
   sheet: PlannedSheet;
-  // Aligned to sheet.cells; undefined where that frame was never captured.
+  // Aligned to sheet.cells; undefined where that frame was never captured. encode owns
+  // these images from the moment it is called, and frees them whatever the outcome.
   images: (TImage | undefined)[];
 }
 
 export interface SheetEncoderPort<TImage, TBinary> {
-  encode(
-    plan: RenderPlan,
-    jobs: SheetRenderJob<TImage>[],
-    onProgress?: PortProgressCallback,
-  ): Promise<TBinary[]>;
+  encode(plan: RenderPlan, job: SheetRenderJob<TImage>): Promise<TBinary>;
+  // How many sheets may encode at once (a worker pool's size); 1 when unset.
+  concurrency?: number;
 }
 
 export interface TranscriptPort<TSource> {

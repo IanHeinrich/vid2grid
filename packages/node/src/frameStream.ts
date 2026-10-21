@@ -16,6 +16,8 @@ export interface FrameStream {
   // Throws when ffmpeg exited cleanly yet its pixels and timestamps do not pair up.
   finish(): void;
   readonly stopped: boolean;
+  // Frames whose pixels have arrived but whose log line has not.
+  readonly unpairedFrames: number;
   logTail(): string;
 }
 
@@ -86,6 +88,9 @@ export function createFrameStream(frameBytes: number, onFrame: FrameHandler): Fr
     },
     get stopped() {
       return stopped;
+    },
+    get unpairedFrames() {
+      return frames.length;
     },
     logTail: () => log.tail(),
   };

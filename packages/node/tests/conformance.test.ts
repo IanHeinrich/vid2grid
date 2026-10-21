@@ -59,10 +59,11 @@ describe("fixtures/frames", () => {
     expect(plan.frames.map((frame) => frame.timestampSeconds)).toEqual(
       fixture.frames.map((frame) => frame.plannedSeconds),
     );
-    const images = await ports.frames.capture(video, plan, info);
-    expect(images.map((image) => image.decodedTimestampSeconds)).toEqual(
-      fixture.frames.map((frame) => frame.decodedSeconds),
-    );
+    const decoded: number[] = [];
+    for await (const image of ports.frames.capture(video, plan, info)) {
+      decoded.push(image.decodedTimestampSeconds);
+    }
+    expect(decoded).toEqual(fixture.frames.map((frame) => frame.decodedSeconds));
   });
 });
 
