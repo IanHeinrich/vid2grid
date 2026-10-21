@@ -1,12 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { WorkerPool } from "../src/render/workerPool";
 
 class FakeWorker {
   onmessage: ((event: MessageEvent<string>) => void) | null = null;
   onerror: ((event: ErrorEvent) => void) | null = null;
   readonly received: { message: string; transfer: Transferable[] | undefined }[] = [];
+  readonly terminate = vi.fn();
+  refuseNextPost: Error | null = null;
 
   postMessage(message: string, transfer?: Transferable[]): void {
+    const refusal = this.refuseNextPost;
+    this.refuseNextPost = null;
+    if (refusal) throw refusal;
     this.received.push({ message, transfer });
   }
 
@@ -28,6 +33,8 @@ function createPool(size: number) {
   }, size);
   return { pool, workers };
 }
+
+const errorMessageOf = (reason: unknown) => (reason instanceof Error ? reason.message : null);
 
 const dispatched = (workers: FakeWorker[]) => workers.flatMap((worker) => worker.received);
 
@@ -129,5 +136,73 @@ describe("WorkerPool failures", () => {
     void pool.run("a");
 
     expect(workers[0]?.received.map((r) => r.message)).toEqual(["a"]);
+  });
+});
+
+describe("WorkerPool posting failures", () => {
+  it("rejects a task whose post throws and serves the next one on the same worker", async () => {
+    const { pool, workers } = createPool(1);
+    const [worker] = workers;
+    const cloneError = new Error("DataCloneError");
+    if (worker) worker.refuseNextPost = cloneError;
+
+    await expect(pool.run("a")).rejects.toBe(cloneError);
+    const next = pool.run("b");
+    worker?.reply("done b");
+
+    expect(await next).toBe("done b");
+  });
+
+  it("settles a queued task whose post throws once a worker frees up", async () => {
+    const { pool, workers } = createPool(1);
+    const [worker] = workers;
+    const cloneError = new Error("DataCloneError");
+
+    const first = pool.run("a");
+    const refused = pool.run("b");
+    const last = pool.run("c");
+    if (worker) worker.refuseNextPost = cloneError;
+    expect(() => worker?.reply("done a")).not.toThrow();
+
+    expect(await first).toBe("done a");
+    await expect(refused).rejects.toBe(cloneError);
+    expect(dispatched(workers).map((r) => r.message)).toEqual(["a", "c"]);
+    worker?.reply("done c");
+    expect(await last).toBe("done c");
+  });
+});
+
+describe("WorkerPool termination", () => {
+  it("terminates every worker and rejects queued and in-flight tasks", async () => {
+    const { pool, workers } = createPool(2);
+
+    const inFlight = [pool.run("a"), pool.run("b")];
+    const queued = pool.run("c");
+    pool.terminate();
+
+    const settled = await Promise.allSettled([...inFlight, queued]);
+
+    for (const worker of workers) expect(worker.terminate).toHaveBeenCalledTimes(1);
+    for (const task of settled) {
+      expect(task.status === "rejected" && errorMessageOf(task.reason)).toBe(
+        "Worker pool terminated",
+      );
+    }
+  });
+
+  it("terminates the workers it started when a later one fails to start", () => {
+    const started: FakeWorker[] = [];
+    const blocked = new Error("SecurityError");
+
+    expect(
+      () =>
+        new WorkerPool<string, string>(() => {
+          if (started.length === 2) throw blocked;
+          const worker = new FakeWorker();
+          started.push(worker);
+          return worker as unknown as Worker;
+        }, 4),
+    ).toThrow(blocked);
+    for (const worker of started) expect(worker.terminate).toHaveBeenCalledTimes(1);
   });
 });

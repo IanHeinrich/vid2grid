@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import indexHtml from "../index.html?raw";
 import { queryElements } from "../src/dom";
 import { createAppState, setVideoFile, setVideoInfo } from "../src/state";
-import { buildRequest, initGenerate, overallProgress, progressLabel } from "../src/ui/generate";
+import type { Progress } from "@vid2grid/core";
+import { advanceProgress, buildRequest, initGenerate, startProgress } from "../src/ui/generate";
 
 const { generateCollages } = vi.hoisted(() => ({ generateCollages: vi.fn() }));
 
@@ -12,29 +13,98 @@ vi.mock("@vid2grid/core", async (importOriginal) => ({
   generateCollages,
 }));
 
-describe("overallProgress", () => {
-  it("weights frames-only phases 70/30", () => {
-    expect(overallProgress({ phase: "extracting", done: 1, total: 2 }, false)).toBeCloseTo(0.35);
-    expect(overallProgress({ phase: "rendering", done: 2, total: 2 }, false)).toBeCloseTo(1);
+function runProgress(events: Progress[], withTranscript: boolean) {
+  const steps: { fraction: number; label: string }[] = [];
+  let state = startProgress(withTranscript);
+  for (const event of events) {
+    state = advanceProgress(state, event);
+    steps.push({ fraction: state.fraction, label: state.label });
+  }
+  return steps;
+}
+
+const extracting = (done: number, total = 4): Progress => ({ phase: "extracting", done, total });
+const rendering = (done: number, total = 2): Progress => ({ phase: "rendering", done, total });
+const transcribing = (done: number, total = 2): Progress => ({
+  phase: "transcribing",
+  done,
+  total,
+  stage: "transcribe",
+});
+
+const interleavedCapture = [
+  extracting(1),
+  extracting(2),
+  rendering(1),
+  extracting(3),
+  extracting(4),
+  rendering(2),
+];
+
+describe("advanceProgress", () => {
+  it("never moves the bar backwards when frames and sheets interleave", () => {
+    const fractions = runProgress(interleavedCapture, false).map((step) => step.fraction);
+    fractions
+      .slice(1)
+      .forEach((fraction, i) => expect(fraction).toBeGreaterThanOrEqual(fractions[i] ?? 0));
   });
 
-  it("leaves room for transcription when it is on", () => {
-    expect(overallProgress({ phase: "rendering", done: 0, total: 1 }, true)).toBeCloseTo(0.5);
-    expect(overallProgress({ phase: "transcribing", done: 1, total: 2 }, true)).toBeCloseTo(0.85);
+  it("does not drop when the second phase reports its first event", () => {
+    const [afterFrames, afterSheet] = runProgress([extracting(4), rendering(0)], false);
+    expect(afterSheet?.fraction).toBeGreaterThanOrEqual(afterFrames?.fraction ?? 1);
+  });
+
+  it("holds the bar when an event reports less than before", () => {
+    const [first, second] = runProgress([extracting(3), extracting(2)], false);
+    expect(second?.fraction).toBe(first?.fraction);
+  });
+
+  it("ends at 1 without transcription", () => {
+    const steps = runProgress(interleavedCapture, false);
+    expect(steps.at(-1)?.fraction).toBeCloseTo(1);
+  });
+
+  it("reserves the transcript share when transcription is on", () => {
+    const steps = runProgress([...interleavedCapture, transcribing(0)], true);
+    expect(steps.at(-2)?.fraction).toBeCloseTo(0.7);
+    expect(steps.at(-1)?.fraction).toBeCloseTo(0.7);
+    expect(
+      runProgress([...interleavedCapture, transcribing(1)], true).at(-1)?.fraction,
+    ).toBeCloseTo(0.85);
+  });
+
+  it("ends at 1 with transcription", () => {
+    const steps = runProgress([...interleavedCapture, transcribing(1), transcribing(2)], true);
+    expect(steps.at(-1)?.fraction).toBeCloseTo(1);
+  });
+
+  it("does not count a phase with no total as progress", () => {
+    expect(runProgress([extracting(0, 0)], false)[0]?.fraction).toBe(0);
   });
 });
 
-describe("progressLabel", () => {
-  it("names each phase", () => {
-    const progress = { done: 0, total: 1 };
-    expect(progressLabel({ ...progress, phase: "extracting" })).toBe("Extracting frames...");
-    expect(progressLabel({ ...progress, phase: "rendering" })).toBe("Rendering collage sheets...");
-    expect(progressLabel({ ...progress, phase: "transcribing", stage: "model" })).toBe(
+describe("progress label", () => {
+  it("says what is happening while frames and sheets both move", () => {
+    const labels = runProgress(interleavedCapture, false).map((step) => step.label);
+    expect(labels[0]).toBe("Extracting frames...");
+    expect(labels[2]).toBe("Extracting frames and rendering sheets...");
+    expect(labels[3]).toBe("Extracting frames and rendering sheets...");
+  });
+
+  it("names rendering once every frame is out", () => {
+    const labels = runProgress(
+      [extracting(2), rendering(0), extracting(4), rendering(1)],
+      false,
+    ).map((step) => step.label);
+    expect(labels.at(-1)).toBe("Rendering collage sheets...");
+  });
+
+  it("keeps the transcription labels", () => {
+    const model: Progress = { phase: "transcribing", done: 0, total: 1, stage: "model" };
+    expect(runProgress([model], true)[0]?.label).toBe(
       "Downloading speech model (first use only)...",
     );
-    expect(progressLabel({ ...progress, phase: "transcribing", stage: "transcribe" })).toBe(
-      "Transcribing audio...",
-    );
+    expect(runProgress([transcribing(1)], true)[0]?.label).toBe("Transcribing audio...");
   });
 });
 

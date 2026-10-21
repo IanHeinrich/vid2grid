@@ -23,14 +23,20 @@ without touching media, and proves it does them the same way as the others.
    `plan.cell`. `VideoInfo` does not carry the rotation, so the host keeps it
    from the probe. Several planned times can pick the same source frame.
    Return fewer images only when the stream ends first. A keyframe plan may
-   decode keyframes alone.
+   decode keyframes alone. Hand images over as they are decoded rather than
+   all at once: a JavaScript host's `capture` is an async iterable that
+   yields them in plan order and decodes no further ahead than the pipeline
+   pulls, and its optional `release` frees an image the pipeline pulled but
+   will never encode.
 3. **Run draw ops.** For each sheet, run `sheetDrawOps(plan, sheetIndex)` on a
    `plan.canvas`-sized surface, in order: a background `fillRect`, then per
    cell an `image` op and its `text` ops. Skip both for a cell with no captured
    image. Text is stroked, then filled, and a `top-right` anchor gives the
    text's right edge, which only the host's own font metrics can resolve.
 4. **Encode JPEG.** Encode each sheet at `plan.jpegQuality` and name it
-   `sheet.fileName`.
+   `sheet.fileName`. A JavaScript host's `encode` takes one sheet, owns its
+   images from the call on and frees them whatever the outcome. Its
+   `concurrency` says how many sheets may encode at once, 1 when unset.
 
 Transcription is optional. A host that offers it fills the
 `TranscriptPort` in
@@ -48,8 +54,12 @@ warnings to report instead of failing the run. All four are in the embed.
 
 **In a JavaScript runtime**, depend on `@vid2grid/core`. Implementing
 `CollagePorts` and calling `generateCollages` gets the whole sequence,
-including the keyframe fallback and progress. A host with a canvas-like 2D
-context can paint with `paintSheetFromPlan` instead of its own draw-op loop.
+including the keyframe fallback and progress. `streamCollages` runs the same
+sequence but hands each sheet to an awaited `onSheet` in sheet order as soon
+as it and every earlier sheet are encoded, and keeps none of them, so a host
+that writes sheets to disk holds no more than the sheets in flight. A host
+with a canvas-like 2D context can paint with `paintSheetFromPlan` instead of
+its own draw-op loop.
 `packages/browser` is the worked example, and `packages/node` (ffmpeg and
 `@napi-rs/canvas`, with a CLI built from `OPTION_SPECS`) is a headless one
 whose `tests/conformance.test.ts` checks it against the draw-op and frame
@@ -88,9 +98,16 @@ for sheet in plan.sheets:
 ```
 
 Taking one sheet's images at a time keeps memory to a sheet, whatever the
-video's length. The Python package does that. `generateCollages`, which the
-browser and Node hosts run, currently captures the whole plan before it renders
-a sheet, so their memory grows with the number of planned frames.
+video's length. The Python package does that. `generateCollages` and
+`streamCollages`, which the browser and Node hosts run, do the same with
+encodes in flight: they pull frames in plan order, start a sheet's encode as
+soon as its cells are captured, and once `concurrency` encodes are running
+they wait for the oldest to be delivered before pulling more. A JavaScript host
+therefore holds at most about `concurrency + 1` sheets of frames. When the
+capture ends early, the sheet it was part way through is encoded with its
+missing cells empty. On any error they stop pulling, close the capture with
+its iterator's `return()`, `release` every frame no encode took, let the
+encodes in flight settle and rethrow the first error.
 
 ## Proving conformance
 

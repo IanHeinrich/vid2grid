@@ -20,11 +20,9 @@ import {
   rotationFromMatrix,
   secondsToMicroseconds,
   type PlannedFrame,
-  type PortProgressCallback,
   type RenderPlan,
 } from "@vid2grid/core";
 import { createCellCanvas } from "../shared/canvas";
-import { closeImages } from "../shared/images";
 import { supportsWebCodecs } from "./isoBmff";
 
 // Generous upper bound on B-frame reorder depth: without the padding, composition-order
@@ -32,6 +30,8 @@ import { supportsWebCodecs } from "./isoBmff";
 const REORDER_PADDING_SAMPLES = 16;
 // Bounds memory on long clips rather than queuing the whole video at once.
 const MAX_DECODE_QUEUE_SIZE = 30;
+// Captured frames waiting for the consumer; feeding the decoder pauses at this many.
+export const MAX_BUFFERED_FRAMES = 8;
 
 interface DemuxResult {
   videoTrack: Track;
@@ -203,10 +203,36 @@ export function drawRotated(
 
 export interface FrameCollector {
   consume(frame: VideoFrame): void;
-  isComplete: () => boolean;
-  completed: Promise<void>;
-  settle(): Promise<ImageBitmap[]>;
+  // True once there is room for more decoded frames, false when no more are wanted.
+  awaitRoom(): Promise<boolean>;
+  // The next frame in plan order, or undefined once the stream has ended.
+  take(): Promise<ImageBitmap | undefined>;
+  end(): void;
+  fail(reason: unknown): void;
   discard(): Promise<void>;
+}
+
+function createChangeSignal() {
+  const waiters: (() => void)[] = [];
+  return {
+    changed: () => {
+      for (const wake of waiters.splice(0)) wake();
+    },
+    nextChange: () => new Promise<void>((resolve) => waiters.push(resolve)),
+  };
+}
+
+// Awaited only when taken, so a failure must not count as unhandled meanwhile.
+function captureCanvas(canvas: HTMLCanvasElement): Promise<ImageBitmap> {
+  const capture = createImageBitmap(canvas);
+  capture.catch(() => {});
+  return capture;
+}
+
+async function closeWhenSettled(captures: Promise<ImageBitmap>[]): Promise<void> {
+  for (const capture of await Promise.allSettled(captures)) {
+    if (capture.status === "fulfilled") capture.value.close();
+  }
 }
 
 // First frame at or after each wanted timestamp, as in the seek-based path (not nearest-frame).
@@ -217,73 +243,68 @@ export function createFrameCollector(
   cellW: number,
   cellH: number,
   rotation: number,
-  onProgress?: PortProgressCallback,
 ): FrameCollector {
-  const images = new Array<ImageBitmap | undefined>(wanted.length);
-  const pendingCaptures: Promise<void>[] = [];
+  const captures: Promise<ImageBitmap>[] = [];
   const matcher = createFrameMatcher(wanted);
-  let capturedCount = 0;
-  let complete = false;
-  let markComplete!: () => void;
-  const completed = new Promise<void>((resolve) => {
-    markComplete = resolve;
-  });
+  const { changed, nextChange } = createChangeSignal();
+  let ended = false;
+  let discarded = false;
+  let failure: { reason: unknown } | null = null;
 
   return {
     consume(frame) {
-      for (const capturedIndex of matcher.fill(frame.timestamp / MICROSECONDS_PER_SECOND)) {
+      if (discarded) return;
+      const filled = matcher.fill(frame.timestamp / MICROSECONDS_PER_SECOND).length;
+      for (let i = 0; i < filled; i++) {
         drawRotated(ctx, frame, cellW, cellH, rotation);
-        pendingCaptures.push(
-          createImageBitmap(canvas).then((image) => {
-            images[capturedIndex] = image;
-            capturedCount++;
-            onProgress?.({ done: capturedCount, total: wanted.length });
-          }),
-        );
+        captures.push(captureCanvas(canvas));
       }
-      if (matcher.done && !complete) {
-        complete = true;
-        markComplete();
+      changed();
+    },
+    async awaitRoom() {
+      while (!discarded && !failure && !matcher.done) {
+        if (captures.length < MAX_BUFFERED_FRAMES) return true;
+        await nextChange();
+      }
+      return false;
+    },
+    async take() {
+      for (;;) {
+        const capture = captures.shift();
+        if (capture) {
+          changed();
+          return capture;
+        }
+        if (matcher.done) return undefined;
+        if (failure) throw failure.reason;
+        if (ended) return undefined;
+        await nextChange();
       }
     },
-    isComplete: () => complete,
-    completed,
-    async settle() {
-      const captures = await Promise.allSettled(pendingCaptures);
-      const failed = captures.find((capture) => capture.status === "rejected");
-      if (failed) {
-        closeImages(images);
-        throw failed.reason;
-      }
-      const prefix = contiguousPrefix(images);
-      closeImages(images.slice(prefix.length));
-      return prefix;
+    end() {
+      ended = true;
+      changed();
+    },
+    fail(reason) {
+      failure ??= { reason };
+      changed();
     },
     async discard() {
-      await Promise.allSettled(pendingCaptures);
-      closeImages(images);
+      discarded = true;
+      changed();
+      await closeWhenSettled(captures.splice(0));
     },
   };
-}
-
-function contiguousPrefix(images: (ImageBitmap | undefined)[]): ImageBitmap[] {
-  const captured: ImageBitmap[] = [];
-  for (const image of images) {
-    if (!image) break;
-    captured.push(image);
-  }
-  return captured;
 }
 
 async function feedSamples(
   decoder: VideoDecoder,
   samples: Sample[],
   indices: Iterable<number>,
-  shouldStop: () => boolean,
+  collector: FrameCollector,
 ): Promise<void> {
   for (const index of indices) {
-    if (shouldStop()) break;
-    if (isDecoderClosed(decoder)) break;
+    if (!(await collector.awaitRoom()) || isDecoderClosed(decoder)) return;
     const sample = samples[index];
     const chunk = sample && toEncodedVideoChunk(sample);
     if (!chunk) continue;
@@ -292,7 +313,7 @@ async function feedSamples(
         decoder.addEventListener("dequeue", () => resolve(), { once: true }),
       );
     }
-    if (isDecoderClosed(decoder)) break;
+    if (isDecoderClosed(decoder)) return;
     decoder.decode(chunk);
   }
   if (!isDecoderClosed(decoder)) await decoder.flush();
@@ -319,19 +340,16 @@ function findDecodeEndIndex(samples: Sample[], endTime: number): number {
   return samples.length - 1;
 }
 
-// Racing collector.completed lets the pass stop early even while feedSamples is
-// parked on decode-queue backpressure.
-async function decodeIntoCollector(
+export async function* decodeFrames(
   decoderConfig: VideoDecoderConfig,
   samples: Sample[],
   indices: Iterable<number>,
-  collector: FrameCollector,
-): Promise<void> {
-  let onDecoderError!: (error: DOMException) => void;
-  const failed = new Promise<never>((_, reject) => {
-    onDecoderError = reject;
-  });
-
+  wanted: number[],
+  cell: { width: number; height: number },
+  rotation: number,
+): AsyncGenerator<ImageBitmap, void, undefined> {
+  const { canvas, ctx } = createCellCanvas(cell.width, cell.height);
+  const collector = createFrameCollector(wanted, canvas, ctx, cell.width, cell.height, rotation);
   const decoder = new VideoDecoder({
     output: (frame) => {
       try {
@@ -340,51 +358,34 @@ async function decodeIntoCollector(
         frame.close();
       }
     },
-    error: onDecoderError,
+    error: (error) => collector.fail(error),
   });
-  decoder.configure(decoderConfig);
 
   try {
-    await Promise.race([
-      feedSamples(decoder, samples, indices, collector.isComplete),
-      collector.completed,
-      failed,
-    ]);
+    decoder.configure(decoderConfig);
+    void feedSamples(decoder, samples, indices, collector).then(
+      () => collector.end(),
+      (err: unknown) => collector.fail(err),
+    );
+    for (let image = await collector.take(); image; image = await collector.take()) {
+      yield image;
+    }
   } finally {
     if (!isDecoderClosed(decoder)) decoder.close();
+    await collector.discard();
   }
 }
 
-async function decodeToImages(
-  decoderConfig: VideoDecoderConfig,
-  samples: Sample[],
-  indices: Iterable<number>,
-  wanted: number[],
-  cellW: number,
-  cellH: number,
-  rotation: number,
-  onProgress?: PortProgressCallback,
-): Promise<ImageBitmap[]> {
-  const { canvas, ctx } = createCellCanvas(cellW, cellH);
-  const collector = createFrameCollector(wanted, canvas, ctx, cellW, cellH, rotation, onProgress);
-  try {
-    await decodeIntoCollector(decoderConfig, samples, indices, collector);
-  } catch (err) {
-    await collector.discard();
-    throw err;
-  }
-  return collector.settle();
-}
+async function* noFrames(): AsyncGenerator<ImageBitmap, void, undefined> {}
 
 export async function extractFramesWebCodecs(
   file: File,
   plan: RenderPlan,
-  onProgress?: PortProgressCallback,
-): Promise<ImageBitmap[] | null> {
+): Promise<AsyncGenerator<ImageBitmap, void, undefined> | null> {
   if (typeof VideoDecoder === "undefined") return null;
   const firstFrame = plan.frames[0];
   const lastFrame = plan.frames.at(-1);
-  if (!firstFrame || !lastFrame) return [];
+  if (!firstFrame || !lastFrame) return noFrames();
 
   const demuxed = await demuxCached(file);
   if (!demuxed) return null;
@@ -403,7 +404,6 @@ export async function extractFramesWebCodecs(
   const support = await VideoDecoder.isConfigSupported(decoderConfig);
   if (!support.supported) return null;
 
-  const { width: cellW, height: cellH } = plan.cell;
   const wanted = plan.frames.map((frame) => frame.timestampSeconds);
 
   // Sync samples decode independently, so a keyframe-sampled plan never has to decode
@@ -415,14 +415,5 @@ export async function extractFramesWebCodecs(
       findDecodeStartIndex(samples, firstFrame.timestampSeconds),
       findDecodeEndIndex(samples, lastFrame.timestampSeconds),
     );
-  return decodeToImages(
-    decoderConfig,
-    samples,
-    indices,
-    wanted,
-    cellW,
-    cellH,
-    rotation,
-    onProgress,
-  );
+  return decodeFrames(decoderConfig, samples, indices, wanted, plan.cell, rotation);
 }

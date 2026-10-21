@@ -24,3 +24,10 @@ export function waitForEvent(target: HTMLVideoElement, event: string): Promise<v
     target.addEventListener("error", onError, { once: true });
   });
 }
+
+// Dropping the source makes the element let go of its decoder and buffered media now,
+// rather than whenever it is collected.
+export function releaseVideo(video: HTMLVideoElement): void {
+  video.removeAttribute("src");
+  video.load();
+}

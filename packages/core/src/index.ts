@@ -104,11 +104,14 @@ export type {
 } from "./pipeline/ports";
 export {
   generateCollages,
+  streamCollages,
   type GeneratedFile,
   type GenerateCollagesOptions,
   type GenerateCollagesResult,
   type GenerationTimings,
   type PhaseTimings,
+  type StreamCollagesOptions,
+  type StreamCollagesResult,
   type Vid2GridWarning,
   type WarningCode,
 } from "./pipeline/generateCollages";

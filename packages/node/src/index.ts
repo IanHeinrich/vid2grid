@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
-  generateCollages,
+  streamCollages,
   type CollagePlanRequest,
   type CollagePorts,
   type GenerateCollagesOptions,
@@ -11,7 +11,7 @@ import {
 } from "@vid2grid/core";
 import { captureFrames, type RgbaFrame } from "./capture";
 import { probeVideo, readKeyframeTimes } from "./probe";
-import { encodeSheets } from "./render";
+import { encodeSheet, SHEET_ENCODE_CONCURRENCY } from "./render";
 
 export interface RenderVideoResult {
   plan: RenderPlan;
@@ -24,7 +24,7 @@ export function createNodePorts(): CollagePorts<string, RgbaFrame, Buffer> {
   return {
     probe: { probe: probeVideo, readKeyframeTimes },
     frames: { capture: captureFrames },
-    sheets: { encode: encodeSheets },
+    sheets: { encode: encodeSheet, concurrency: SHEET_ENCODE_CONCURRENCY },
     text: { encodeText: (text) => Buffer.from(text, "utf8") },
     clock: { now: () => performance.now() },
   };
@@ -38,23 +38,22 @@ export async function renderVideo(
 ): Promise<RenderVideoResult> {
   let timings: GenerationTimings = { phaseMs: {}, frameCount: 0, sheetCount: 0 };
   const warnings: Vid2GridWarning[] = [];
-  const result = await generateCollages(path, request, createNodePorts(), {
+  const sheetPaths: string[] = [];
+  const { plan } = await streamCollages(path, request, createNodePorts(), {
     ...options,
     onTiming: (reported) => (timings = reported),
     onWarning: (warning) => warnings.push(warning),
-  });
-
-  await mkdir(outDir, { recursive: true });
-  const sheetPaths = await Promise.all(
-    result.sheets.map(async ({ name, data }) => {
+    onSheet: async ({ name, data }) => {
+      // Made on the first sheet, so a rejected request or an empty capture leaves no folder.
+      if (sheetPaths.length === 0) await mkdir(outDir, { recursive: true });
       const sheetPath = join(outDir, name);
       await writeFile(sheetPath, data);
-      return sheetPath;
-    }),
-  );
-  return { plan: result.plan, sheetPaths, timings, warnings };
+      sheetPaths.push(sheetPath);
+    },
+  });
+  return { plan, sheetPaths, timings, warnings };
 }
 
 export { captureFrames, type RgbaFrame } from "./capture";
 export { probeVideo, readKeyframeTimes } from "./probe";
-export { encodeSheets } from "./render";
+export { encodeSheet, SHEET_ENCODE_CONCURRENCY } from "./render";

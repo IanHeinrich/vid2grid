@@ -1,27 +1,23 @@
 import { createCanvas, ImageData, type Canvas } from "@napi-rs/canvas";
 import {
   paintSheetFromPlan,
-  type PortProgressCallback,
   type RenderPlan,
   type SheetContext2D,
   type SheetRenderJob,
 } from "@vid2grid/core";
 import type { RgbaFrame } from "./capture";
 
-// One sheet at a time, so only one sheet-sized canvas is alive at once.
-export async function encodeSheets(
+// Painting runs on the main thread but canvas.encode runs on libuv's thread pool, so a
+// second sheet lets the next paint overlap the last encode; more would only hold frames.
+export const SHEET_ENCODE_CONCURRENCY = 2;
+
+export async function encodeSheet(
   plan: RenderPlan,
-  jobs: SheetRenderJob<RgbaFrame>[],
-  onProgress?: PortProgressCallback,
-): Promise<Buffer[]> {
-  const sheets: Buffer[] = [];
-  for (const job of jobs) {
-    const canvas = createCanvas(plan.canvas.width, plan.canvas.height);
-    paintSheet(canvas.getContext("2d"), plan, job);
-    sheets.push(await canvas.encode("jpeg", plan.jpegQuality));
-    onProgress?.({ done: sheets.length, total: jobs.length });
-  }
-  return sheets;
+  job: SheetRenderJob<RgbaFrame>,
+): Promise<Buffer> {
+  const canvas = createCanvas(plan.canvas.width, plan.canvas.height);
+  paintSheet(canvas.getContext("2d"), plan, job);
+  return await canvas.encode("jpeg", plan.jpegQuality);
 }
 
 // Takes any SheetContext2D so conformance tests can record what reaches the canvas.

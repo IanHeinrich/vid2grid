@@ -1,34 +1,40 @@
-import type { PortProgressCallback, RenderPlan } from "@vid2grid/core";
+import type { RenderPlan } from "@vid2grid/core";
 import { errorMessage } from "../shared/errors";
 import { extractFrames } from "./extractor";
 import { supportsWebCodecs } from "./isoBmff";
 
-export async function extractFramesAuto(
+export async function* extractFramesAuto(
   file: File,
   plan: RenderPlan,
-  onProgress?: PortProgressCallback,
-): Promise<ImageBitmap[]> {
+): AsyncGenerator<ImageBitmap, void, undefined> {
+  let yielded = 0;
   let webCodecsFailure: { reason: unknown } | null = null;
   if (supportsWebCodecs(file)) {
     try {
       const { extractFramesWebCodecs } = await import("./webcodecsExtractor");
-      const images = await extractFramesWebCodecs(file, plan, onProgress);
-      if (images) return images;
+      const images = await extractFramesWebCodecs(file, plan);
+      if (images) {
+        for await (const image of images) {
+          yielded++;
+          yield image;
+        }
+        return;
+      }
     } catch (err) {
       webCodecsFailure = { reason: err };
     }
   }
-  return fallBackToSeeking(file, plan, onProgress, webCodecsFailure);
+  yield* fallBackToSeeking(file, plan, yielded, webCodecsFailure);
 }
 
-async function fallBackToSeeking(
+async function* fallBackToSeeking(
   file: File,
   plan: RenderPlan,
-  onProgress: PortProgressCallback | undefined,
+  fromFrame: number,
   webCodecsFailure: { reason: unknown } | null,
-): Promise<ImageBitmap[]> {
+): AsyncGenerator<ImageBitmap, void, undefined> {
   try {
-    return await extractFrames(file, plan, onProgress);
+    yield* extractFrames(file, plan, fromFrame);
   } catch (seekFailure) {
     if (!webCodecsFailure) throw seekFailure;
     throw new AggregateError(

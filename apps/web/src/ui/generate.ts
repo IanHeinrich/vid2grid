@@ -13,19 +13,8 @@ import {
 } from "@vid2grid/core";
 import { createBrowserPorts } from "@vid2grid/browser";
 
-type PhaseWeights = Record<Phase, number>;
-
-// Rough share of wall-clock time each phase takes, so the bar moves at an even pace.
-const PHASE_WEIGHTS_WITH_TRANSCRIPT: PhaseWeights = {
-  extracting: 0.5,
-  rendering: 0.2,
-  transcribing: 0.3,
-};
-const PHASE_WEIGHTS_WITHOUT_TRANSCRIPT: PhaseWeights = {
-  extracting: 0.7,
-  rendering: 0.3,
-  transcribing: 0,
-};
+// Transcription runs after capture and rendering, so it gets its own share of the bar.
+const TRANSCRIPT_SHARE = 0.3;
 
 export interface GenerateControls {
   render(): void;
@@ -53,21 +42,59 @@ export function buildRequest(form: FormElements): CollagePlanRequest {
   };
 }
 
-export function overallProgress({ phase, done, total }: Progress, withTranscript: boolean): number {
-  const weights = withTranscript ? PHASE_WEIGHTS_WITH_TRANSCRIPT : PHASE_WEIGHTS_WITHOUT_TRANSCRIPT;
-  const phaseStarts: PhaseWeights = {
-    extracting: 0,
-    rendering: weights.extracting,
-    transcribing: weights.extracting + weights.rendering,
-  };
-  return phaseStarts[phase] + (done / total) * weights[phase];
+interface PhaseCounts {
+  done: number;
+  total: number;
 }
 
-export function progressLabel({ phase, stage }: Progress): string {
-  if (phase === "extracting") return "Extracting frames...";
-  if (phase === "rendering") return "Rendering collage sheets...";
-  if (stage === "model") return "Downloading speech model (first use only)...";
-  return "Transcribing audio...";
+export interface ProgressState {
+  withTranscript: boolean;
+  counts: Partial<Record<Phase, PhaseCounts>>;
+  fraction: number;
+  label: string;
+}
+
+export function startProgress(withTranscript: boolean): ProgressState {
+  return { withTranscript, counts: {}, fraction: 0, label: "" };
+}
+
+// Frames and sheets progress together, so they share one stretch of the bar
+// with a phase that has not reported yet counting as zero.
+export function advanceProgress(state: ProgressState, progress: Progress): ProgressState {
+  const counts = {
+    ...state.counts,
+    [progress.phase]: { done: progress.done, total: progress.total },
+  };
+  const captureFraction = (phaseFraction(counts.extracting) + phaseFraction(counts.rendering)) / 2;
+  const raw = state.withTranscript
+    ? captureFraction * (1 - TRANSCRIPT_SHARE) +
+      phaseFraction(counts.transcribing) * TRANSCRIPT_SHARE
+    : captureFraction;
+  return {
+    withTranscript: state.withTranscript,
+    counts,
+    fraction: Math.max(state.fraction, raw),
+    label: progressLabel(progress, counts),
+  };
+}
+
+function phaseFraction(counts: PhaseCounts | undefined): number {
+  if (!counts || counts.total <= 0) return 0;
+  return Math.min(counts.done / counts.total, 1);
+}
+
+function progressLabel(
+  { phase, stage }: Progress,
+  { extracting, rendering }: ProgressState["counts"],
+): string {
+  if (phase === "transcribing") {
+    return stage === "model"
+      ? "Downloading speech model (first use only)..."
+      : "Transcribing audio...";
+  }
+  if (!rendering) return "Extracting frames...";
+  if (extracting && extracting.done >= extracting.total) return "Rendering collage sheets...";
+  return "Extracting frames and rendering sheets...";
 }
 
 export function initGenerate(
@@ -161,14 +188,17 @@ async function runGeneration(
 ): Promise<GenerationResults> {
   const withTranscript = request.transcript !== undefined;
   const { videoInfo } = ctx.state;
+  let progressState = startProgress(withTranscript);
   const { plan, sheets, transcriptFiles } = await generateCollages(
     file,
     request,
     createBrowserPorts(),
     {
       ...(videoInfo && { videoInfo }),
-      onProgress: (progress) =>
-        renderProgress(ctx, overallProgress(progress, withTranscript), progressLabel(progress)),
+      onProgress: (progress) => {
+        progressState = advanceProgress(progressState, progress);
+        renderProgress(ctx, progressState.fraction, progressState.label);
+      },
       onWarning: (warning) => {
         if (isCurrentFile(ctx, file)) ctx.status.show(warning.message);
       },
