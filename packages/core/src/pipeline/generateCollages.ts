@@ -3,8 +3,12 @@ import { validateCollagePlanRequest, type CollagePlanRequest } from "../plan/req
 import type { VideoInfo } from "../probe/videoInfo";
 import { buildRenderPlanUnvalidated } from "../plan/buildRenderPlan";
 import { resolveKeyframeSampling } from "../plan/keyframeFallback";
-import type { RenderPlan, TranscriptWindow } from "../plan/renderPlan";
-import { cuesInWindow, cuesToVtt } from "../transcript/vtt";
+import type { RenderPlan } from "../plan/renderPlan";
+import {
+  NO_TRANSCRIPTION_PORT,
+  transcriptFiles,
+  transcriptionFailedWarning,
+} from "../transcript/transcriptFiles";
 import type { Vid2GridWarning } from "../warnings";
 import type {
   ClockPort,
@@ -46,16 +50,9 @@ export interface GenerateCollagesOptions {
   videoInfo?: VideoInfo;
 }
 
-const TRANSCRIPT_FAILED_PREFIX = "Transcript generation failed: ";
-
 function errorReason(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
-
-const NO_TRANSCRIPTION_PORT: Vid2GridWarning = {
-  code: "no_transcription_port",
-  message: `${TRANSCRIPT_FAILED_PREFIX}this host has no transcription support`,
-};
 
 interface PhaseTimer {
   phaseMs: PhaseTimings;
@@ -122,24 +119,11 @@ function jobsForCapturedSheets<TImage>(
     .map((sheet) => ({ sheet, images: sheet.cells.map((cell) => images[cell.frameIndex]) }));
 }
 
-// A short capture drops the trailing sheets, so the last surviving window takes over
-// their range rather than leaving the cues past it in no file at all.
-function sheetWindowsForJobs<TImage>(
-  jobs: SheetRenderJob<TImage>[],
-  endSeconds: number,
-): TranscriptWindow[] {
-  const windows = jobs.flatMap((job) => (job.sheet.transcript ? [job.sheet.transcript] : []));
-  const last = windows[windows.length - 1];
-  if (!last) return windows;
-  return [...windows.slice(0, -1), { ...last, endSeconds }];
-}
-
 function transcriptionFailure(err: unknown): Vid2GridWarning {
-  const noAudio = err instanceof Vid2GridError && err.code === "no_audio";
-  return {
-    code: noAudio ? "no_audio" : "transcription_failed",
-    message: `${TRANSCRIPT_FAILED_PREFIX}${errorReason(err)}`,
-  };
+  return transcriptionFailedWarning(
+    errorReason(err),
+    err instanceof Vid2GridError ? err.code : undefined,
+  );
 }
 
 interface TranscriptStep<TSource, TImage, TBinary> {
@@ -162,10 +146,6 @@ async function generateTranscriptFiles<TSource, TImage, TBinary>(
     options.onWarning?.(NO_TRANSCRIPTION_PORT);
     return [];
   }
-  const windows =
-    plan.combinedTranscript !== undefined
-      ? [plan.combinedTranscript]
-      : sheetWindowsForJobs(step.jobs, request.endSeconds);
   try {
     const cues = await step.timer.time("transcribing", () =>
       transcriptPort.transcribe(
@@ -175,12 +155,9 @@ async function generateTranscriptFiles<TSource, TImage, TBinary>(
         progressFor(options, "transcribing"),
       ),
     );
-    return windows.map((window) => ({
-      name: window.fileName,
-      data: ports.text.encodeText(
-        cuesToVtt(cuesInWindow(cues, window.startSeconds, window.endSeconds)),
-        "text/vtt",
-      ),
+    return transcriptFiles(plan, step.jobs.length, request.endSeconds, cues).map((file) => ({
+      name: file.fileName,
+      data: ports.text.encodeText(file.vtt, "text/vtt"),
     }));
   } catch (err) {
     options.onWarning?.(transcriptionFailure(err));

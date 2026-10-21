@@ -2,18 +2,28 @@ import itertools
 import time
 from collections.abc import Sequence
 from contextlib import closing
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import av
 
-from ._core import build_render_plan, resolve_keyframe_sampling, validate_collage_plan_request
+from ._core import (
+    build_render_plan,
+    no_transcription_port_warning,
+    resolve_keyframe_sampling,
+    transcript_files,
+    transcription_failed_warning,
+    validate_collage_plan_request,
+)
 from .capture import iter_frame_images
 from .contract import VID2GRID_VERSION, CollagePlanRequest, PlannedSheet, RenderPlan, VideoInfo
-from .errors import NoFramesError
+from .errors import NoFramesError, Vid2GridError
 from .probe import probe_video, read_keyframe_timestamps
 from .render import paint_sheet, save_jpeg
+
+if TYPE_CHECKING:
+    from .transcribe import Transcriber
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -29,8 +39,47 @@ class _Rendered:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class PlanResult:
+    info: VideoInfo
+    plan: RenderPlan
+    warnings: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"plan": self.plan.to_dict(), "warnings": list(self.warnings)}
+
+
+@dataclass(frozen=True, slots=True)
+class WrittenSheet:
+    path: Path
+    first_timestamp_seconds: float
+    last_timestamp_seconds: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "path": str(self.path),
+            "firstTimestampSeconds": self.first_timestamp_seconds,
+            "lastTimestampSeconds": self.last_timestamp_seconds,
+        }
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class RenderResult(_Rendered):
-    sheet_paths: tuple[Path, ...]
+    sheets: tuple[WrittenSheet, ...]
+    transcript_paths: tuple[Path, ...] = ()
+
+    @property
+    def sheet_paths(self) -> tuple[Path, ...]:
+        return tuple(sheet.path for sheet in self.sheets)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "sheets": [sheet.to_dict() for sheet in self.sheets],
+            "transcriptPaths": [str(path) for path in self.transcript_paths],
+            "warnings": list(self.warnings),
+            "frameCount": self.frame_count,
+            "timingsMs": self.timings_ms,
+            "vid2gridVersion": self.vid2grid_version,
+        }
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -62,6 +111,7 @@ def render_sheets(
     out_dir: str | Path,
     *,
     info: VideoInfo | None = None,
+    transcriber: "Transcriber | None" = None,
 ) -> RenderResult:
     # Ahead of the planner's own check so a bad request fails before the file is opened.
     validate_collage_plan_request(request)
@@ -72,17 +122,21 @@ def render_sheets(
     written = _write_sheets(
         path, planned, [(sheet, directory / sheet.file_name) for sheet in planned.plan.sheets]
     )
+    transcripts = _write_transcripts(
+        path, request, planned.plan, len(written.sheets), directory, transcriber
+    )
 
     return RenderResult(
         info=planned.info,
         frame_count=written.frame_count,
         first_timestamp_seconds=written.first_timestamp_seconds,
         last_timestamp_seconds=written.last_timestamp_seconds,
-        timings_ms=written.timings_ms,
+        timings_ms={**written.timings_ms, **transcripts.timings_ms},
         vid2grid_version=VID2GRID_VERSION,
         plan=planned.plan,
-        warnings=planned.warnings,
-        sheet_paths=written.sheet_paths,
+        warnings=planned.warnings + transcripts.warnings,
+        sheets=written.sheets,
+        transcript_paths=transcripts.paths,
     )
 
 
@@ -122,7 +176,7 @@ def render_single_sheet(
     written = _write_sheets(
         path, planned, [(sheet, sheet_path) for sheet in planned.plan.sheets[:1]]
     )
-    if not written.sheet_paths:
+    if not written.sheets:
         raise NoFramesError("no frames could be captured in the requested range")
 
     return SheetResult(
@@ -139,35 +193,31 @@ def render_single_sheet(
 
 
 @dataclass(frozen=True, slots=True)
-class _Planned:
-    info: VideoInfo
-    plan: RenderPlan
-    warnings: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
 class _Written:
-    sheet_paths: tuple[Path, ...]
-    timestamps: tuple[float, ...]
+    sheets: tuple[WrittenSheet, ...]
+    frame_count: int
     timings_ms: dict[str, int]
 
     @property
-    def frame_count(self) -> int:
-        return len(self.timestamps)
-
-    @property
     def first_timestamp_seconds(self) -> float | None:
-        return self.timestamps[0] if self.timestamps else None
+        return self.sheets[0].first_timestamp_seconds if self.sheets else None
 
     @property
     def last_timestamp_seconds(self) -> float | None:
-        return self.timestamps[-1] if self.timestamps else None
+        return self.sheets[-1].last_timestamp_seconds if self.sheets else None
 
 
-def _plan(path: str | Path, request: CollagePlanRequest, info: VideoInfo | None) -> _Planned:
+@dataclass(frozen=True, slots=True)
+class _Transcripts:
+    paths: tuple[Path, ...] = ()
+    warnings: tuple[str, ...] = ()
+    timings_ms: dict[str, int] = field(default_factory=dict)
+
+
+def _plan(path: str | Path, request: CollagePlanRequest, info: VideoInfo | None) -> PlanResult:
     video_info, keyframe_failure = _resolve_video_info(path, request, info)
     sampling = resolve_keyframe_sampling(request, video_info, keyframe_failure)
-    return _Planned(
+    return PlanResult(
         info=video_info,
         plan=build_render_plan(sampling.request, video_info),
         warnings=() if sampling.warning is None else (sampling.warning,),
@@ -176,13 +226,13 @@ def _plan(path: str | Path, request: CollagePlanRequest, info: VideoInfo | None)
 
 # Frames are captured one sheet at a time, so memory scales with a sheet rather than the video.
 def _write_sheets(
-    path: str | Path, planned: _Planned, targets: Sequence[tuple[PlannedSheet, Path]]
+    path: str | Path, planned: PlanResult, targets: Sequence[tuple[PlannedSheet, Path]]
 ) -> _Written:
     plan = planned.plan
     extracting_seconds = 0.0
     rendering_seconds = 0.0
-    sheet_paths: list[Path] = []
-    timestamps: list[float] = []
+    written: list[WrittenSheet] = []
+    frame_count = 0
 
     with closing(iter_frame_images(path, plan, planned.info)) as frame_images:
         for sheet, sheet_path in targets:
@@ -195,17 +245,54 @@ def _write_sheets(
             started = time.perf_counter()
             save_jpeg(paint_sheet(plan, sheet, images), sheet_path, plan.jpeg_quality)
             rendering_seconds += time.perf_counter() - started
-            sheet_paths.append(sheet_path)
-            timestamps.extend(cell.timestamp_seconds for cell in sheet.cells[: len(images)])
+            captured = sheet.cells[: len(images)]
+            written.append(
+                WrittenSheet(
+                    path=sheet_path,
+                    first_timestamp_seconds=captured[0].timestamp_seconds,
+                    last_timestamp_seconds=captured[-1].timestamp_seconds,
+                )
+            )
+            frame_count += len(captured)
 
     return _Written(
-        sheet_paths=tuple(sheet_paths),
-        timestamps=tuple(timestamps),
+        sheets=tuple(written),
+        frame_count=frame_count,
         timings_ms={
             "extracting": _to_ms(extracting_seconds),
             "rendering": _to_ms(rendering_seconds),
         },
     )
+
+
+# As in core's generateCollages: nothing rendered means no transcript, and a failed
+# transcription becomes a warning so it never loses the sheets already written.
+def _write_transcripts(
+    path: str | Path,
+    request: CollagePlanRequest,
+    plan: RenderPlan,
+    rendered_sheet_count: int,
+    directory: Path,
+    transcriber: "Transcriber | None",
+) -> _Transcripts:
+    if request.transcript_scope is None or rendered_sheet_count == 0:
+        return _Transcripts()
+    if transcriber is None:
+        return _Transcripts(warnings=(no_transcription_port_warning(),))
+    started = time.perf_counter()
+    try:
+        cues = transcriber(path, request.start_seconds, request.end_seconds)
+    except Exception as exc:
+        code = exc.code if isinstance(exc, Vid2GridError) else None
+        return _Transcripts(warnings=(transcription_failed_warning(str(exc), code),))
+    transcribing_ms = _to_ms(time.perf_counter() - started)
+
+    paths: list[Path] = []
+    for file in transcript_files(plan, rendered_sheet_count, request.end_seconds, cues):
+        file_path = directory / file.file_name
+        file_path.write_text(file.vtt, encoding="utf-8", newline="")
+        paths.append(file_path)
+    return _Transcripts(paths=tuple(paths), timings_ms={"transcribing": transcribing_ms})
 
 
 # Keyframe times cost a full demux, so a caller's info is taken as it comes and topped up

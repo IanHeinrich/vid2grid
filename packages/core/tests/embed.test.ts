@@ -96,6 +96,10 @@ describe("the functions vid2gridCore exposes", () => {
       value: { width: 480, height: 853 },
     });
     expect(call("normalizeRotationClockwise", -90)).toEqual({ ok: true, value: 90 });
+    expect(call("gridsFolderName", "my clip.mp4", "2026-10-21T09:08:07.000Z")).toEqual({
+      ok: true,
+      value: "my clip_grids_2026-10-21_090807",
+    });
   });
 
   it("include the option spec and the request built from options", () => {
@@ -116,6 +120,40 @@ describe("the functions vid2gridCore exposes", () => {
     expect(call("requestFromOptions", { transcript: "combined" }, fixture.info)).toMatchObject({
       ok: false,
       code: "invalid_request",
+    });
+  });
+});
+
+describe("the transcript helpers vid2gridCore exposes", () => {
+  const perSheet = { ...fixture.request, transcript: { scope: "per-sheet" } };
+  const plan = (call("buildRenderPlan", perSheet, fixture.info) as { value: unknown }).value;
+
+  it("map recogniser segments onto the video's timeline", () => {
+    expect(call("cuesFromSegments", [{ start: 0, end: null, text: " hi " }], 2)).toEqual({
+      ok: true,
+      value: [{ start: 2, end: 2, text: "hi" }],
+    });
+  });
+
+  it("name and write the transcript files for the sheets that rendered", () => {
+    expect(call("transcriptFiles", plan, 1, 3, [{ start: 2.5, end: 2.9, text: "late" }])).toEqual({
+      ok: true,
+      value: [
+        { fileName: "grid_0001.vtt", vtt: "WEBVTT\n\n00:00:02.500 --> 00:00:02.900\nlate\n" },
+      ],
+    });
+  });
+
+  it("build the transcription warnings", () => {
+    expect(call("transcriptionFailedWarning", "no audio track", "no_audio")).toEqual({
+      ok: true,
+      value: { code: "no_audio", message: "Transcript generation failed: no audio track" },
+    });
+    expect(call("transcriptionFailedWarning", "boom")).toMatchObject({
+      value: { code: "transcription_failed" },
+    });
+    expect(call("noTranscriptionPortWarning")).toMatchObject({
+      value: { code: "no_transcription_port" },
     });
   });
 });

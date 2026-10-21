@@ -441,14 +441,14 @@
       flag: "max-keyframes",
       type: "integer",
       exclusiveMin: 0,
-      help: "with --keyframes, thin the keyframes evenly to at most this many"
+      help: "with keyframe sampling, thin the keyframes evenly to at most this many"
     },
     {
       name: "frameCount",
       flag: "frame-count",
       type: "integer",
       exclusiveMin: 0,
-      help: "exactly this many evenly spaced frames, in place of --fps"
+      help: "exactly this many evenly spaced frames, in place of the fps"
     },
     {
       name: "transcript",
@@ -504,6 +504,19 @@
       case "enum":
         return spec.values.some((allowed) => allowed === value) ? void 0 : `${spec.name} must be one of ${spec.values.join(", ")}`;
     }
+  }
+  const UNSAFE_FILE_NAME_CHARACTERS = /[\\/:*?"<>|]+/g;
+  const FILE_EXTENSION = /\.[^./\\]+$/;
+  const FALLBACK_SOURCE_NAME = "video";
+  const ISO_DATE_TIME_TO_SECONDS = "YYYY-MM-DDTHH:MM:SS".length;
+  function sanitizeForFileName(name) {
+    const cleaned = name.replace(UNSAFE_FILE_NAME_CHARACTERS, "_").trim();
+    return cleaned || FALLBACK_SOURCE_NAME;
+  }
+  function buildGridsFolderName(sourceFileName, now = /* @__PURE__ */ new Date()) {
+    const base = sanitizeForFileName(sourceFileName.replace(FILE_EXTENSION, ""));
+    const timestamp = now.toISOString().slice(0, ISO_DATE_TIME_TO_SECONDS).replace("T", "_").replace(/:/g, "");
+    return `${base}_grids_${timestamp}`;
   }
   const QUARTER_TURN_DEGREES = 90;
   const FULL_TURN_DEGREES = 360;
@@ -578,6 +591,58 @@
     });
     return ops;
   }
+  function cuesFromSegments(segments, offsetSeconds) {
+    return segments.map((segment) => ({
+      start: segment.start + offsetSeconds,
+      end: (segment.end ?? segment.start) + offsetSeconds,
+      text: segment.text.trim()
+    }));
+  }
+  function formatVttTimestamp(seconds) {
+    return formatTimestamp(Math.max(0, seconds), {
+      showHours: true,
+      showMinutes: true,
+      showMilliseconds: true
+    });
+  }
+  function cuesToVtt(cues) {
+    if (cues.length === 0) return "WEBVTT\n";
+    const body = cues.map(
+      (cue) => `${formatVttTimestamp(cue.start)} --> ${formatVttTimestamp(cue.end)}
+${cue.text}`
+    ).join("\n\n");
+    return `WEBVTT
+
+${body}
+`;
+  }
+  function cuesInWindow(cues, windowStart, windowEnd) {
+    return cues.filter((cue) => cue.start < windowEnd && cue.end > windowStart);
+  }
+  const TRANSCRIPT_FAILED_PREFIX = "Transcript generation failed: ";
+  const NO_TRANSCRIPTION_PORT = {
+    code: "no_transcription_port",
+    message: `${TRANSCRIPT_FAILED_PREFIX}this host has no transcription support`
+  };
+  function transcriptionFailedWarning(reason, errorCode) {
+    return {
+      code: errorCode === "no_audio" ? "no_audio" : "transcription_failed",
+      message: `${TRANSCRIPT_FAILED_PREFIX}${reason}`
+    };
+  }
+  function transcriptWindows(plan, renderedSheetCount, endSeconds) {
+    if (plan.combinedTranscript !== void 0) return [plan.combinedTranscript];
+    const windows = plan.sheets.slice(0, renderedSheetCount).flatMap((sheet) => sheet.transcript ? [sheet.transcript] : []);
+    const last = windows[windows.length - 1];
+    if (!last) return windows;
+    return [...windows.slice(0, -1), { ...last, endSeconds }];
+  }
+  function transcriptFiles(plan, renderedSheetCount, endSeconds, cues) {
+    return transcriptWindows(plan, renderedSheetCount, endSeconds).map((window) => ({
+      fileName: window.fileName,
+      vtt: cuesToVtt(cuesInWindow(cues, window.startSeconds, window.endSeconds))
+    }));
+  }
   const FUNCTIONS = /* @__PURE__ */ new Map([
     ["buildRenderPlan", buildRenderPlan],
     ["collagePlanRequestProblem", collagePlanRequestProblem],
@@ -588,6 +653,14 @@
     ["normalizeRotationClockwise", normalizeRotationClockwise],
     ["optionSpecs", optionSpecsFor],
     ["requestFromOptions", requestFromOptions],
+    ["cuesFromSegments", cuesFromSegments],
+    ["transcriptFiles", transcriptFiles],
+    ["transcriptionFailedWarning", transcriptionFailedWarning],
+    ["noTranscriptionPortWarning", () => NO_TRANSCRIPTION_PORT],
+    [
+      "gridsFolderName",
+      (sourceFileName, nowIso) => buildGridsFolderName(sourceFileName, new Date(nowIso))
+    ],
     ["version", () => RENDER_PLAN_VERSION]
   ]);
   function invoke(name, argsJson) {

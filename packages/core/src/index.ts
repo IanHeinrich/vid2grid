@@ -41,6 +41,13 @@ export {
 } from "./render/drawOps";
 
 export { vttToPlainText, type TranscriptCue } from "./transcript/vtt";
+export { cuesFromSegments, type TranscriptSegment } from "./transcript/segments";
+export {
+  NO_TRANSCRIPTION_PORT,
+  transcriptFiles,
+  transcriptionFailedWarning,
+  type TranscriptFile,
+} from "./transcript/transcriptFiles";
 
 export { buildRenderPlan } from "./plan/buildRenderPlan";
 export {

@@ -1,4 +1,4 @@
-import type { PortProgressCallback, TranscriptCue } from "@vid2grid/core";
+import { cuesFromSegments, type PortProgressCallback, type TranscriptCue } from "@vid2grid/core";
 import type { TranscribeRequest, TranscribeWorkerMessage } from "./transcriptionWorker";
 
 const PERCENT_TOTAL = 100;
@@ -34,13 +34,7 @@ export function transcribeAudio(
         reject(new Error(message.message));
         return;
       }
-      resolve(
-        message.chunks.map((chunk) => ({
-          start: chunk.start + offsetSeconds,
-          end: chunk.end + offsetSeconds,
-          text: chunk.text,
-        })),
-      );
+      resolve(cuesFromSegments(message.segments, offsetSeconds));
     };
     const handleError = (event: ErrorEvent) => {
       cleanup();
