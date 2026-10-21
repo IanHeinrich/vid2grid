@@ -150,6 +150,7 @@ def test_the_base_install_works_without_the_extras() -> None:
         capture_output=True,
         text=True,
         env={**os.environ, "COLUMNS": "1000"},
+        timeout=60,
         check=False,
     )
 
