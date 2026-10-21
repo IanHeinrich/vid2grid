@@ -1,7 +1,12 @@
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildRenderPlan, type CollagePlanRequest, type VideoInfo } from "@vid2grid/core";
+import {
+  buildRenderPlan,
+  sheetDrawOps,
+  type CollagePlanRequest,
+  type VideoInfo,
+} from "@vid2grid/core";
 
 interface FixtureCase {
   name: string;
@@ -157,23 +162,33 @@ const CASES: FixtureCase[] = [
   },
 ];
 
-const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "render-plans");
-mkdirSync(fixturesDir, { recursive: true });
+const fixturesRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures");
 
-for (const { name, request, info } of CASES) {
-  const fixture = { name, request, info, plan: buildRenderPlan(request, info) };
-  writeFileSync(
-    join(fixturesDir, `${name}.json`),
-    `${JSON.stringify(fixture, null, 2)}\n`,
-    "utf-8",
-  );
-  console.log(`wrote fixtures/render-plans/${name}.json`);
-}
-
-const caseFileNames = new Set(CASES.map(({ name }) => `${name}.json`));
-for (const fileName of readdirSync(fixturesDir)) {
-  if (fileName.endsWith(".json") && !caseFileNames.has(fileName)) {
-    rmSync(join(fixturesDir, fileName));
-    console.log(`removed stale fixtures/render-plans/${fileName}`);
+function writeFixtures(folder: string, fixtures: Map<string, unknown>): void {
+  const dir = join(fixturesRoot, folder);
+  mkdirSync(dir, { recursive: true });
+  for (const [name, fixture] of fixtures) {
+    writeFileSync(join(dir, `${name}.json`), `${JSON.stringify(fixture, null, 2)}\n`, "utf-8");
+    console.log(`wrote fixtures/${folder}/${name}.json`);
+  }
+  for (const fileName of readdirSync(dir)) {
+    if (fileName.endsWith(".json") && !fixtures.has(fileName.replace(/\.json$/, ""))) {
+      rmSync(join(dir, fileName));
+      console.log(`removed stale fixtures/${folder}/${fileName}`);
+    }
   }
 }
+
+const renderPlans = new Map<string, unknown>();
+const drawOps = new Map<string, unknown>();
+for (const { name, request, info } of CASES) {
+  const plan = buildRenderPlan(request, info);
+  renderPlans.set(name, { name, request, info, plan });
+  drawOps.set(name, {
+    name,
+    sheets: plan.sheets.map((_, sheetIndex) => sheetDrawOps(plan, sheetIndex)),
+  });
+}
+
+writeFixtures("render-plans", renderPlans);
+writeFixtures("draw-ops", drawOps);

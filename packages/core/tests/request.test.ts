@@ -19,6 +19,8 @@ function request(overrides: Partial<CollagePlanRequest> = {}): CollagePlanReques
   };
 }
 
+const UNKNOWN_SCOPE = { scope: "both" } as unknown as NonNullable<CollagePlanRequest["transcript"]>;
+
 function validationError(overrides: Partial<CollagePlanRequest>): unknown {
   try {
     validateCollagePlanRequest(request(overrides));
@@ -34,6 +36,9 @@ describe("validateCollagePlanRequest", () => {
     expect(() =>
       validateCollagePlanRequest(request({ frameCount: 3, maxKeyframes: 2, jpegQuality: 100 })),
     ).not.toThrow();
+    expect(() =>
+      validateCollagePlanRequest(request({ transcript: { scope: "combined" } })),
+    ).not.toThrow();
   });
 
   it.each<[string, Partial<CollagePlanRequest>, string]>([
@@ -47,6 +52,11 @@ describe("validateCollagePlanRequest", () => {
     ["a fractional frame count", { frameCount: 2.5 }, "frame_count must be a positive integer"],
     ["a zero frame count", { frameCount: 0 }, "frame_count must be a positive integer"],
     ["a zero keyframe cap", { maxKeyframes: 0 }, "max_keyframes must be a positive integer"],
+    [
+      "an unknown transcript scope",
+      { transcript: UNKNOWN_SCOPE },
+      "transcript_scope must be per-sheet or combined",
+    ],
   ])("rejects %s with an invalid_request error", (_case, overrides, message) => {
     const err = validationError(overrides);
     expect(err).toBeInstanceOf(Vid2GridError);

@@ -200,3 +200,81 @@ def test_keyframes_in_range_keep_keyframe_sampling() -> None:
 
     assert resolved.request == request
     assert resolved.warning is None
+
+
+def test_option_specs_name_every_request_option_with_a_flag() -> None:
+    specs = _core.option_specs(("transcription",))
+
+    assert [spec["name"] for spec in specs] == [
+        "startSeconds",
+        "endSeconds",
+        "targetFps",
+        "framesPerGrid",
+        "outputResolution",
+        "jpegQuality",
+        "keyframeSampling",
+        "maxKeyframes",
+        "frameCount",
+        "transcript",
+    ]
+    assert all(spec["flag"] and spec["help"] for spec in specs)
+
+
+def test_request_from_options_fills_the_spec_defaults() -> None:
+    defaults = {spec["name"]: spec.get("default") for spec in _core.option_specs()}
+
+    request = _core.request_from_options({}, INFO)
+
+    assert request.start_seconds == defaults["startSeconds"]
+    assert request.end_seconds == INFO.duration_seconds
+    assert request.target_fps == defaults["targetFps"]
+    assert request.frames_per_grid == defaults["framesPerGrid"]
+    assert request.output_resolution == defaults["outputResolution"]
+    assert request.jpeg_quality == defaults["jpegQuality"]
+    assert request.keyframe_sampling is defaults["keyframeSampling"]
+    assert request.transcript_scope is None
+    _core.validate_collage_plan_request(request)
+
+
+def test_request_from_options_takes_given_values_and_skips_unset_ones() -> None:
+    request = _core.request_from_options(
+        {"targetFps": 2, "frameCount": None, "maxKeyframes": 5, "transcript": "per-sheet"},
+        INFO,
+        ("transcription",),
+    )
+
+    assert request.target_fps == 2.0
+    assert request.frame_count is None
+    assert request.max_keyframes == 5
+    assert request.transcript_scope == "per-sheet"
+
+
+def test_option_specs_offer_the_transcript_only_to_a_transcribing_host() -> None:
+    needs_transcription = [
+        spec["name"]
+        for spec in _core.option_specs(("transcription",))
+        if spec.get("requires") == "transcription"
+    ]
+
+    assert needs_transcription == ["transcript"]
+    assert "transcript" not in [spec["name"] for spec in _core.option_specs()]
+
+
+@pytest.mark.parametrize(
+    ("values", "message"),
+    [
+        ({"fps": 2}, r'^unknown option "fps"$'),
+        ({"targetFps": "2"}, r"^targetFps must be a number$"),
+        ({"transcript": "both"}, r"^transcript must be one of none, per-sheet, combined$"),
+    ],
+)
+def test_request_from_options_rejects_what_the_spec_does_not_allow(
+    values: dict[str, object], message: str
+) -> None:
+    with pytest.raises(InvalidRequestError, match=message):
+        _core.request_from_options(values, INFO, ("transcription",))
+
+
+def test_request_from_options_rejects_an_option_the_host_cannot_honour() -> None:
+    with pytest.raises(InvalidRequestError, match=r'^unknown option "transcript"$'):
+        _core.request_from_options({"transcript": "combined"}, INFO)

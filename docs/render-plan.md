@@ -13,6 +13,8 @@ typed in [`plan/renderPlan.ts`](../packages/core/src/plan/renderPlan.ts)). An
 the policy in one implementation and one set of tests, whatever language the
 host is written in: `python/` does not port the planner, it runs core's own
 code (see [Hosts without JavaScript](#hosts-without-javascript)).
+[adding-a-host.md](adding-a-host.md) is the short guide to writing a new
+executor and proving it conforms.
 
 ```
 CollagePlanRequest + VideoInfo  ->  buildRenderPlan  ->  RenderPlan  ->  executor  ->  JPEG sheets (+ .vtt)
@@ -166,11 +168,15 @@ in the plan; hosts must not recompute them.
 ## What an executor must do
 
 1. Decode the source and capture one image per `plan.frames` entry, in order:
-   the first frame **at or after** each `timestampSeconds`. Returning fewer
+   the first frame **at or after** each `timestampSeconds`. The frame's time
+   and the planned time are both rounded to microseconds with
+   `floor(t * 1e6 + 0.5) / 1e6` before they are compared. Returning fewer
    images than planned is allowed (the stream ended early); more is not.
-2. Scale each captured frame to exactly `plan.cell`, preserving the display
-   orientation (any container rotation already applied, so `VideoInfo.width`
-   and `height` are display dimensions).
+2. Turn each captured frame clockwise by the video's display rotation (0, 90,
+   180 or 270; `normalizeRotationClockwise` converts the counter-clockwise
+   value ffmpeg reports) and scale it to exactly `plan.cell`.
+   `VideoInfo.width` and `height` are display dimensions, so the cell is
+   display-oriented.
 3. Per sheet, run core's `sheetDrawOps(plan, sheetIndex)` on a
    `plan.canvas`-sized surface, in order. It returns a `fillRect` with
    `style.background` over the whole canvas, then for each cell an `image` op
@@ -200,7 +206,8 @@ own throws.
 
 `packages/core`'s `paintSheetFromPlan` implements steps 3 and 4 for any
 JavaScript host by running the same draw ops on a canvas
-(`fixtures/render-plans/` pins steps 1-6's inputs), and
+(`fixtures/render-plans/` pins steps 1-6's inputs, `fixtures/draw-ops/` step
+3's ops, and `fixtures/frames/` step 1's choice of source frame), and
 `generateCollages` drives the whole sequence through the ports in
 [`pipeline/ports.ts`](../packages/core/src/pipeline/ports.ts).
 
@@ -222,13 +229,16 @@ envelope: `{"ok": true, "value": ...}`, or `{"ok": false, "code": ...,
 `internal`. The functions are `buildRenderPlan`, `collagePlanRequestProblem`,
 `validateCollagePlanRequest`, `sheetDrawOps`, `resolveKeyframeSampling` (the
 sampled fallback and its warning, as `generateCollages` applies it),
-`displaySize`, `normalizeRotationClockwise` and `version`. An optional request
-or info field (`frameCount`, `keyframeTimestampsSeconds` and the like) is left
-out when unset, never sent as `null`, and so is `resolveKeyframeSampling`'s
-optional third argument, the reason keyframes could not be read. The one `null`
-is `displaySize`'s third argument, which every call passes: `null` for a video
-with no sample aspect ratio, an object with `numerator` and `denominator`
-otherwise.
+`displaySize`, `normalizeRotationClockwise`, `optionSpecs` (the options a CLI
+or tool exposes for the host capabilities it passes, with their flags and
+defaults), `requestFromOptions` (option values, a `VideoInfo` and the same
+capabilities to a request, defaults filled in) and `version`. An optional
+request or info field (`frameCount`, `keyframeTimestampsSeconds` and the like)
+is left out when unset, never sent as `null`, and so is
+`resolveKeyframeSampling`'s optional third argument, the reason keyframes could
+not be read. The one `null` is `displaySize`'s third argument, which every call
+passes: `null` for a video with no sample aspect ratio, an object with
+`numerator` and `denominator` otherwise.
 
 `python/` loads that script once per process into an embedded V8
 (`mini-racer`) and maps each error code to its own exception class, so its
@@ -238,6 +248,8 @@ in `python/tests/test_planner.py`.
 ## Changing the planner
 
 A planner change is not done until the generated files move with it: run
-`npm run fixtures` and `npm run bundle` in the same PR, and CI's
-`git diff --exit-code` over `fixtures/` and `python/src/vid2grid/_core.js` will
-fail if either drifts.
+`npm run fixtures` (the plan and draw-op goldens) and `npm run bundle` in the
+same PR, and CI's `git diff --exit-code` over `fixtures/` and
+`python/src/vid2grid/_core.js` will fail if either drifts. If it moves planned
+times, rerecord the frame goldens too, as
+[adding-a-host.md](adding-a-host.md#proving-conformance) describes.

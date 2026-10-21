@@ -1,0 +1,141 @@
+{
+  "name": "keyframes-20s-keyframes-from-2.5-to-9.5",
+  "video": "fixtures/videos/keyframes-20s.mp4",
+  "request": {
+    "startSeconds": 2.5,
+    "endSeconds": 9.5,
+    "targetFps": 1,
+    "keyframeSampling": true,
+    "framesPerGrid": 4,
+    "outputResolution": 512,
+    "jpegQuality": 85
+  },
+  "info": {
+    "durationSeconds": 20,
+    "width": 160,
+    "height": 120,
+    "keyframeTimestampsSeconds": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19
+    ]
+  },
+  "sourceFrameSeconds": [
+    2.9,
+    3,
+    3.1,
+    3.2,
+    3.3,
+    3.4,
+    3.5,
+    3.6,
+    3.7,
+    3.8,
+    3.9,
+    4,
+    4.1,
+    4.2,
+    4.3,
+    4.4,
+    4.5,
+    4.6,
+    4.7,
+    4.8,
+    4.9,
+    5,
+    5.1,
+    5.2,
+    5.3,
+    5.4,
+    5.5,
+    5.6,
+    5.7,
+    5.8,
+    5.9,
+    6,
+    6.1,
+    6.2,
+    6.3,
+    6.4,
+    6.5,
+    6.6,
+    6.7,
+    6.8,
+    6.9,
+    7,
+    7.1,
+    7.2,
+    7.3,
+    7.4,
+    7.5,
+    7.6,
+    7.7,
+    7.8,
+    7.9,
+    8,
+    8.1,
+    8.2,
+    8.3,
+    8.4,
+    8.5,
+    8.6,
+    8.7,
+    8.8,
+    8.9,
+    9
+  ],
+  "frames": [
+    {
+      "frameIndex": 0,
+      "plannedSeconds": 3,
+      "decodedSeconds": 3
+    },
+    {
+      "frameIndex": 1,
+      "plannedSeconds": 4,
+      "decodedSeconds": 4
+    },
+    {
+      "frameIndex": 2,
+      "plannedSeconds": 5,
+      "decodedSeconds": 5
+    },
+    {
+      "frameIndex": 3,
+      "plannedSeconds": 6,
+      "decodedSeconds": 6
+    },
+    {
+      "frameIndex": 4,
+      "plannedSeconds": 7,
+      "decodedSeconds": 7
+    },
+    {
+      "frameIndex": 5,
+      "plannedSeconds": 8,
+      "decodedSeconds": 8
+    },
+    {
+      "frameIndex": 6,
+      "plannedSeconds": 9,
+      "decodedSeconds": 9
+    }
+  ]
+}

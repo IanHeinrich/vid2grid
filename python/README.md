@@ -42,6 +42,25 @@ rectangles, same timestamps, same `grid_0001.jpg` file names. They do not match
 its bytes, because a canvas and Pillow measure and rasterise text differently,
 so never compare rendered pixels between the two executors.
 
+A CLI or tool built on this package takes its flags and defaults from core:
+`vid2grid.option_specs()` lists every option with its camelCase `name`, `flag`,
+`type`, `default` and `help`, and `request_from_options(values, info)`
+turns the values given (keyed by `name`; `None` counts as unset) into a
+`CollagePlanRequest` with the web app's defaults filled in. Both take an
+optional `capabilities` argument for what the host can do. This package has no
+transcription, so it passes none: `transcript` is never offered, and
+`request_from_options` raises `InvalidRequestError` for it, for any other
+unknown name, for a value of the wrong type and for an enum value outside the
+spec's `values`.
+`render_single_sheet`'s defaults (16 frames, quality 85) are deliberately its
+own: it is curator's single-sheet API, not the generic entry point.
+
+`tests/test_conformance.py` holds the package to the repo's host-independent
+goldens: core's draw ops for every `fixtures/render-plans/` case and the
+painter running exactly those ops, and, for each `fixtures/frames/` case, the
+probed info and the source frame capture picks for every planned time (read
+through `capture.iter_source_frames`).
+
 The modules are named after the host ports they implement: `probe.py` reads a
 video's `VideoInfo` with `probe_video`, `capture.py` decodes the planned frames
 with PyAV, `render.py` paints a sheet by running core's draw ops with Pillow and

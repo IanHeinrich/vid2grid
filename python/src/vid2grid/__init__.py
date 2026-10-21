@@ -1,4 +1,4 @@
-from ._core import build_render_plan
+from ._core import build_render_plan, option_specs, request_from_options
 from .capture import capture_frames
 from .contract import (
     VID2GRID_VERSION,
@@ -39,9 +39,11 @@ __all__ = [
     "__version__",
     "build_render_plan",
     "capture_frames",
+    "option_specs",
     "paint_sheet",
     "probe",
     "probe_video",
     "render_sheets",
     "render_single_sheet",
+    "request_from_options",
 ]

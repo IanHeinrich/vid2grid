@@ -1,0 +1,94 @@
+{
+  "name": "tiny-fps3",
+  "video": "fixtures/videos/tiny.mp4",
+  "request": {
+    "startSeconds": 0,
+    "endSeconds": 3,
+    "targetFps": 3,
+    "framesPerGrid": 4,
+    "outputResolution": 512,
+    "jpegQuality": 85
+  },
+  "info": {
+    "durationSeconds": 3,
+    "width": 160,
+    "height": 120
+  },
+  "sourceFrameSeconds": [
+    0,
+    0.1,
+    0.2,
+    0.3,
+    0.4,
+    0.5,
+    0.6,
+    0.7,
+    0.8,
+    0.9,
+    1,
+    1.1,
+    1.2,
+    1.3,
+    1.4,
+    1.5,
+    1.6,
+    1.7,
+    1.8,
+    1.9,
+    2,
+    2.1,
+    2.2,
+    2.3,
+    2.4,
+    2.5,
+    2.6,
+    2.7
+  ],
+  "frames": [
+    {
+      "frameIndex": 0,
+      "plannedSeconds": 0,
+      "decodedSeconds": 0
+    },
+    {
+      "frameIndex": 1,
+      "plannedSeconds": 0.333333,
+      "decodedSeconds": 0.4
+    },
+    {
+      "frameIndex": 2,
+      "plannedSeconds": 0.666667,
+      "decodedSeconds": 0.7
+    },
+    {
+      "frameIndex": 3,
+      "plannedSeconds": 1,
+      "decodedSeconds": 1
+    },
+    {
+      "frameIndex": 4,
+      "plannedSeconds": 1.333333,
+      "decodedSeconds": 1.4
+    },
+    {
+      "frameIndex": 5,
+      "plannedSeconds": 1.666667,
+      "decodedSeconds": 1.7
+    },
+    {
+      "frameIndex": 6,
+      "plannedSeconds": 2,
+      "decodedSeconds": 2
+    },
+    {
+      "frameIndex": 7,
+      "plannedSeconds": 2.333333,
+      "decodedSeconds": 2.4
+    },
+    {
+      "frameIndex": 8,
+      "plannedSeconds": 2.666667,
+      "decodedSeconds": 2.7
+    }
+  ]
+}

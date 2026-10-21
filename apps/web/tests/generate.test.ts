@@ -54,7 +54,7 @@ describe("buildRequest", () => {
       targetFps: 1,
       keyframeSampling: false,
       framesPerGrid: 12,
-      outputResolution: 1024,
+      outputResolution: 2048,
       jpegQuality: 80,
     });
   });

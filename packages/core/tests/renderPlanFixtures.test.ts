@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { buildRenderPlan } from "../src/plan/buildRenderPlan";
 import type { RenderPlan } from "../src/plan/renderPlan";
 import type { CollagePlanRequest } from "../src/plan/request";
 import type { VideoInfo } from "../src/probe/videoInfo";
+import { fixturesDir } from "./fixturePaths";
 
 interface Fixture {
   name: string;
@@ -15,19 +16,8 @@ interface Fixture {
 
 // The same fixtures the Python planner is tested against, so both ports of
 // buildRenderPlan are pinned to one set of numbers.
-function findFixturesDir(): string {
-  let dir = __dirname;
-  for (;;) {
-    const candidate = join(dir, "fixtures", "render-plans");
-    if (existsSync(candidate)) return candidate;
-    const parent = dirname(dir);
-    if (parent === dir) throw new Error("fixtures/render-plans not found above the test file");
-    dir = parent;
-  }
-}
-
-const fixturesDir = findFixturesDir();
-const fixtureFiles = readdirSync(fixturesDir).filter((name) => name.endsWith(".json"));
+const renderPlansDir = fixturesDir("render-plans");
+const fixtureFiles = readdirSync(renderPlansDir).filter((name) => name.endsWith(".json"));
 
 describe("fixtures/render-plans", () => {
   it("has fixtures to check", () => {
@@ -35,7 +25,7 @@ describe("fixtures/render-plans", () => {
   });
 
   it.each(fixtureFiles)("%s matches buildRenderPlan", (fileName) => {
-    const fixture = JSON.parse(readFileSync(join(fixturesDir, fileName), "utf-8")) as Fixture;
+    const fixture = JSON.parse(readFileSync(join(renderPlansDir, fileName), "utf-8")) as Fixture;
 
     expect(fixture.name).toBe(fileName.replace(/\.json$/, ""));
     expect(buildRenderPlan(fixture.request, fixture.info)).toStrictEqual(fixture.plan);

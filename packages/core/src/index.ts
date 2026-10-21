@@ -43,6 +43,20 @@ export {
 export { vttToPlainText, type TranscriptCue } from "./transcript/vtt";
 
 export { buildRenderPlan } from "./plan/buildRenderPlan";
+export {
+  OPTION_SPECS,
+  optionSpecsFor,
+  requestFromOptions,
+  type BooleanOptionSpec,
+  type EnumOptionSpec,
+  type HostCapability,
+  type NumberOptionSpec,
+  type OptionName,
+  type OptionSpec,
+  type PlanOptionInput,
+  type PlanOptionValues,
+  type TranscriptOption,
+} from "./plan/options";
 export { resolveKeyframeSampling, type KeyframeSamplingDecision } from "./plan/keyframeFallback";
 export {
   keyframesInRange,
