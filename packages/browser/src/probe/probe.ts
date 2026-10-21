@@ -1,6 +1,6 @@
 import type { ProbeOptions, VideoInfo } from "@vid2grid/core";
-import { waitForEvent } from "./extraction/extractor";
-import { supportsWebCodecs } from "./extraction/isoBmff";
+import { waitForEvent } from "../capture/extractor";
+import { supportsWebCodecs } from "../capture/isoBmff";
 
 export async function probeVideo(
   file: File,
@@ -36,7 +36,7 @@ export async function probeVideo(
 async function readKeyframeTimestampsIfAvailable(file: File): Promise<number[] | null> {
   if (!supportsWebCodecs(file)) return null;
   try {
-    const { readKeyframeTimestamps } = await import("./extraction/webcodecsExtractor");
+    const { readKeyframeTimestamps } = await import("../capture/webcodecsExtractor");
     return await readKeyframeTimestamps(file);
   } catch {
     // Losing the demuxer chunk costs keyframe mode, which falls back to sampling, not the probe.
@@ -51,6 +51,6 @@ export async function countKeyframesInRange(
   endTime: number,
 ): Promise<number | null> {
   const { countKeyframesInRange: countInDemuxedRange } =
-    await import("./extraction/webcodecsExtractor");
+    await import("../capture/webcodecsExtractor");
   return countInDemuxedRange(file, startTime, endTime);
 }

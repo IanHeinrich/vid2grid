@@ -1,11 +1,11 @@
 import { computeOptimalGrid, GUTTER_PX, type GridLayout } from "../grid/gridMaths";
-import { combinedTranscriptFileName, gridFileName } from "../grid/gridFileName";
+import { combinedTranscriptFileName, gridFileName } from "./gridFileName";
 import {
   chooseTimestampFormat,
   formatTimestamp,
   FONT_HEIGHT_DIVISOR,
   MIN_FONT_SIZE,
-} from "../render/timestampFormat";
+} from "./timestampFormat";
 import { roundToMicroseconds, planFrameTimestamps } from "./framePlanning";
 import { computeSheetWindows } from "./sheetWindows";
 import {
@@ -18,7 +18,8 @@ import {
   type RenderPlanStyle,
   type TimestampFormat,
 } from "./renderPlan";
-import { validateCollagePlanRequest, type CollagePlanRequest, type VideoInfo } from "../types";
+import type { VideoInfo } from "../probe/videoInfo";
+import { validateCollagePlanRequest, type CollagePlanRequest } from "./request";
 
 const WATERMARK_INSET_PX = 4;
 

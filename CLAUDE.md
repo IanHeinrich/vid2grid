@@ -1,7 +1,7 @@
 # vid2grid
 
 Turns a video into "collage sheets": grid images packing many timestamped
-frames into one JPEG, sized for feeding into AI vision models. `web/` is the
+frames into one JPEG, sized for feeding into AI vision models. `apps/web/` is the
 primary app: plain TypeScript and Vite, no framework, running entirely
 client-side (`<video>`/`<canvas>`, WebCodecs, Web Workers, transformers.js).
 No server, nothing uploaded. `python/` is a headless executor of the same
@@ -14,9 +14,9 @@ plan for use outside the browser.
 | `npm ci`            | Install. Root `node_modules` and `package-lock.json`; nothing per-package.        |
 | `npm test`          | `vitest run` across every workspace. The correctness gate.                        |
 | `npm run typecheck` | `tsc -b` in each package. The **type-check gate**; `npm run build` runs it first. |
-| `npm run build`     | Runs `typecheck`, then `vite build` for `web/`.                                   |
+| `npm run build`     | Runs `typecheck`, then `vite build` for `apps/web/`.                              |
 | `npm run format`    | `prettier --write .` from the root. There is still no lint step.                  |
-| `npm run dev`       | Vite dev server for `web/`.                                                       |
+| `npm run dev`       | Vite dev server for `apps/web/`.                                                  |
 | `npm run fixtures`  | Regenerates `fixtures/render-plans/` from the planner.                            |
 
 `npm test` and `npm run build` must both pass before a change is done.
@@ -28,37 +28,38 @@ checks from `python/`, per `python/README.md`.
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `packages/core`          | `@vid2grid/core`, DOM-free pure logic. `tsconfig` sets `lib: ["ES2022"]` and `types: []` so any browser API is a compile error, and it must have no `dependencies` (enforced by `packages/core/tests/dependencies.test.ts`).                                                                            |
 | `packages/browser`       | `@vid2grid/browser`, the browser executor: core's ports implemented with `<video>`/`<canvas>`, WebCodecs + mp4box, an OffscreenCanvas worker pool, Web Audio and a transformers.js Whisper worker. Owns every browser-only dependency.                                                                  |
-| `web/`                   | The Vite app: UI markup, wiring, state, download. It calls `generateCollages` from `@vid2grid/core` with the ports from `@vid2grid/browser`.                                                                                                                                                            |
+| `apps/web/`              | The Vite app: UI markup, wiring, state, download. It calls `generateCollages` from `@vid2grid/core` with the ports from `@vid2grid/browser`.                                                                                                                                                            |
 | `python/`                | `vid2grid`, the headless executor: a line-by-line port of core's planner plus a PyAV/Pillow executor, `pip install`able and depending only on `av` and `Pillow`. No transcription.                                                                                                                      |
 | `fixtures/` + `scripts/` | `fixtures/render-plans/*.json` are golden `RenderPlan`s, written only by `scripts/generateRenderPlanFixtures.ts` (`npm run fixtures`) and read back by `packages/core/tests/renderPlanFixtures.test.ts` and `python/tests/test_planner.py`. Generated and Prettier-ignored: nothing edits them by hand. |
 
 ## Rules a worker may not read elsewhere
 
-- **Never bump `web/package.json`'s `version`.** A bump landing on `main`
+- **Never bump `apps/web/package.json`'s `version`.** A bump landing on `main`
   triggers an automatic tagged release and Pages deploy. That is the
-  maintainer's call, not part of a change. `web/package.json` is still the
+  maintainer's call, not part of a change. `apps/web/package.json` is still the
   release key; `packages/core/package.json`'s version is not
   release-triggering. (`CONTRIBUTING.md`.)
 - **`main` is protected.** No direct pushes, from anyone. Every change lands
   via a PR that needs the `test` check green and a review from the code owner
   in `.github/CODEOWNERS` (@IanHeinrich).
 - **`tsc -b` does not typecheck the tests.** Each package's `tsconfig.json`
-  `include` is `["src"]` (plus `web/`'s `vite.config.ts`/`vitest.config.ts`),
+  `include` is `["src"]` (plus `apps/web/`'s `vite.config.ts`/`vitest.config.ts`),
   so `tests/` is only ever exercised by vitest in every package. Do not assume
   a green build says anything about them.
 - **Tests live in `<package>/tests/<module>.test.ts`**, flat, named after the
   module under test, not beside the source. `packages/core/src/grid/gridMaths.ts`
   is covered by `packages/core/tests/gridMaths.test.ts`.
-- **A planner change is three changes in one PR.** Anything under
-  `packages/core/src/plan/` (or the layout, timestamp-format or file-name
-  helpers it uses) changes the `RenderPlan` contract, so the same PR carries
-  all three: the TypeScript, regenerated `fixtures/` (`npm run fixtures`, or
-  CI's `git diff --exit-code fixtures/` fails), and the matching edit to
+- **A planner change is three changes in one PR.** Anything
+  `buildRenderPlan` reaches under `packages/core/src/plan/`, plus
+  `probe/videoInfo.ts` and the grid maths it uses, changes the
+  `RenderPlan` contract, so the same PR carries all three: the TypeScript,
+  regenerated `fixtures/` (`npm run fixtures`, or CI's
+  `git diff --exit-code fixtures/` fails), and the matching edit to
   `python/src/vid2grid/planner.py`. The Python port is held to the same
   fixtures by `python/tests/test_planner.py`. `docs/render-plan.md` is the
   contract's spec and moves with it.
-- **All UI markup is in `web/index.html`.** There are no framework templates;
-  `web/src/main.ts` wires that markup to the modules.
+- **All UI markup is in `apps/web/index.html`.** There are no framework templates;
+  `apps/web/src/main.ts` wires that markup to the modules.
 - **Style: names over comments.** A comment earns its place only for a
   non-obvious why (a platform quirk, a convention mismatch, a deliberate
   trade-off) and runs one or two lines. No JSDoc restating a signature,

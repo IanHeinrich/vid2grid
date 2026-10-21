@@ -1,4 +1,4 @@
-import { gridTranscriptFileName } from "../grid/gridFileName";
+import { gridTranscriptFileName } from "./gridFileName";
 import { roundToMicroseconds } from "./framePlanning";
 import type { TranscriptWindow } from "./renderPlan";
 

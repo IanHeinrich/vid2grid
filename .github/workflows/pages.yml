@@ -3,7 +3,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "web/**"
+      - "apps/web/**"
       - "packages/**"
       - "python/**"
       - "fixtures/**"
@@ -79,7 +79,7 @@ jobs:
           fetch-depth: 0
 
       - id: get-version
-        working-directory: web
+        working-directory: apps/web
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
       - id: check-tag
@@ -119,13 +119,13 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - run: npm ci
-      - run: npm run build --workspace web
+      - run: npm run build --workspace apps/web
 
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: web/dist
+          path: apps/web/dist
 
   deploy:
     needs: build

@@ -17,7 +17,7 @@ import {
   probeVideo,
   supportsWebCodecs,
 } from "@vid2grid/browser";
-import { updateFramePlanningUi } from "./ui/framePlanning";
+import { updateFramePlanningUi } from "./ui/framePlanPanel";
 import { resetGallery, renderGallery, initLightbox } from "./ui/gallery";
 import {
   initRangeSlider,

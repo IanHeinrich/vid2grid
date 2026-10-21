@@ -1,4 +1,4 @@
-import { formatTimestamp } from "../render/timestampFormat";
+import { formatTimestamp } from "../plan/timestampFormat";
 
 export interface TranscriptCue {
   start: number;

@@ -4,13 +4,13 @@
   "type": "module",
   "workspaces": [
     "packages/*",
-    "web"
+    "apps/web"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace web",
+    "dev": "npm run dev --workspace apps/web",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tsconfig.scripts.json",
-    "build": "npm run typecheck && npm run build --workspace web",
+    "build": "npm run typecheck && npm run build --workspace apps/web",
     "format": "prettier --write .",
     "fixtures": "vite-node scripts/generateRenderPlanFixtures.ts"
   },

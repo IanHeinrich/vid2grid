@@ -13,13 +13,14 @@ single pair of hands. Each line names where the full rule lives.
   dependency stops and reports; the orchestrator adds it and installs once.
   (`CLAUDE.md`, "Commands".)
 - **Chunk boundaries that do not collide.** A worker can own one
-  `web/src/ui/` directory plus the `web/tests/*.test.ts` files covering it,
-  `packages/core/src/` plus its `packages/core/tests/*.test.ts` files, or one
-  `packages/browser/src/<area>/` directory (`extraction/`, `rendering/` or
-  `transcription/`) plus the `packages/browser/tests/*.test.ts` files
-  covering it. Shared files no two workers may touch at once:
-  `web/index.html` (all UI markup), `web/src/main.ts` (the wiring),
-  `web/src/style.css`, `web/src/state.ts`, `web/package.json`, root
+  `apps/web/src/ui/` directory plus the `apps/web/tests/*.test.ts` files
+  covering it, `packages/core/src/` plus its `packages/core/tests/*.test.ts`
+  files, or one `packages/browser/src/<area>/` directory (`capture/`,
+  `probe/`, `render/` or `transcribe/`) plus the
+  `packages/browser/tests/*.test.ts` files covering it. Shared files no two
+  workers may touch at once: `apps/web/index.html` (all UI markup),
+  `apps/web/src/main.ts` (the wiring), `apps/web/src/style.css`,
+  `apps/web/src/state.ts`, `apps/web/package.json`, root
   `package.json`, root `package-lock.json`, `.prettierignore`,
   `.prettierrc.json`, `packages/core/package.json`,
   `packages/core/src/index.ts`, `packages/core/src/pipeline/ports.ts`,
@@ -30,13 +31,14 @@ single pair of hands. Each line names where the full rule lives.
   A worker can also own `python/src/vid2grid/` plus the
   `python/tests/test_*.py` files covering it, but
   `python/src/vid2grid/contract.py` and `python/src/vid2grid/planner.py`
-  are **contract twins** of `packages/core/src/plan/`: they only move
+  are **contract twins** of `packages/core/src/plan/` and
+  `packages/core/src/probe/videoInfo.ts`: they only move
   together with the TypeScript and the regenerated fixtures, so they
   belong to whoever owns that change and to no second worker at the same
   time. Route edits to any of these through the orchestrator.
 - **Checks a worker runs, and checks it must not.** A worker runs only its own
   targeted tests: `npx vitest run tests/<module>.test.ts` from the owning
-  package directory (`packages/core`, `packages/browser` or `web`), or
+  package directory (`packages/core`, `packages/browser` or `apps/web`), or
   `uv run pytest tests/test_<module>.py` from `python/`. The
   whole-project runs belong to one verifier at the end:
   `npm test`, `npm run typecheck` and `npm run build` typecheck every
@@ -44,6 +46,6 @@ single pair of hands. Each line names where the full rule lives.
   A build failing on a file the worker does not own
   is noise, not a finding. (`CLAUDE.md`, "Commands".)
 - **Shell quirks.** npm commands now run from the repo root, where there is a
-  root `package.json`, not from `web/`; every Python command runs from
+  root `package.json`, not from `apps/web/`; every Python command runs from
   `python/`. A brief must name the repo root as the
   working directory or the command fails with a misleading error.

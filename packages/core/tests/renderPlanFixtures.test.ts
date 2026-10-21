@@ -3,7 +3,8 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { buildRenderPlan } from "../src/plan/buildRenderPlan";
 import type { RenderPlan } from "../src/plan/renderPlan";
-import type { CollagePlanRequest, VideoInfo } from "../src/types";
+import type { CollagePlanRequest } from "../src/plan/request";
+import type { VideoInfo } from "../src/probe/videoInfo";
 
 interface Fixture {
   name: string;

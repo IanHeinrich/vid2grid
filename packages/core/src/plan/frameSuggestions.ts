@@ -1,8 +1,9 @@
 // The suggestions judge a full sheet's packing only: a partially-filled trailing sheet is
 // expected, so its leftover cells are deliberately ignored.
-import { computeOptimalGrid } from "./gridMaths";
-import { planFrameTimestamps } from "../plan/framePlanning";
-import type { CollagePlanRequest, VideoInfo } from "../types";
+import { computeOptimalGrid } from "../grid/gridMaths";
+import { planFrameTimestamps } from "./framePlanning";
+import type { VideoInfo } from "../probe/videoInfo";
+import type { CollagePlanRequest } from "./request";
 
 // Runs the planner's own sampling so the UI's estimate cannot drift from the plan.
 // The fields the sampling never reads are filled with placeholders.

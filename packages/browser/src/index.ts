@@ -1,9 +1,9 @@
 import type { CollagePorts, TranscribeProgressCallback, TranscriptCue } from "@vid2grid/core";
-import { probeVideo } from "./probe";
-import { extractFramesAuto } from "./extraction/frameExtraction";
-import { decodeAudioForTranscription } from "./extraction/audioExtraction";
-import { renderSheetsToBlobs } from "./rendering/sheetRenderer";
-import { transcribeAudio } from "./transcription/transcription";
+import { probeVideo } from "./probe/probe";
+import { extractFramesAuto } from "./capture/frameExtraction";
+import { decodeAudioForTranscription } from "./capture/audioExtraction";
+import { renderSheetsToBlobs } from "./render/sheetRenderer";
+import { transcribeAudio } from "./transcribe/transcription";
 
 async function transcribeVideoAudio(
   file: File,
@@ -26,5 +26,5 @@ export function createBrowserPorts(): CollagePorts<File, ImageBitmap, Blob> {
   };
 }
 
-export { probeVideo, countKeyframesInRange } from "./probe";
-export { supportsWebCodecs } from "./extraction/isoBmff";
+export { probeVideo, countKeyframesInRange } from "./probe/probe";
+export { supportsWebCodecs } from "./capture/isoBmff";

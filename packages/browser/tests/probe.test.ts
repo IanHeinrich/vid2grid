@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { probeVideo } from "../src/probe";
+import { probeVideo } from "../src/probe/probe";
 
 // The demuxing half of the probe is the extractor's; what matters here is whether
 // probeVideo reaches for it at all.
 const { readKeyframeTimestamps } = vi.hoisted(() => ({
   readKeyframeTimestamps: vi.fn<(file: File) => Promise<number[] | null>>(),
 }));
-vi.mock("../src/extraction/webcodecsExtractor", () => ({ readKeyframeTimestamps }));
+vi.mock("../src/capture/webcodecsExtractor", () => ({ readKeyframeTimestamps }));
 
 // jsdom's <video> never loads media, so the element is stubbed: what is under
 // test is which values probeVideo reads and when it skips the demuxer.

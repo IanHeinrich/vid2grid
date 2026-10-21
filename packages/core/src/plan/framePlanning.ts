@@ -1,4 +1,5 @@
-import type { CollagePlanRequest, VideoInfo } from "../types";
+import type { VideoInfo } from "../probe/videoInfo";
+import type { CollagePlanRequest } from "./request";
 import type { PlannedFrame } from "./renderPlan";
 
 // Spelled out because Math.round rounds a half up where Python's round rounds a

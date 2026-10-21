@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildRenderPlan } from "../src/plan/buildRenderPlan";
-import type { CollagePlanRequest, VideoInfo } from "../src/types";
+import type { CollagePlanRequest } from "../src/plan/request";
+import type { VideoInfo } from "../src/probe/videoInfo";
 
 // The hand-verified worked example: a 3s 320x240 clip at 2fps, 4 frames per
 // 512px sheet. Every number below was computed by hand from the layout rules.

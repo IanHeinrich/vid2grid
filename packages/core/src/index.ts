@@ -1,4 +1,5 @@
-export { validateCollagePlanRequest, type CollagePlanRequest, type VideoInfo } from "./types";
+export { validateCollagePlanRequest, type CollagePlanRequest } from "./plan/request";
+export type { VideoInfo } from "./probe/videoInfo";
 
 export { GUTTER_PX } from "./grid/gridMaths";
 export {
@@ -7,7 +8,7 @@ export {
   estimateSheetCount,
   suggestFramesPerGrid,
   type FramesPerGridSuggestion,
-} from "./grid/frameSuggestions";
+} from "./plan/frameSuggestions";
 export { CUSTOM_OPTION, MODEL_RESOLUTION_PRESETS } from "./grid/modelProfiles";
 
 export type { SheetContext2D } from "./render/sheetContext";

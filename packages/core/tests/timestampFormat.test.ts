@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chooseTimestampFormat, formatTimestamp } from "../src/render/timestampFormat";
+import { chooseTimestampFormat, formatTimestamp } from "../src/plan/timestampFormat";
 
 describe("chooseTimestampFormat", () => {
   it("shows minutes from 60s and hours from 3600s, not a moment before", () => {
