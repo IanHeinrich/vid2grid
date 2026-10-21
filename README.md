@@ -57,6 +57,7 @@ it can add on top, and where the sheets end up.
 | -------------- | ----------------------------------------- | ------------------ | ----------------------------------------- | ------------------------------------------------ | ------------------------------------------------------ |
 | Browser app    | Yes, over a start/end range               | Yes                | From the plan                             | In-browser Whisper, WebVTT per sheet or combined | JPEG sheets in a gallery, downloaded as a `.zip`       |
 | Python package | Yes, or an exact frame count onto a sheet | Yes                | From the same plan: same cells, same text | None                                             | JPEG files on disk                                     |
+| Node package   | Yes, or an exact frame count onto a sheet | Yes                | From the same plan: same cells, same text | None                                             | JPEG files on disk, from a CLI or a script             |
 | Other hosts    | From the plan                             | From the plan      | From the plan                             | Yours to add                                     | Yours: implement decode, scale, paste, text and encode |
 
 The contract each column follows is specified in
@@ -116,7 +117,9 @@ Three layers.
    `paintSheetFromPlan` for drawing a plan onto any host's canvas. It drives
    the pipeline through host-agnostic ports.
 3. **Per-host executors** implement those ports. They only decode, scale,
-   paste, draw text and encode: `packages/browser` for this app, and the
+   paste, draw text and encode: `packages/browser` for this app,
+   [`packages/node`](packages/node/) for Node.js scripts and a command line
+   (ffmpeg and a Skia canvas, no transcription), and the
    [Python package](python/) for headless use.
 
 ```mermaid

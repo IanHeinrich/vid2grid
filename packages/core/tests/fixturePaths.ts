@@ -16,3 +16,9 @@ export const repoRoot = findRepoRoot();
 export function fixturesDir(kind: string): string {
   return join(repoRoot, "fixtures", kind);
 }
+
+export function fixtureVideo(name: string): string {
+  const path = join(fixturesDir("videos"), name);
+  if (!existsSync(path)) throw new Error(`missing fixture video ${path}`);
+  return path;
+}

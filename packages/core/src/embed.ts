@@ -1,5 +1,6 @@
 import { Vid2GridError, type Vid2GridErrorCode } from "./errors";
 import { buildRenderPlan } from "./plan/buildRenderPlan";
+import { isKeyframePlan } from "./plan/frameMatching";
 import { resolveKeyframeSampling } from "./plan/keyframeFallback";
 import { optionSpecsFor, requestFromOptions } from "./plan/options";
 import { RENDER_PLAN_VERSION } from "./plan/renderPlan";
@@ -30,6 +31,7 @@ const FUNCTIONS = new Map<string, (...args: never[]) => unknown>([
   ["resolveKeyframeSampling", resolveKeyframeSampling],
   ["displaySize", displaySize],
   ["normalizeRotationClockwise", normalizeRotationClockwise],
+  ["isKeyframePlan", isKeyframePlan],
   ["optionSpecs", optionSpecsFor],
   ["requestFromOptions", requestFromOptions],
   ["cuesFromSegments", cuesFromSegments],

@@ -17,7 +17,8 @@ single pair of hands. Each line names where the full rule lives.
   covering it, `packages/core/src/` plus its `packages/core/tests/*.test.ts`
   files, or one `packages/browser/src/<area>/` directory (`capture/`,
   `probe/`, `render/` or `transcribe/`) plus the
-  `packages/browser/tests/*.test.ts` files covering it. Shared files no two
+  `packages/browser/tests/*.test.ts` files covering it, or `packages/node/src/`
+  plus `packages/node/tests/`. Shared files no two
   workers may touch at once: `apps/web/index.html` (all UI markup),
   `apps/web/src/main.ts` (the wiring), `apps/web/src/style.css`,
   `apps/web/src/state.ts`, `apps/web/package.json`, root
@@ -25,6 +26,7 @@ single pair of hands. Each line names where the full rule lives.
   `.prettierrc.json`, `packages/core/package.json`,
   `packages/core/src/index.ts`, `packages/core/src/pipeline/ports.ts`,
   `packages/browser/package.json`, `packages/browser/src/index.ts`,
+  `packages/node/package.json`,
   `packages/core/src/plan/renderPlan.ts` (the contract types),
   `scripts/generateRenderPlanFixtures.ts`, `fixtures/render-plans/**` and
   `fixtures/draw-ops/**` (generated: one worker regenerates them, via

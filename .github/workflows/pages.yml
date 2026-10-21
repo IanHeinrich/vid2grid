@@ -75,8 +75,28 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run mypy
 
+  node:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        # The test job's root npm test already runs packages/node on Linux.
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
+      - run: npm test --workspace packages/node
+      - run: npm run build --workspace packages/node
+      - run: node packages/node/dist/cli.js fixtures/videos/tiny.mp4 -o sheets --fps 4 --frames-per-grid 4 --resolution 512
+
   check-version:
-    needs: [test, python]
+    needs: [test, python, node]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
@@ -127,7 +147,8 @@ jobs:
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - run: npm ci
+      # The web build needs no install script; skipping them skips ffmpeg-static's download.
+      - run: npm ci --ignore-scripts
       - run: npm run build --workspace apps/web
 
       - uses: actions/configure-pages@v5

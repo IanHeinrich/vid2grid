@@ -25,7 +25,7 @@ const VIDEO_INFO: VideoInfo = { durationSeconds: 10, width: 640, height: 480 };
 
 interface FakePortOverrides {
   captureCount?: number;
-  onCapture?: (plan: RenderPlan) => void;
+  onCapture?: (plan: RenderPlan, info: VideoInfo) => void;
   captureProgress?: PortProgress;
   onJobs?: (jobs: SheetRenderJob<string>[]) => void;
   transcribe?: TranscriptPort<string>["transcribe"];
@@ -51,8 +51,8 @@ function fakePorts(overrides: FakePortOverrides = {}): FakePorts {
       },
     },
     frames: {
-      capture: (_source, plan, onProgress) => {
-        overrides.onCapture?.(plan);
+      capture: (_source, plan, info, onProgress) => {
+        overrides.onCapture?.(plan, info);
         const count = overrides.captureCount ?? plan.frames.length;
         if (overrides.captureProgress) onProgress?.(overrides.captureProgress);
         return Promise.resolve(
@@ -173,6 +173,18 @@ describe("generateCollages", () => {
     // 4 frames of a 4:3 source into 256px, 8px gutters: a 2x2 grid of 116x87 cells.
     expect(seenPlans[0]?.cell).toEqual({ width: 116, height: 87 });
     expect(seenPlans[0]?.frames.map((frame) => frame.timestampSeconds)).toEqual([0, 0.5, 0.75]);
+  });
+
+  it("hands the capture port the info the plan was built from, keyframes included", async () => {
+    const seenInfo: VideoInfo[] = [];
+    await generateCollages(
+      "video",
+      baseRequest({ keyframeSampling: true }),
+      fakePorts({ keyframeTimes: [0, 0.5], onCapture: (_plan, info) => seenInfo.push(info) }),
+      { videoInfo: VIDEO_INFO },
+    );
+
+    expect(seenInfo).toEqual([{ ...VIDEO_INFO, keyframeTimestampsSeconds: [0, 0.5] }]);
   });
 
   it("reads keyframe times only when keyframe mode needs them", async () => {

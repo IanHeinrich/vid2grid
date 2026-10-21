@@ -36,6 +36,12 @@ describe("vid2gridCore.call", () => {
     });
   });
 
+  it("decides a keyframe plan, with the keyframe times left out when there are none", () => {
+    const plan = { frames: [{ frameIndex: 0, timestampSeconds: 1 }] };
+    expect(call("isKeyframePlan", plan, [0, 1])).toEqual({ ok: true, value: true });
+    expect(call("isKeyframePlan", plan)).toEqual({ ok: true, value: false });
+  });
+
   it("reports the contract version", () => {
     expect(call("version")).toEqual({ ok: true, value: 1 });
   });

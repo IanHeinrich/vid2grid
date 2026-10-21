@@ -336,6 +336,11 @@
       ]
     };
   }
+  function isKeyframePlan(plan, keyframeTimes) {
+    if (keyframeTimes === void 0) return false;
+    const keyframes = new Set(keyframeTimes.map(roundToMicroseconds));
+    return plan.frames.every((frame) => keyframes.has(roundToMicroseconds(frame.timestampSeconds)));
+  }
   function keyframesUnavailable(reason) {
     const detail = reason === void 0 ? "" : ` (${reason})`;
     return {
@@ -651,6 +656,7 @@ ${body}
     ["resolveKeyframeSampling", resolveKeyframeSampling],
     ["displaySize", displaySize],
     ["normalizeRotationClockwise", normalizeRotationClockwise],
+    ["isKeyframePlan", isKeyframePlan],
     ["optionSpecs", optionSpecsFor],
     ["requestFromOptions", requestFromOptions],
     ["cuesFromSegments", cuesFromSegments],

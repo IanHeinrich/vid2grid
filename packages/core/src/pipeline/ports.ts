@@ -28,9 +28,14 @@ export interface ProbePort<TSource> {
 }
 
 export interface FrameCapturePort<TSource, TImage> {
-  // One image per plan.frames entry, in order, scaled to plan.cell.
-  // Fewer only when the stream ends early.
-  capture(source: TSource, plan: RenderPlan, onProgress?: PortProgressCallback): Promise<TImage[]>;
+  // One image per plan.frames entry, in order, scaled to plan.cell; fewer only when the
+  // stream ends early. info is what the plan was built from, for isKeyframePlan.
+  capture(
+    source: TSource,
+    plan: RenderPlan,
+    info: VideoInfo,
+    onProgress?: PortProgressCallback,
+  ): Promise<TImage[]>;
 }
 
 export interface SheetRenderJob<TImage> {
