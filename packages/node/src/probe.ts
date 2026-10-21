@@ -34,10 +34,9 @@ interface FfprobeOutput {
 }
 
 export async function probeVideo(path: string): Promise<VideoInfo> {
-  const output = await runFfprobe(path, [
-    "-show_entries",
-    "stream=width,height,sample_aspect_ratio,duration:stream_tags=rotate:stream_side_data=rotation:format=duration",
-  ]);
+  // Whole sections rather than -show_entries: ffprobe 4.4, as shipped for macOS arm64, has
+  // no stream_side_data section to name.
+  const output = await runFfprobe(path, ["-show_streams", "-show_format"]);
   const stream = output.streams?.[0];
   if (!stream?.width || !stream.height) {
     throw new Vid2GridError("no_frames", `No video stream in ${path}`);
@@ -96,12 +95,12 @@ function parseSeconds(text: string | undefined): number | undefined {
   return text === undefined || !Number.isFinite(seconds) ? undefined : seconds;
 }
 
-async function runFfprobe(path: string, entries: string[]): Promise<FfprobeOutput> {
+async function runFfprobe(path: string, query: string[]): Promise<FfprobeOutput> {
   let stdout: string;
   try {
     ({ stdout } = await execFileAsync(
       ffprobe.path,
-      ["-v", "error", "-select_streams", "v:0", ...entries, "-of", "json", path],
+      ["-v", "error", "-select_streams", "v:0", ...query, "-of", "json", path],
       { maxBuffer: Infinity },
     ));
   } catch (cause) {

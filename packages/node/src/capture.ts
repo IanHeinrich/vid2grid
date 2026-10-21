@@ -132,10 +132,10 @@ async function* decodeFrames<T>(
     }
   } finally {
     detach();
-    ffmpeg.kill();
-    // A paused pipe is never read to its end, so it would hold the event loop open.
-    ffmpeg.stdout.destroy();
-    ffmpeg.stderr.destroy();
+    if (!state.exited) stopFfmpeg(ffmpeg);
+    // Drained, not left paused, so the pipes reach their end and stop holding the event loop.
+    ffmpeg.stdout.resume();
+    ffmpeg.stderr.resume();
   }
 }
 
@@ -157,12 +157,12 @@ function listen(
       if (state.failure) return;
       try {
         handle(value);
-        if (stream.stopped) ffmpeg.kill();
+        if (stream.stopped) stopFfmpeg(ffmpeg);
         flow();
       } catch (error) {
         state.failure =
           error instanceof Error ? error : new Vid2GridError("internal", String(error));
-        ffmpeg.kill();
+        stopFfmpeg(ffmpeg);
       }
       notify();
     };
@@ -203,6 +203,12 @@ ${stream.logTail()}`;
     // onError stays attached: a failed kill emits "error", which unheard would throw.
     ffmpeg.off("close", onClose);
   };
+}
+
+// SIGKILL because ffmpeg 7 on Linux traps SIGTERM and still decodes the rest of the input,
+// and only once: repeated signals make it log a warning into the middle of a showinfo line.
+function stopFfmpeg(ffmpeg: Ffmpeg): void {
+  if (!ffmpeg.killed) ffmpeg.kill("SIGKILL");
 }
 
 function spawnFfmpeg(path: string, args: string[]): Ffmpeg {

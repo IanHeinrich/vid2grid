@@ -78,6 +78,25 @@ async function capturedTimes(
   return images.map((image) => image.decodedTimestampSeconds);
 }
 
+interface KilledChild {
+  exited: Promise<unknown>;
+  bytesAfterKill: number;
+}
+
+// Records each killed child and what it still writes to stdout before it exits.
+function watchKills() {
+  const realKill = Reflect.get(ChildProcess.prototype, "kill");
+  const killed: KilledChild[] = [];
+  const spy = vi.spyOn(ChildProcess.prototype, "kill");
+  spy.mockImplementation(function (this: ChildProcess, signal) {
+    const child: KilledChild = { exited: once(this, "close"), bytesAfterKill: 0 };
+    this.stdout?.on("data", (chunk: Buffer) => (child.bytesAfterKill += chunk.length));
+    killed.push(child);
+    return realKill.call(this, signal);
+  });
+  return { killed, restore: () => spy.mockRestore() };
+}
+
 // conformance.test.ts checks the shared fixtures/frames cases. These expected times are
 // what Python's capture_frames picked on the same generated file, recorded once by hand.
 describe("captureFrames on a container that starts at 1.4 s", () => {
@@ -136,9 +155,37 @@ describe("captureFrames", () => {
   });
 });
 
+const VIDEO_FRAMES = 200; // keyframes-20s.mp4: 20 s at 10 fps
+
+// How ffmpeg exits after a kill differs by build (Linux's traps SIGTERM and finishes the
+// input), so what proves the kill is how little it wrote afterwards.
+async function expectStoppedEarlyOnce(killed: KilledChild[], frameBytes: number): Promise<void> {
+  const [child] = killed;
+  if (!child) throw new Error("ffmpeg was never killed");
+  expect(killed).toHaveLength(1);
+  await child.exited;
+  expect(child.bytesAfterKill / frameBytes).toBeLessThan(VIDEO_FRAMES / 2);
+}
+
+describe("captureFrames stopping ffmpeg", () => {
+  it("kills it once, early, when every planned frame is filled", async () => {
+    const video = fixtureVideo("keyframes-20s.mp4");
+    const info = await probeVideo(video);
+    const plan = buildRenderPlan(request({ endSeconds: 2, targetFps: 10 }), info);
+    const { killed, restore } = watchKills();
+    try {
+      const images = await captureAll(video, plan, info);
+      expect(images).toHaveLength(plan.frames.length);
+      await expectStoppedEarlyOnce(killed, plan.cell.width * plan.cell.height * 4);
+    } finally {
+      restore();
+    }
+  });
+});
+
 const PULLED = 3;
 
-// keyframes-20s.mp4 at 10 fps plans all 200 of its frames, far more than a pipe holds.
+// At 10 fps the plan takes every one of the video's frames, far more than a pipe holds.
 describe("captureFrames backpressure", () => {
   it("pauses ffmpeg while the consumer is not pulling, and kills it on return", async () => {
     const video = fixtureVideo("keyframes-20s.mp4");
@@ -146,7 +193,7 @@ describe("captureFrames backpressure", () => {
     const plan = buildRenderPlan(request({ endSeconds: 20, targetFps: 10 }), info);
     const frameBytes = plan.cell.width * plan.cell.height * 4;
     const pause = vi.spyOn(Socket.prototype, "pause");
-    const kill = vi.spyOn(ChildProcess.prototype, "kill");
+    const { killed, restore } = watchKills();
     const frames = captureFrames(video, plan, info);
     try {
       for (let i = 0; i < PULLED; i++) await frames.next();
@@ -156,20 +203,17 @@ describe("captureFrames backpressure", () => {
       const bytesRead = stdout.bytesRead;
       await delay(300);
 
+      expect(plan.frames).toHaveLength(VIDEO_FRAMES);
       expect(stdout.isPaused()).toBe(true);
       expect(stdout.bytesRead).toBe(bytesRead);
       expect(bytesRead / frameBytes).toBeLessThanOrEqual(PULLED + 2);
       expect((await frames.next()).done).toBe(false);
 
       await frames.return();
-      const [child] = kill.mock.contexts;
-      if (!(child instanceof ChildProcess)) throw new Error("ffmpeg was never killed");
-      if (child.exitCode === null && child.signalCode === null) await once(child, "exit");
-      expect(child.exitCode).toBeNull();
-      expect(child.signalCode).not.toBeNull();
+      await expectStoppedEarlyOnce(killed, frameBytes);
     } finally {
       pause.mockRestore();
-      kill.mockRestore();
+      restore();
     }
   });
 });

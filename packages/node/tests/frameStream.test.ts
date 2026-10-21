@@ -9,8 +9,12 @@ import {
 const FRAME_BYTES = 4;
 const TIME_BASE_LINE = "[Parsed_showinfo_2 @ 0000] config in time_base: 1/10, frame_rate: 10/1";
 
+function hexChecksum(pixels: Buffer): string {
+  return showinfoChecksum(pixels).toString(16).toUpperCase().padStart(8, "0");
+}
+
 function frameLine(n: number, pts: string, pixels = Buffer.alloc(FRAME_BYTES)): string {
-  const checksum = showinfoChecksum(pixels).toString(16).toUpperCase().padStart(8, "0");
+  const checksum = hexChecksum(pixels);
   return `[Parsed_showinfo_2 @ 0000] n:   ${n} pts:     ${pts} pts_time:0 checksum:${checksum}`;
 }
 
@@ -62,6 +66,26 @@ describe("createFrameStream", () => {
     expect(() => stream.finish()).not.toThrow();
   });
 
+  // As Linux ffmpeg 7 logged it, with another thread's message cutting the frame's line.
+  it("takes a checksum pushed onto the next line", () => {
+    const { seen, onFrame } = collect();
+    const stream = createFrameStream(FRAME_BYTES, onFrame);
+    const pixels = Buffer.from([5, 5, 5, 5]);
+    const checksum = hexChecksum(pixels);
+    stream.readLogLine(TIME_BASE_LINE);
+    stream.readLogLine(
+      "[Parsed_showinfo_2 @ 0000] n:   0 pts:      9 pts_time:0.9 iskey:1 type:I " +
+        "Received > 3 system signals, hard exiting",
+    );
+    stream.readLogLine(`checksum:${checksum} plane_checksum:[${checksum}] mean:[5] stdev:[0.0]`);
+    stream.writePixels(pixels);
+    stream.finish();
+
+    expect(seen.map((frame) => frame.exactSeconds)).toEqual([0.9]);
+    for (const frame of seen) expect(() => assertPixelsMatchLog(frame)).not.toThrow();
+    expect(stream.logTail()).toBe("");
+  });
+
   it("keeps the last non-showinfo lines for an error message", () => {
     const stream = createFrameStream(FRAME_BYTES, () => false);
     stream.readLogLine("Input #0, mov,mp4");
@@ -79,10 +103,11 @@ describe("createFrameStream guards", () => {
     );
   });
 
-  it("rejects a frame logged without a checksum", () => {
+  it("rejects a frame whose checksum never came before the next frame", () => {
     const stream = createFrameStream(FRAME_BYTES, () => false);
     stream.readLogLine(TIME_BASE_LINE);
-    expect(() => stream.readLogLine("[Parsed_showinfo_2 @ 0000] n: 0 pts: 0 pts_time:0")).toThrow(
+    stream.readLogLine("[Parsed_showinfo_2 @ 0000] n: 0 pts: 0 pts_time:0");
+    expect(() => stream.readLogLine(frameLine(1, "1"))).toThrow(
       "ffmpeg's showinfo logged no frame checksum",
     );
   });
