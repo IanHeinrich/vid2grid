@@ -2,6 +2,11 @@ import { gridTranscriptFileName } from "./gridFileName";
 import { roundToMicroseconds } from "./framePlanning";
 import type { TranscriptWindow } from "./renderPlan";
 
+function requireTimestamp(timestamp: number | undefined): number {
+  if (timestamp === undefined) throw new Error("a sheet has no frame timestamps");
+  return timestamp;
+}
+
 // Gaps between sheets are split at their midpoint so every cue in
 // [startSeconds, endSeconds] lands in exactly one sheet's transcript.
 export function computeSheetWindows(
@@ -9,12 +14,14 @@ export function computeSheetWindows(
   startSeconds: number,
   endSeconds: number,
 ): TranscriptWindow[] {
-  const firsts = sheets.map((sheet) => sheet.timestamps[0]);
-  const lasts = sheets.map((sheet) => sheet.timestamps[sheet.timestamps.length - 1]);
+  const firstTimestamp = (index: number) => requireTimestamp(sheets[index]?.timestamps[0]);
+  const lastTimestamp = (index: number) => requireTimestamp(sheets[index]?.timestamps.at(-1));
   return sheets.map((_, i) => ({
-    startSeconds: roundToMicroseconds(i === 0 ? startSeconds : (lasts[i - 1] + firsts[i]) / 2),
+    startSeconds: roundToMicroseconds(
+      i === 0 ? startSeconds : (lastTimestamp(i - 1) + firstTimestamp(i)) / 2,
+    ),
     endSeconds: roundToMicroseconds(
-      i === sheets.length - 1 ? endSeconds : (lasts[i] + firsts[i + 1]) / 2,
+      i === sheets.length - 1 ? endSeconds : (lastTimestamp(i) + firstTimestamp(i + 1)) / 2,
     ),
     fileName: gridTranscriptFileName(i),
   }));

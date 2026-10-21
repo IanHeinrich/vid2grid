@@ -8,6 +8,7 @@
   },
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b && tsc -p tests/tsconfig.json",
+    "coverage": "vitest run --coverage"
   }
 }

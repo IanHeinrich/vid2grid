@@ -87,7 +87,7 @@ def _display_rotation_ccw(container: Any, stream: Any) -> float:
 
 def _duration_seconds(container: Any, stream: Any) -> float:
     if container.duration is not None:
-        return container.duration / av.time_base
+        return float(container.duration / av.time_base)
     if stream.duration is not None:
         return float(stream.duration * stream.time_base)
     return 0.0

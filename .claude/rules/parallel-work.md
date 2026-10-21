@@ -41,8 +41,9 @@ single pair of hands. Each line names where the full rule lives.
   package directory (`packages/core`, `packages/browser` or `apps/web`), or
   `uv run pytest tests/test_<module>.py` from `python/`. The
   whole-project runs belong to one verifier at the end:
-  `npm test`, `npm run typecheck` and `npm run build` typecheck every
-  source file, including the ones other workers are still editing.
+  `npm test`, `npm run typecheck`, `npm run lint` and `npm run build`
+  typecheck every source file, including the ones other workers are still
+  editing. A worker may lint its own package with `npx eslint <package dir>`.
   A build failing on a file the worker does not own
   is noise, not a finding. (`CLAUDE.md`, "Commands".)
 - **Shell quirks.** npm commands now run from the repo root, where there is a

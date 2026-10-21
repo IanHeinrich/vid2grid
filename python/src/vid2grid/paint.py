@@ -39,5 +39,5 @@ def save_jpeg(image: Image.Image, path: str | Path, quality: int) -> None:
 
 
 @lru_cache
-def _font(size: int) -> ImageFont.FreeTypeFont:
+def _font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     return ImageFont.load_default(size=size)

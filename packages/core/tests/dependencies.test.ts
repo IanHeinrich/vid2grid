@@ -20,7 +20,8 @@ function importSpecifiersIn(source: string): string[] {
   ];
   for (const pattern of patterns) {
     for (const match of source.matchAll(pattern)) {
-      specifiers.push(match[1]);
+      const [, specifier] = match;
+      if (specifier !== undefined) specifiers.push(specifier);
     }
   }
   return specifiers;
@@ -28,7 +29,9 @@ function importSpecifiersIn(source: string): string[] {
 
 describe("@vid2grid/core package boundaries", () => {
   it("declares no runtime dependencies", () => {
-    const packageJson = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf-8"));
+    const packageJson = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf-8")) as {
+      dependencies?: unknown;
+    };
 
     expect(packageJson.dependencies).toBeUndefined();
   });

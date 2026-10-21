@@ -39,9 +39,12 @@ export class WorkerPool<TRequest, TResponse> {
   }
 
   private pump(): void {
-    while (this.idle.length > 0 && this.queue.length > 0) {
-      const worker = this.idle.pop()!;
-      const task = this.queue.shift()!;
+    for (;;) {
+      const worker = this.idle.at(-1);
+      const task = this.queue[0];
+      if (!worker || !task) return;
+      this.idle.pop();
+      this.queue.shift();
       this.inFlight.set(worker, task);
       worker.postMessage(task.request, task.transfer);
     }

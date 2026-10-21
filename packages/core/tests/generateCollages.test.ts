@@ -26,31 +26,35 @@ interface FakePortOverrides {
 function fakePorts(overrides: FakePortOverrides = {}): FakePorts {
   const ports: FakePorts = {
     probe: {
-      probe: async (_source, options) => {
+      probe: (_source, options) => {
         overrides.onProbe?.(options);
-        return overrides.probeInfo ?? VIDEO_INFO;
+        return Promise.resolve(overrides.probeInfo ?? VIDEO_INFO);
       },
     },
     frames: {
-      capture: async (_source, plan, onProgress) => {
+      capture: (_source, plan, onProgress) => {
         overrides.onCapture?.(plan);
         const count = overrides.captureCount ?? plan.frames.length;
         if (overrides.captureProgress) onProgress?.(count, count);
-        return plan.frames.slice(0, count).map((frame) => `frame-${frame.frameIndex}`);
+        return Promise.resolve(
+          plan.frames.slice(0, count).map((frame) => `frame-${frame.frameIndex}`),
+        );
       },
     },
     sheets: {
-      encodeSheets: async (plan, jobs, onProgress) => {
+      encodeSheets: (plan, jobs, onProgress) => {
         overrides.onJobs?.(jobs);
         onProgress?.(jobs.length, jobs.length);
-        return jobs.map((job) => `jpeg:${plan.jpegQuality}:${job.images.join(",")}`);
+        return Promise.resolve(
+          jobs.map((job) => `jpeg:${plan.jpegQuality}:${job.images.join(",")}`),
+        );
       },
     },
     text: { encodeText: (text, mimeType) => `${mimeType}\n${text}` },
     clock: { now: () => 0 },
   };
   if (!overrides.omitTranscriptPort) {
-    ports.transcript = { transcribe: overrides.transcribe ?? (async () => []) };
+    ports.transcript = { transcribe: overrides.transcribe ?? (() => Promise.resolve([])) };
   }
   return ports;
 }
@@ -82,8 +86,8 @@ describe("generateCollages", () => {
       "grid_0002.jpg",
       "grid_0003.jpg",
     ]);
-    expect(sheets[0].data).toBe("jpeg:80:frame-0,frame-1,frame-2,frame-3");
-    expect(sheets[2].data).toBe("jpeg:80:frame-8,frame-9");
+    expect(sheets[0]?.data).toBe("jpeg:80:frame-0,frame-1,frame-2,frame-3");
+    expect(sheets[2]?.data).toBe("jpeg:80:frame-8,frame-9");
     expect(transcriptFiles).toEqual([]);
   });
 
@@ -110,7 +114,7 @@ describe("generateCollages", () => {
     );
 
     expect(seenJobs.map((job) => job.sheet.fileName)).toEqual(["grid_0001.jpg", "grid_0002.jpg"]);
-    expect(seenJobs[1].images).toEqual(["frame-4", "frame-5", undefined, undefined]);
+    expect(seenJobs[1]?.images).toEqual(["frame-4", "frame-5", undefined, undefined]);
     expect(sheets.map((sheet) => sheet.name)).toEqual(["grid_0001.jpg", "grid_0002.jpg"]);
   });
 
@@ -118,9 +122,9 @@ describe("generateCollages", () => {
     let probed = false;
     const ports = fakePorts();
     ports.probe = {
-      probe: async () => {
+      probe: () => {
         probed = true;
-        return VIDEO_INFO;
+        return Promise.resolve(VIDEO_INFO);
       },
     };
 
@@ -134,9 +138,9 @@ describe("generateCollages", () => {
     let probeCalls = 0;
     const ports = fakePorts();
     ports.probe = {
-      probe: async () => {
+      probe: () => {
         probeCalls++;
-        return VIDEO_INFO;
+        return Promise.resolve(VIDEO_INFO);
       },
     };
 
@@ -157,8 +161,8 @@ describe("generateCollages", () => {
     );
 
     // 4 frames of a 4:3 source into 256px, 8px gutters: a 2x2 grid of 116x87 cells.
-    expect(seenPlans[0].cell).toEqual({ width: 116, height: 87 });
-    expect(seenPlans[0].frames.map((frame) => frame.timestampSeconds)).toEqual([0, 0.5, 0.75]);
+    expect(seenPlans[0]?.cell).toEqual({ width: 116, height: 87 });
+    expect(seenPlans[0]?.frames.map((frame) => frame.timestampSeconds)).toEqual([0, 0.5, 0.75]);
   });
 
   it("asks the probe for keyframe timestamps only when keyframe mode needs them", async () => {
@@ -193,7 +197,7 @@ describe("generateCollages", () => {
     );
 
     expect(seen).toEqual([{ keyframeTimestamps: true }]);
-    expect(seenPlans[0].frames.map((frame) => frame.timestampSeconds)).toEqual([0, 0.25, 0.75]);
+    expect(seenPlans[0]?.frames.map((frame) => frame.timestampSeconds)).toEqual([0, 0.25, 0.75]);
   });
 
   it("samples by target FPS with a warning when no keyframe timestamps can be read", async () => {
@@ -208,7 +212,7 @@ describe("generateCollages", () => {
     );
 
     expect(warnings).toEqual(["Keyframes unavailable; sampled by target FPS instead"]);
-    expect(seenPlans[0].frames.map((frame) => frame.timestampSeconds)).toEqual([0, 0.5]);
+    expect(seenPlans[0]?.frames.map((frame) => frame.timestampSeconds)).toEqual([0, 0.5]);
   });
 
   it("samples by target FPS with a warning when no keyframe falls in the range", async () => {
@@ -228,7 +232,7 @@ describe("generateCollages", () => {
 
     expect(probed).toBe(false);
     expect(warnings).toEqual(["Keyframes unavailable; sampled by target FPS instead"]);
-    expect(seenPlans[0].frames.map((frame) => frame.timestampSeconds)).toEqual([2, 2.5]);
+    expect(seenPlans[0]?.frames.map((frame) => frame.timestampSeconds)).toEqual([2, 2.5]);
   });
 
   it("reports extracting then rendering progress phases in order", async () => {
@@ -250,9 +254,9 @@ describe("generateCollages", () => {
       "video",
       baseRequest(),
       fakePorts({
-        transcribe: async () => {
+        transcribe: () => {
           called = true;
-          return [];
+          return Promise.resolve([]);
         },
       }),
       { videoInfo: VIDEO_INFO },
@@ -270,14 +274,14 @@ describe("generateCollages", () => {
     const { transcriptFiles } = await generateCollages(
       "video",
       baseRequest({ endSeconds: 8, targetFps: 1, transcript: { scope: "combined" } }),
-      fakePorts({ transcribe: async () => cues }),
+      fakePorts({ transcribe: () => Promise.resolve(cues) }),
       { videoInfo: VIDEO_INFO },
     );
 
     expect(transcriptFiles.map((file) => file.name)).toEqual(["transcript.vtt"]);
-    expect(transcriptFiles[0].data).toContain("text/vtt");
-    expect(transcriptFiles[0].data).toContain("hello");
-    expect(transcriptFiles[0].data).toContain("world");
+    expect(transcriptFiles[0]?.data).toContain("text/vtt");
+    expect(transcriptFiles[0]?.data).toContain("hello");
+    expect(transcriptFiles[0]?.data).toContain("world");
   });
 
   it("splits cues into per-sheet transcripts by the plan's windows", async () => {
@@ -289,7 +293,7 @@ describe("generateCollages", () => {
     const { transcriptFiles } = await generateCollages(
       "video",
       baseRequest({ endSeconds: 8, targetFps: 1, transcript: { scope: "per-sheet" } }),
-      fakePorts({ transcribe: async () => cues }),
+      fakePorts({ transcribe: () => Promise.resolve(cues) }),
       { videoInfo: VIDEO_INFO },
     );
 
@@ -308,13 +312,13 @@ describe("generateCollages", () => {
     const { plan, transcriptFiles } = await generateCollages(
       "video",
       baseRequest({ endSeconds: 10, targetFps: 1, transcript: { scope: "per-sheet" } }),
-      fakePorts({ captureCount: 6, transcribe: async () => cues }),
+      fakePorts({ captureCount: 6, transcribe: () => Promise.resolve(cues) }),
       { videoInfo: VIDEO_INFO },
     );
 
     expect(transcriptFiles.map((file) => file.name)).toEqual(["grid_0001.vtt", "grid_0002.vtt"]);
-    expect(transcriptFiles[1].data).toContain("trailing");
-    expect(plan.sheets[1].transcript).toEqual({
+    expect(transcriptFiles[1]?.data).toContain("trailing");
+    expect(plan.sheets[1]?.transcript).toEqual({
       startSeconds: 3.5,
       endSeconds: 7.5,
       fileName: "grid_0002.vtt",
@@ -325,9 +329,9 @@ describe("generateCollages", () => {
     const seen: [number, number][] = [];
     const ports = fakePorts();
     ports.transcript = {
-      transcribe: async (_source, startSeconds, endSeconds) => {
+      transcribe: (_source, startSeconds, endSeconds) => {
         seen.push([startSeconds, endSeconds]);
-        return [];
+        return Promise.resolve([]);
       },
     };
 
@@ -347,9 +351,7 @@ describe("generateCollages", () => {
       "video",
       baseRequest({ transcript: { scope: "combined" } }),
       fakePorts({
-        transcribe: async () => {
-          throw new Error("no audio track");
-        },
+        transcribe: () => Promise.reject(new Error("no audio track")),
       }),
       { videoInfo: VIDEO_INFO, onWarning: (message) => warnings.push(message) },
     );

@@ -229,7 +229,9 @@ export function planIndicesForFrame(
   timestampSeconds: number,
 ): number[] {
   const filled: number[] = [];
-  for (let i = nextIndex; i < wanted.length && timestampSeconds >= wanted[i]; i++) {
+  for (let i = nextIndex; i < wanted.length; i++) {
+    const target = wanted[i];
+    if (target === undefined || timestampSeconds < target) break;
     filled.push(i);
   }
   return filled;
@@ -237,7 +239,7 @@ export function planIndicesForFrame(
 
 interface FrameCollector {
   consume(frame: VideoFrame): void;
-  isComplete(): boolean;
+  isComplete: () => boolean;
   completed: Promise<void>;
   settle(): Promise<ImageBitmap[]>;
 }
@@ -253,7 +255,7 @@ function createFrameCollector(
   rotation: number,
   onProgress?: ProgressCallback,
 ): FrameCollector {
-  const images: (ImageBitmap | undefined)[] = new Array(wanted.length);
+  const images = new Array<ImageBitmap | undefined>(wanted.length);
   const pendingCaptures: Promise<void>[] = [];
   let wantedIndex = 0;
   let capturedCount = 0;
@@ -308,7 +310,8 @@ async function feedSamples(
   for (const index of indices) {
     if (shouldStop()) break;
     if (isDecoderClosed(decoder)) break;
-    const chunk = toEncodedVideoChunk(samples[index]);
+    const sample = samples[index];
+    const chunk = sample && toEncodedVideoChunk(sample);
     if (!chunk) continue;
     if (decoder.decodeQueueSize > MAX_DECODE_QUEUE_SIZE) {
       await new Promise<void>((resolve) =>
@@ -327,17 +330,15 @@ function* range(startIndex: number, endIndex: number): Generator<number> {
 
 function findDecodeStartIndex(samples: Sample[], startTime: number): number {
   let index = 0;
-  for (let i = 0; i < samples.length; i++) {
-    if (samples[i].is_sync && samples[i].cts / samples[i].timescale <= startTime) {
-      index = i;
-    }
+  for (const [i, sample] of samples.entries()) {
+    if (sample.is_sync && sample.cts / sample.timescale <= startTime) index = i;
   }
   return index;
 }
 
 function findDecodeEndIndex(samples: Sample[], endTime: number): number {
-  for (let i = 0; i < samples.length; i++) {
-    if (samples[i].dts / samples[i].timescale > endTime) {
+  for (const [i, sample] of samples.entries()) {
+    if (sample.dts / sample.timescale > endTime) {
       return Math.min(samples.length - 1, i + REORDER_PADDING_SAMPLES);
     }
   }
@@ -412,7 +413,9 @@ export async function extractFramesWebCodecs(
   onProgress?: ProgressCallback,
 ): Promise<ImageBitmap[] | null> {
   if (typeof VideoDecoder === "undefined") return null;
-  if (plan.frames.length === 0) return [];
+  const firstFrame = plan.frames[0];
+  const lastFrame = plan.frames.at(-1);
+  if (!firstFrame || !lastFrame) return [];
 
   const demuxed = await demuxCached(file);
   if (!demuxed) return null;
@@ -440,8 +443,8 @@ export async function extractFramesWebCodecs(
   const indices =
     keyframeIndices ??
     range(
-      findDecodeStartIndex(samples, wanted[0]),
-      findDecodeEndIndex(samples, wanted[wanted.length - 1]),
+      findDecodeStartIndex(samples, firstFrame.timestampSeconds),
+      findDecodeEndIndex(samples, lastFrame.timestampSeconds),
     );
   return decodeToImages(
     decoderConfig,

@@ -82,7 +82,7 @@ els.videoFileInput.addEventListener("change", () => {
 );
 els.dropzone.addEventListener("drop", (event) => {
   event.preventDefault();
-  const file = (event as DragEvent).dataTransfer?.files?.[0] ?? null;
+  const file = event.dataTransfer?.files?.[0] ?? null;
   if (file) void handleFile(file);
 });
 ["dragover", "drop"].forEach((evt) =>
@@ -313,7 +313,7 @@ async function refreshKeyframeCount(): Promise<void> {
   state.keyframeCount = null;
   updateFramePlanningUi({ recomputeSuggestions: false });
 
-  let count: number | null = null;
+  let count: number | null;
   try {
     count = await countKeyframesInRange(file, start, end);
   } catch {
@@ -345,9 +345,9 @@ async function handleGenerateClicked(): Promise<void> {
     framesPerGrid: Math.trunc(Number(els.framesPerGridInput.value)),
     outputResolution: Math.trunc(Number(els.outputResolutionInput.value)),
     jpegQuality: Math.trunc(Number(els.jpegQualityInput.value)),
-    transcript: transcriptOn
-      ? { scope: els.transcriptCombinedInput.checked ? "combined" : "per-sheet" }
-      : undefined,
+    ...(transcriptOn && {
+      transcript: { scope: els.transcriptCombinedInput.checked ? "combined" : "per-sheet" },
+    }),
   };
 
   try {
@@ -373,7 +373,7 @@ async function handleGenerateClicked(): Promise<void> {
       request,
       createBrowserPorts(),
       {
-        videoInfo: state.videoInfo ?? undefined,
+        ...(state.videoInfo && { videoInfo: state.videoInfo }),
         onProgress: (phase, done, total, transcribeStage) => {
           setProgress(
             phaseStarts[phase] + (done / total) * phaseWeights[phase],

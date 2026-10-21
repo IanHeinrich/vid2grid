@@ -23,7 +23,7 @@ export function renderGallery(plan: RenderPlan): void {
     const figure = document.createElement("figure");
     const img = document.createElement("img");
     img.src = url;
-    img.alt = state.sheets[i].name;
+    img.alt = state.sheets[i]?.name ?? "";
     img.title = "Click to view larger";
     img.loading = "lazy";
     img.decoding = "async";
@@ -85,7 +85,7 @@ function populateTranscriptPreviews(slots: PreviewSlot[]): void {
         slot.el.textContent = text;
         slot.el.title = text; // hover to read the full transcript inline
         runText = text;
-        runStartName = state.sheets[i].name;
+        runStartName = state.sheets[i]?.name ?? "";
       }
     });
   });

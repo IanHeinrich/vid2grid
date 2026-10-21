@@ -79,8 +79,8 @@ describe("suggestFramesPerGrid", () => {
 
     // 4 and 6 both pack into a perfect rectangle for this aspect and are
     // equally close to 5; either is an acceptable top pick.
-    expect(suggestions[0].wastedCells).toBe(0);
-    expect([4, 6]).toContain(suggestions[0].framesPerGrid);
+    expect(suggestions[0]?.wastedCells).toBe(0);
+    expect([4, 6]).toContain(suggestions[0]?.framesPerGrid);
   });
 
   it("returns nothing when there's no video/invalid state", () => {

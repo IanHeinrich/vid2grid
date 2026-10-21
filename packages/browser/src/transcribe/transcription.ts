@@ -42,7 +42,7 @@ export function transcribeAudio(
     };
     const handleError = (event: ErrorEvent) => {
       cleanup();
-      reject(event.error ?? new Error(event.message));
+      reject(event.error instanceof Error ? event.error : new Error(event.message));
     };
     function cleanup(): void {
       worker.removeEventListener("message", handleMessage);
