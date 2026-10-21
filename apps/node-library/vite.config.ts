@@ -9,13 +9,8 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     lib: {
-      entry: { index: "src/index.ts", cli: "src/cli.ts" },
+      entry: { index: "src/index.ts" },
       formats: ["es"],
-    },
-    rollupOptions: {
-      output: {
-        banner: (chunk) => (chunk.name === "cli" ? "#!/usr/bin/env node" : ""),
-      },
     },
   },
   ssr: {

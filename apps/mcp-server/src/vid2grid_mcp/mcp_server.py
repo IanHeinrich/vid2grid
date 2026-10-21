@@ -5,11 +5,16 @@ import anyio
 from mcp import types
 from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
-
-from ._core import OptionSpec, option_specs
-from .contract import VID2GRID_VERSION
-from .errors import InvalidRequestError, Vid2GridError
-from .options import host_capabilities, plan_from_options, render_from_options
+from vid2grid import (
+    InvalidRequestError,
+    OptionSpec,
+    Vid2GridError,
+    __version__,
+    host_capabilities,
+    option_specs,
+    plan_from_options,
+    render_from_options,
+)
 
 VIDEO_TO_SHEETS = "video_to_sheets"
 PLAN_VIDEO = "plan_video"
@@ -20,7 +25,7 @@ _BOUNDS = (("min", "minimum"), ("max", "maximum"), ("exclusiveMin", "exclusiveMi
 
 
 def create_server() -> Server[Any, Any]:
-    server: Server[Any, Any] = Server("vid2grid", VID2GRID_VERSION)
+    server: Server[Any, Any] = Server("vid2grid", __version__)
 
     # The SDK leaves its handler decorators unannotated.
     @server.list_tools()  # type: ignore[no-untyped-call, untyped-decorator]

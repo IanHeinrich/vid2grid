@@ -15,7 +15,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { captureFrames, type RgbaFrame } from "../src/capture";
 import { probeVideo, readKeyframeTimes } from "../src/probe";
-import { fixtureVideo } from "../../core/tests/fixturePaths";
+import { fixtureVideo } from "../../../packages/core/tests/fixturePaths";
 
 const TINY_MP4 = fixtureVideo("tiny.mp4");
 

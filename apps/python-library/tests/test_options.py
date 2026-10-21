@@ -1,4 +1,3 @@
-import os
 import subprocess
 import sys
 import textwrap
@@ -129,17 +128,14 @@ BASE_INSTALL = textwrap.dedent(
     """
     import sys
 
-    for name in ("faster_whisper", "numpy", "mcp"):
+    for name in ("faster_whisper", "numpy"):
         sys.modules[name] = None
 
     import vid2grid
-    from vid2grid import cli
 
     assert vid2grid.options.host_capabilities() == ()
-    try:
-        cli.main(["--help"])
-    except SystemExit as exit_info:
-        assert exit_info.code == 0
+    flags = [spec["flag"] for spec in vid2grid.option_specs(vid2grid.host_capabilities())]
+    print(" ".join(f"--{flag}" for flag in flags))
     """
 )
 
@@ -149,7 +145,6 @@ def test_the_base_install_works_without_the_extras() -> None:
         [sys.executable, "-c", BASE_INSTALL],
         capture_output=True,
         text=True,
-        env={**os.environ, "COLUMNS": "1000"},
         timeout=60,
         check=False,
     )

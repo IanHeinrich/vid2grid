@@ -1,5 +1,5 @@
-# Writes fixtures/videos/keyframes-20s.mp4. Run by hand, from python/:
-#   uv run python ../scripts/makeKeyframeVideo.py
+# Writes fixtures/videos/keyframes-20s.mp4. Run by hand, from apps/python-library/:
+#   uv run python ../../scripts/makeKeyframeVideo.py
 from pathlib import Path
 
 import av

@@ -3,10 +3,16 @@ import json
 import sys
 from collections.abc import Sequence
 
-from ._core import OptionSpec, option_specs
-from .errors import Vid2GridError
-from .options import host_capabilities, plan_from_options, render_from_options
-from .sheets import PlanResult, RenderResult
+from vid2grid import (
+    OptionSpec,
+    PlanResult,
+    RenderResult,
+    Vid2GridError,
+    host_capabilities,
+    option_specs,
+    plan_from_options,
+    render_from_options,
+)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

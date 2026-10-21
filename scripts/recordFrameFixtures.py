@@ -1,7 +1,7 @@
 # Records fixtures/frames/ by applying the pick rule to a plain decode of every source frame,
 # then refuses to write if the Python package's capture picks differently. Run by hand, from
-# python/:
-#   uv run python ../scripts/recordFrameFixtures.py
+# apps/python-library/:
+#   uv run python ../../scripts/recordFrameFixtures.py
 import json
 import math
 from pathlib import Path

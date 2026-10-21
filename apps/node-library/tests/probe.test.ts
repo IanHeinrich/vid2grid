@@ -6,7 +6,7 @@ import ffmpegPath from "ffmpeg-static";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Vid2GridError } from "@vid2grid/core";
 import { probeVideo, readKeyframeTimes } from "../src/probe";
-import { fixtureVideo } from "../../core/tests/fixturePaths";
+import { fixtureVideo } from "../../../packages/core/tests/fixturePaths";
 
 const TINY_MP4 = fixtureVideo("tiny.mp4");
 

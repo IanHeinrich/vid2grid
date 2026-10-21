@@ -18,7 +18,7 @@ AUDIO_FRAME_SIZE = 1024
 @pytest.fixture(scope="session")
 def curator_mp4() -> Path:
     # Curator's own test asset: 160x120 h264 that never wrote a sample aspect ratio.
-    return Path(__file__).resolve().parents[2] / "fixtures" / "videos" / "tiny.mp4"
+    return Path(__file__).resolve().parents[3] / "fixtures" / "videos" / "tiny.mp4"
 
 
 @pytest.fixture(scope="session", params=["mpeg4", "libx264"])

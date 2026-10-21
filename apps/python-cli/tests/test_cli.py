@@ -1,19 +1,31 @@
 import json
+import os
 import re
 import shutil
+import subprocess
+import sys
+import textwrap
 from collections.abc import Sequence
 from pathlib import Path
 
 import av
 import pytest
 from helpers import repo_root
+from vid2grid import (
+    InvalidRequestError,
+    TranscriptCue,
+    host_capabilities,
+    option_specs,
+    options,
+    plan_from_options,
+    probe_video,
+    render_from_options,
+    request_from_options,
+    sheets,
+    transcribe,
+)
 
-from vid2grid import cli, options, sheets, transcribe
-from vid2grid._core import option_specs, request_from_options
-from vid2grid.contract import TranscriptCue
-from vid2grid.errors import InvalidRequestError
-from vid2grid.options import host_capabilities, plan_from_options, render_from_options
-from vid2grid.probe import probe_video
+from vid2grid_cli import cli
 
 TINY = repo_root() / "fixtures" / "videos" / "tiny.mp4"
 RUN_FLAGS = ["--fps", "4", "--frames-per-grid", "4"]
@@ -245,3 +257,36 @@ def test_an_unreadable_video_exits_1_without_a_traceback(
     assert code == 1
     assert err.startswith(f"vid2grid: cannot read {notes}")
     assert "Traceback" not in err
+
+
+# Setting a module to None in sys.modules makes importing it fail and find_spec return None.
+BASE_INSTALL = textwrap.dedent(
+    """
+    import sys
+
+    for name in ("faster_whisper", "numpy"):
+        sys.modules[name] = None
+
+    from vid2grid_cli import cli
+
+    try:
+        cli.main(["--help"])
+    except SystemExit as exit_info:
+        assert exit_info.code == 0
+    """
+)
+
+
+def test_the_base_install_works_without_the_extras() -> None:
+    completed = subprocess.run(
+        [sys.executable, "-c", BASE_INSTALL],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "COLUMNS": "1000"},
+        timeout=60,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "--frames-per-grid" in completed.stdout
+    assert "--transcript" not in completed.stdout

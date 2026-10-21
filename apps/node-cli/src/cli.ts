@@ -1,7 +1,6 @@
 import { requestFromOptions, Vid2GridError } from "@vid2grid/core";
+import { probeVideo, renderVideo, type RenderVideoResult } from "@vid2grid/node";
 import { NODE_CAPABILITIES, parseCliArgs, USAGE, type CliCommand } from "./cliArgs";
-import { renderVideo, type RenderVideoResult } from "./index";
-import { probeVideo } from "./probe";
 
 async function main(argv: readonly string[]): Promise<void> {
   let command: CliCommand;

@@ -8,7 +8,7 @@ import type * as Capture from "../src/capture";
 import { createNodePorts, renderVideo } from "../src/index";
 import type * as Render from "../src/render";
 import { SHEET_ENCODE_CONCURRENCY } from "../src/render";
-import { fixtureVideo } from "../../core/tests/fixturePaths";
+import { fixtureVideo } from "../../../packages/core/tests/fixturePaths";
 
 const TINY_MP4 = fixtureVideo("tiny.mp4");
 

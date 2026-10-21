@@ -9,7 +9,7 @@ import {
   type VideoInfo,
 } from "@vid2grid/core";
 import { describe, expect, it } from "vitest";
-import { fixturesDir, repoRoot } from "../../core/tests/fixturePaths";
+import { fixturesDir, repoRoot } from "../../../packages/core/tests/fixturePaths";
 import type { RgbaFrame } from "../src/capture";
 import { createNodePorts } from "../src/index";
 import { paintSheet } from "../src/render";
