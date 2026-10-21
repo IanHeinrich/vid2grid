@@ -1,3 +1,5 @@
+import { Vid2GridError } from "@vid2grid/core";
+
 // `decodeAudioData` resamples to its `AudioContext`'s rate, so constructing the context at
 // Whisper's rate gets the resample for free.
 const WHISPER_SAMPLE_RATE = 16000;
@@ -13,14 +15,20 @@ export async function decodeAudioForTranscription(
   let audioBuffer: AudioBuffer;
   try {
     audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-  } catch {
-    throw new Error("This video has no decodable audio track.");
+  } catch (err) {
+    throw noAudioError(err);
   } finally {
     void audioCtx.close();
   }
 
   const mono = downmixToMono(audioBuffer);
   return sliceSamples(mono, audioBuffer.sampleRate, startTime, endTime);
+}
+
+function noAudioError(decodeFailure: unknown): Vid2GridError {
+  return new Vid2GridError("no_audio", "This video has no decodable audio track.", {
+    cause: decodeFailure,
+  });
 }
 
 function downmixToMono(buffer: AudioBuffer): Float32Array {

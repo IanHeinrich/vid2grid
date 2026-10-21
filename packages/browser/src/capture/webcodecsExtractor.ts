@@ -1,23 +1,28 @@
-// One continuous decode pass, where extractor.ts re-decodes from a keyframe per sampled frame.
-// Every entry point returns `null` on an undecodable input so the caller can fall back to it.
+// One continuous decode pass, unlike extractor.ts. Entry points return `null` for an input
+// this path declines (the caller falls back); demux or decode failures throw.
 import {
   createFile,
   MP4BoxBuffer,
   DataStream,
   Endianness,
   type ISOFile,
-  type Matrix,
   type Movie,
   type Sample,
   type Track,
   type VisualSampleEntry,
 } from "mp4box";
 import {
+  keyframesInRange,
+  MICROSECONDS_PER_SECOND,
   roundToMicroseconds,
+  rotationFromMatrix,
+  secondsToMicroseconds,
   type PlannedFrame,
-  type ProgressCallback,
+  type PortProgressCallback,
   type RenderPlan,
 } from "@vid2grid/core";
+import { createCellCanvas } from "../shared/canvas";
+import { closeImages } from "../shared/images";
 import { supportsWebCodecs } from "./isoBmff";
 
 // Generous upper bound on B-frame reorder depth: without the padding, composition-order
@@ -33,13 +38,8 @@ interface DemuxResult {
   rotation: number;
 }
 
-// VideoDecoder emits raw coded frames, so rotation the browser would apply for free on a
-// <video> is ours to redo. Elements a,b are 16.16 fixed point, as in ffmpeg's av_display_rotation_get.
-export function rotationFromMatrix(matrix: Matrix): number {
-  const a = matrix[0] / 65536;
-  const b = matrix[1] / 65536;
-  const degrees = Math.round((Math.atan2(b, a) * (180 / Math.PI)) / 90) * 90;
-  return ((degrees % 360) + 360) % 360;
+function sampleTimeSeconds(sample: Sample): number {
+  return sample.cts / sample.timescale;
 }
 
 // Demuxing is independent of the collage settings, so regenerating with new settings reuses it.
@@ -119,19 +119,15 @@ async function demux(file: File): Promise<DemuxResult | null> {
 export function keyframeTimestampsFromSamples(samples: Sample[]): number[] {
   return samples
     .filter((sample) => sample.is_sync)
-    .map((sample) => roundToMicroseconds(sample.cts / sample.timescale))
+    .map((sample) => roundToMicroseconds(sampleTimeSeconds(sample)))
     .sort((a, b) => a - b);
 }
 
 export async function readKeyframeTimestamps(file: File): Promise<number[] | null> {
   if (!supportsWebCodecs(file)) return null;
-  try {
-    const demuxed = await demuxCached(file);
-    if (!demuxed) return null;
-    return keyframeTimestampsFromSamples(demuxed.samples);
-  } catch {
-    return null;
-  }
+  const demuxed = await demuxCached(file);
+  if (!demuxed) return null;
+  return keyframeTimestampsFromSamples(demuxed.samples);
 }
 
 export async function countKeyframesInRange(
@@ -141,11 +137,10 @@ export async function countKeyframesInRange(
 ): Promise<number | null> {
   const timestamps = await readKeyframeTimestamps(file);
   if (!timestamps) return null;
-  return timestamps.filter((time) => time >= startTime && time <= endTime).length;
+  return keyframesInRange(timestamps, startTime, endTime).length;
 }
 
-/** Every planned timestamp being a sync sample's own composition time is what identifies a
- * keyframe-sampled plan; `null` means the plan needs a full decode pass. */
+/** `null` means the plan is not keyframe-sampled and needs a full decode pass. */
 export function selectKeyframeSampleIndices(
   samples: Sample[],
   frames: PlannedFrame[],
@@ -154,7 +149,7 @@ export function selectKeyframeSampleIndices(
   const indexByTime = new Map<number, number>();
   samples.forEach((sample, index) => {
     if (!sample.is_sync) return;
-    const time = roundToMicroseconds(sample.cts / sample.timescale);
+    const time = roundToMicroseconds(sampleTimeSeconds(sample));
     if (!indexByTime.has(time)) indexByTime.set(time, index);
   });
 
@@ -176,24 +171,10 @@ function toEncodedVideoChunk(sample: Sample): EncodedVideoChunk | null {
   if (!sample.data) return null;
   return new EncodedVideoChunk({
     type: sample.is_sync ? "key" : "delta",
-    timestamp: Math.round((sample.cts / sample.timescale) * 1e6),
-    duration: Math.round((sample.duration / sample.timescale) * 1e6),
+    timestamp: secondsToMicroseconds(sampleTimeSeconds(sample)),
+    duration: secondsToMicroseconds(sample.duration / sample.timescale),
     data: sample.data,
   });
-}
-
-function createCellCanvas(
-  width: number,
-  height: number,
-): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } | null {
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  return { canvas, ctx };
 }
 
 // The cell is already display-oriented, so at 90/270 the rotated frame's width and height
@@ -220,9 +201,8 @@ export function drawRotated(
   ctx.restore();
 }
 
-/** The wanted indices a frame at `timestampSeconds` fills, given the next unfilled one:
- * the first frame at or after a wanted timestamp is the one kept, so a sample the decoder
- * never emitted shifts none of the others. */
+/** The wanted indices a frame at `timestampSeconds` fills, given the next unfilled one, so a
+ * sample the decoder never emitted shifts none of the others. */
 export function planIndicesForFrame(
   wanted: number[],
   nextIndex: number,
@@ -237,23 +217,23 @@ export function planIndicesForFrame(
   return filled;
 }
 
-interface FrameCollector {
+export interface FrameCollector {
   consume(frame: VideoFrame): void;
   isComplete: () => boolean;
   completed: Promise<void>;
   settle(): Promise<ImageBitmap[]>;
+  discard(): Promise<void>;
 }
 
-// Keeps the first frame at or after each wanted timestamp, matching the seek-based
-// extractor's "seek to time T" semantics rather than true nearest-frame matching.
-function createFrameCollector(
+// First frame at or after each wanted timestamp, as in the seek-based path (not nearest-frame).
+export function createFrameCollector(
   wanted: number[],
   canvas: HTMLCanvasElement,
   ctx: CanvasRenderingContext2D,
   cellW: number,
   cellH: number,
   rotation: number,
-  onProgress?: ProgressCallback,
+  onProgress?: PortProgressCallback,
 ): FrameCollector {
   const images = new Array<ImageBitmap | undefined>(wanted.length);
   const pendingCaptures: Promise<void>[] = [];
@@ -267,13 +247,17 @@ function createFrameCollector(
 
   return {
     consume(frame) {
-      for (const capturedIndex of planIndicesForFrame(wanted, wantedIndex, frame.timestamp / 1e6)) {
+      for (const capturedIndex of planIndicesForFrame(
+        wanted,
+        wantedIndex,
+        frame.timestamp / MICROSECONDS_PER_SECOND,
+      )) {
         drawRotated(ctx, frame, cellW, cellH, rotation);
         pendingCaptures.push(
           createImageBitmap(canvas).then((image) => {
             images[capturedIndex] = image;
             capturedCount++;
-            onProgress?.(capturedCount, wanted.length);
+            onProgress?.({ done: capturedCount, total: wanted.length });
           }),
         );
         wantedIndex = capturedIndex + 1;
@@ -286,8 +270,19 @@ function createFrameCollector(
     isComplete: () => complete,
     completed,
     async settle() {
-      await Promise.all(pendingCaptures);
-      return contiguousPrefix(images);
+      const captures = await Promise.allSettled(pendingCaptures);
+      const failed = captures.find((capture) => capture.status === "rejected");
+      if (failed) {
+        closeImages(images);
+        throw failed.reason;
+      }
+      const prefix = contiguousPrefix(images);
+      closeImages(images.slice(prefix.length));
+      return prefix;
+    },
+    async discard() {
+      await Promise.allSettled(pendingCaptures);
+      closeImages(images);
     },
   };
 }
@@ -331,7 +326,7 @@ function* range(startIndex: number, endIndex: number): Generator<number> {
 function findDecodeStartIndex(samples: Sample[], startTime: number): number {
   let index = 0;
   for (const [i, sample] of samples.entries()) {
-    if (sample.is_sync && sample.cts / sample.timescale <= startTime) index = i;
+    if (sample.is_sync && sampleTimeSeconds(sample) <= startTime) index = i;
   }
   return index;
 }
@@ -389,28 +384,23 @@ async function decodeToImages(
   cellW: number,
   cellH: number,
   rotation: number,
-  onProgress?: ProgressCallback,
-): Promise<ImageBitmap[] | null> {
-  const cellCanvas = createCellCanvas(cellW, cellH);
-  if (!cellCanvas) return null;
-
-  const collector = createFrameCollector(
-    wanted,
-    cellCanvas.canvas,
-    cellCanvas.ctx,
-    cellW,
-    cellH,
-    rotation,
-    onProgress,
-  );
-  await decodeIntoCollector(decoderConfig, samples, indices, collector);
+  onProgress?: PortProgressCallback,
+): Promise<ImageBitmap[]> {
+  const { canvas, ctx } = createCellCanvas(cellW, cellH);
+  const collector = createFrameCollector(wanted, canvas, ctx, cellW, cellH, rotation, onProgress);
+  try {
+    await decodeIntoCollector(decoderConfig, samples, indices, collector);
+  } catch (err) {
+    await collector.discard();
+    throw err;
+  }
   return collector.settle();
 }
 
 export async function extractFramesWebCodecs(
   file: File,
   plan: RenderPlan,
-  onProgress?: ProgressCallback,
+  onProgress?: PortProgressCallback,
 ): Promise<ImageBitmap[] | null> {
   if (typeof VideoDecoder === "undefined") return null;
   const firstFrame = plan.frames[0];

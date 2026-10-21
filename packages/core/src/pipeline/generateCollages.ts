@@ -1,25 +1,34 @@
+import { Vid2GridError } from "../errors";
 import { validateCollagePlanRequest, type CollagePlanRequest } from "../plan/request";
 import type { VideoInfo } from "../probe/videoInfo";
-import { buildRenderPlan } from "../plan/buildRenderPlan";
+import { buildRenderPlanUnvalidated } from "../plan/buildRenderPlan";
+import { keyframesInRange } from "../plan/framePlanning";
 import type { RenderPlan, TranscriptWindow } from "../plan/renderPlan";
-import { cuesInWindow, cuesToVtt, type TranscriptCue } from "../transcript/vtt";
+import { cuesInWindow, cuesToVtt } from "../transcript/vtt";
 import type {
   ClockPort,
   CollagePorts,
+  Phase,
+  PortProgressCallback,
   ProbePort,
+  ProgressCallback,
   SheetRenderJob,
-  TranscribeStage,
-  TranscriptPort,
 } from "./ports";
 
-export type GenerationPhase = "extracting" | "rendering" | "transcribing";
+export type PhaseTimings = Partial<Record<Phase, number>>;
 
 export interface GenerationTimings {
-  extractMs: number;
-  renderMs: number;
-  transcribeMs?: number;
+  phaseMs: PhaseTimings;
   frameCount: number;
   sheetCount: number;
+}
+
+export type WarningCode =
+  "keyframes_unavailable" | "no_transcription_port" | "no_audio" | "transcription_failed";
+
+export interface Vid2GridWarning {
+  code: WarningCode;
+  message: string;
 }
 
 export interface GeneratedFile<TBinary> {
@@ -34,44 +43,102 @@ export interface GenerateCollagesResult<TBinary> {
 }
 
 export interface GenerateCollagesOptions {
-  onProgress?: (
-    phase: GenerationPhase,
-    done: number,
-    total: number,
-    transcribeStage?: TranscribeStage,
-  ) => void;
+  onProgress?: ProgressCallback;
   onTiming?: (timings: GenerationTimings) => void;
   // Non-fatal problems (a failed transcription, a video with no audio track)
   // are reported rather than thrown, so they never lose the rendered sheets.
-  onWarning?: (message: string) => void;
-  /** Supplying what the caller already read skips the probe. */
+  onWarning?: (warning: Vid2GridWarning) => void;
   videoInfo?: VideoInfo;
 }
 
-const systemClock: ClockPort = { now: () => Date.now() };
+const TRANSCRIPT_FAILED_PREFIX = "Transcript generation failed: ";
 
-const KEYFRAMES_UNAVAILABLE_WARNING = "Keyframes unavailable; sampled by target FPS instead";
+function keyframesUnavailable(reason?: string): Vid2GridWarning {
+  const detail = reason === undefined ? "" : ` (${reason})`;
+  return {
+    code: "keyframes_unavailable",
+    message: `Keyframes unavailable${detail}; sampled by target FPS instead`,
+  };
+}
+
+function errorReason(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+const NO_TRANSCRIPTION_PORT: Vid2GridWarning = {
+  code: "no_transcription_port",
+  message: `${TRANSCRIPT_FAILED_PREFIX}this host has no transcription support`,
+};
+
+interface PhaseTimer {
+  phaseMs: PhaseTimings;
+  time<T>(phase: Phase, step: () => Promise<T>): Promise<T>;
+}
+
+function phaseTimer(clock: ClockPort): PhaseTimer {
+  const phaseMs: PhaseTimings = {};
+  return {
+    phaseMs,
+    async time(phase, step) {
+      const start = clock.now();
+      const result = await step();
+      phaseMs[phase] = clock.now() - start;
+      return result;
+    },
+  };
+}
+
+function progressFor(options: GenerateCollagesOptions, phase: Phase): PortProgressCallback {
+  return (progress) => options.onProgress?.({ ...progress, phase });
+}
+
+interface ResolvedVideoInfo {
+  info: VideoInfo;
+  keyframeFailure?: string;
+}
 
 async function resolveVideoInfo<TSource>(
   source: TSource,
   request: CollagePlanRequest,
   probe: ProbePort<TSource>,
   supplied?: VideoInfo,
-): Promise<VideoInfo> {
-  const wantsKeyframes = request.keyframeSampling === true;
-  if (!supplied) return probe.probe(source, { keyframeTimestamps: wantsKeyframes });
-  if (!wantsKeyframes || supplied.keyframeTimestampsSeconds !== undefined) return supplied;
-
-  const probed = await probe.probe(source, { keyframeTimestamps: true });
-  return probed.keyframeTimestampsSeconds === undefined
-    ? supplied
-    : { ...supplied, keyframeTimestampsSeconds: probed.keyframeTimestampsSeconds };
+): Promise<ResolvedVideoInfo> {
+  const info = supplied ?? (await probe.probe(source));
+  if (request.keyframeSampling !== true || info.keyframeTimestampsSeconds !== undefined) {
+    return { info };
+  }
+  let keyframeTimestampsSeconds: number[] | undefined;
+  try {
+    keyframeTimestampsSeconds = await probe.readKeyframeTimes(source);
+  } catch (err) {
+    return { info, keyframeFailure: errorReason(err) };
+  }
+  return { info: keyframeTimestampsSeconds ? { ...info, keyframeTimestampsSeconds } : info };
 }
 
-function hasKeyframesInRange(request: CollagePlanRequest, info: VideoInfo): boolean {
-  return (info.keyframeTimestampsSeconds ?? []).some(
-    (timestamp) => timestamp >= request.startSeconds && timestamp <= request.endSeconds,
-  );
+// buildRenderPlan throws on keyframe mode without times, which is right for a host
+// calling it directly; here the old sampled behaviour is the better answer.
+function planWithKeyframeFallback(
+  request: CollagePlanRequest,
+  { info, keyframeFailure }: ResolvedVideoInfo,
+  onWarning?: (warning: Vid2GridWarning) => void,
+): RenderPlan {
+  const keyframes = info.keyframeTimestampsSeconds ?? [];
+  const inRange = keyframesInRange(keyframes, request.startSeconds, request.endSeconds);
+  if (request.keyframeSampling && inRange.length === 0) {
+    onWarning?.(keyframesUnavailable(keyframeFailure));
+    return buildRenderPlanUnvalidated({ ...request, keyframeSampling: false }, info);
+  }
+  return buildRenderPlanUnvalidated(request, info);
+}
+
+function jobsForCapturedSheets<TImage>(
+  plan: RenderPlan,
+  images: TImage[],
+): SheetRenderJob<TImage>[] {
+  return plan.sheets
+    .filter((sheet) => sheet.cells[0] !== undefined && sheet.cells[0].frameIndex < images.length)
+    .map((sheet) => ({ sheet, images: sheet.cells.map((cell) => images[cell.frameIndex]) }));
 }
 
 // A short capture drops the trailing sheets, so the last surviving window takes over
@@ -86,32 +153,58 @@ function sheetWindowsForJobs<TImage>(
   return [...windows.slice(0, -1), { ...last, endSeconds }];
 }
 
-async function generateTranscriptFiles<TSource, TBinary>(
-  source: TSource,
-  request: CollagePlanRequest,
-  windows: TranscriptWindow[],
-  transcriptPort: TranscriptPort<TSource>,
-  encodeText: (text: string, mimeType: string) => TBinary,
-  clock: ClockPort,
-  onProgress?: (done: number, total: number, stage: TranscribeStage) => void,
-  onTranscribeMs?: (ms: number) => void,
-): Promise<GeneratedFile<TBinary>[]> {
-  const transcribeStart = clock.now();
-  const cues: TranscriptCue[] = await transcriptPort.transcribe(
-    source,
-    request.startSeconds,
-    request.endSeconds,
-    (stage, percent) => onProgress?.(percent, 100, stage),
-  );
-  onTranscribeMs?.(clock.now() - transcribeStart);
+function transcriptionFailure(err: unknown): Vid2GridWarning {
+  const noAudio = err instanceof Vid2GridError && err.code === "no_audio";
+  return {
+    code: noAudio ? "no_audio" : "transcription_failed",
+    message: `${TRANSCRIPT_FAILED_PREFIX}${errorReason(err)}`,
+  };
+}
 
-  return windows.map((window) => ({
-    name: window.fileName,
-    data: encodeText(
-      cuesToVtt(cuesInWindow(cues, window.startSeconds, window.endSeconds)),
-      "text/vtt",
-    ),
-  }));
+interface TranscriptStep<TSource, TImage, TBinary> {
+  source: TSource;
+  request: CollagePlanRequest;
+  plan: RenderPlan;
+  jobs: SheetRenderJob<TImage>[];
+  ports: CollagePorts<TSource, TImage, TBinary>;
+  options: GenerateCollagesOptions;
+  timer: PhaseTimer;
+}
+
+async function generateTranscriptFiles<TSource, TImage, TBinary>(
+  step: TranscriptStep<TSource, TImage, TBinary>,
+): Promise<GeneratedFile<TBinary>[]> {
+  const { source, request, plan, ports, options } = step;
+  if (!request.transcript) return [];
+  const transcriptPort = ports.transcript;
+  if (!transcriptPort) {
+    options.onWarning?.(NO_TRANSCRIPTION_PORT);
+    return [];
+  }
+  const windows =
+    plan.combinedTranscript !== undefined
+      ? [plan.combinedTranscript]
+      : sheetWindowsForJobs(step.jobs, request.endSeconds);
+  try {
+    const cues = await step.timer.time("transcribing", () =>
+      transcriptPort.transcribe(
+        source,
+        request.startSeconds,
+        request.endSeconds,
+        progressFor(options, "transcribing"),
+      ),
+    );
+    return windows.map((window) => ({
+      name: window.fileName,
+      data: ports.text.encodeText(
+        cuesToVtt(cuesInWindow(cues, window.startSeconds, window.endSeconds)),
+        "text/vtt",
+      ),
+    }));
+  } catch (err) {
+    options.onWarning?.(transcriptionFailure(err));
+    return [];
+  }
 }
 
 export async function generateCollages<TSource, TImage, TBinary>(
@@ -121,69 +214,35 @@ export async function generateCollages<TSource, TImage, TBinary>(
   options: GenerateCollagesOptions = {},
 ): Promise<GenerateCollagesResult<TBinary>> {
   validateCollagePlanRequest(request);
-  const clock = ports.clock ?? systemClock;
+  const resolved = await resolveVideoInfo(source, request, ports.probe, options.videoInfo);
+  const plan = planWithKeyframeFallback(request, resolved, options.onWarning);
+  const timer = phaseTimer(ports.clock);
+  const reportTiming = (frameCount: number, sheetCount: number) =>
+    options.onTiming?.({ phaseMs: timer.phaseMs, frameCount, sheetCount });
 
-  const videoInfo = await resolveVideoInfo(source, request, ports.probe, options.videoInfo);
-
-  // buildRenderPlan throws on keyframe mode without times, which is right for a host
-  // calling it directly; here the old sampled behaviour is the better answer.
-  let planRequest = request;
-  if (request.keyframeSampling && !hasKeyframesInRange(request, videoInfo)) {
-    planRequest = { ...request, keyframeSampling: false };
-    options.onWarning?.(KEYFRAMES_UNAVAILABLE_WARNING);
-  }
-  const plan = buildRenderPlan(planRequest, videoInfo);
-
-  const extractStart = clock.now();
-  const images = await ports.frames.capture(source, plan, (done, total) =>
-    options.onProgress?.("extracting", done, total),
+  const images = await timer.time("extracting", () =>
+    ports.frames.capture(source, plan, progressFor(options, "extracting")),
   );
-  const extractMs = clock.now() - extractStart;
-  if (images.length === 0) return { plan, sheets: [], transcriptFiles: [] };
-
-  const jobs: SheetRenderJob<TImage>[] = plan.sheets
-    .filter((sheet) => sheet.cells[0] !== undefined && sheet.cells[0].frameIndex < images.length)
-    .map((sheet) => ({ sheet, images: sheet.cells.map((cell) => images[cell.frameIndex]) }));
-
-  const renderStart = clock.now();
-  const encodedSheets = await ports.sheets.encodeSheets(plan, jobs, (done, total) =>
-    options.onProgress?.("rendering", done, total),
-  );
-  const renderMs = clock.now() - renderStart;
-
-  let transcriptFiles: GeneratedFile<TBinary>[] = [];
-  let transcribeMs: number | undefined;
-  if (request.transcript) {
-    try {
-      const transcriptPort = ports.transcript;
-      if (!transcriptPort) throw new Error("this host has no transcription support");
-      const windows =
-        plan.combinedTranscript !== undefined
-          ? [plan.combinedTranscript]
-          : sheetWindowsForJobs(jobs, request.endSeconds);
-      transcriptFiles = await generateTranscriptFiles(
-        source,
-        request,
-        windows,
-        transcriptPort,
-        (text, mimeType) => ports.text.encodeText(text, mimeType),
-        clock,
-        (done, total, stage) => options.onProgress?.("transcribing", done, total, stage),
-        (ms) => (transcribeMs = ms),
-      );
-    } catch (err) {
-      options.onWarning?.(`Transcript generation failed: ${(err as Error).message}`);
-    }
+  if (images.length === 0) {
+    reportTiming(0, 0);
+    return { plan, sheets: [], transcriptFiles: [] };
   }
 
-  options.onTiming?.({
-    extractMs,
-    renderMs,
-    ...(transcribeMs !== undefined && { transcribeMs }),
-    frameCount: images.length,
-    sheetCount: jobs.length,
+  const jobs = jobsForCapturedSheets(plan, images);
+  const encodedSheets = await timer.time("rendering", () =>
+    ports.sheets.encode(plan, jobs, progressFor(options, "rendering")),
+  );
+  const transcriptFiles = await generateTranscriptFiles({
+    source,
+    request,
+    plan,
+    jobs,
+    ports,
+    options,
+    timer,
   });
 
+  reportTiming(images.length, jobs.length);
   return {
     plan,
     sheets: encodedSheets.flatMap((data, i) => {

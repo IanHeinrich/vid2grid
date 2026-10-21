@@ -1,31 +1,33 @@
 // The suggestions judge a full sheet's packing only: a partially-filled trailing sheet is
 // expected, so its leftover cells are deliberately ignored.
-import { computeOptimalGrid } from "../grid/gridMaths";
+import { Vid2GridError } from "../errors";
+import { computeOptimalGrid, type GridParams } from "../grid/gridMaths";
 import { planFrameTimestamps } from "./framePlanning";
 import type { VideoInfo } from "../probe/videoInfo";
-import type { CollagePlanRequest } from "./request";
+import { samplingRangeProblem, type CollagePlanRequest, type SamplingRange } from "./request";
+
+export const KEYFRAME_DENSE_PER_SECOND = 2;
+
+export interface FrameCountEstimateInput extends SamplingRange {
+  durationSeconds?: number;
+  frameCount?: number;
+}
 
 // Runs the planner's own sampling so the UI's estimate cannot drift from the plan.
 // The fields the sampling never reads are filled with placeholders.
-export function estimateExtractedFrameCount(
-  startSeconds: number,
-  endSeconds: number,
-  targetFps: number,
-  durationSeconds?: number,
-  frameCount?: number,
-): number {
-  if (endSeconds <= startSeconds || targetFps <= 0) return 0;
+export function estimateExtractedFrameCount(input: FrameCountEstimateInput): number {
+  if (samplingRangeProblem(input) !== undefined) return 0;
   const request: CollagePlanRequest = {
-    startSeconds,
-    endSeconds,
-    targetFps,
-    ...(frameCount !== undefined && { frameCount }),
+    startSeconds: input.startSeconds,
+    endSeconds: input.endSeconds,
+    targetFps: input.targetFps,
+    ...(input.frameCount !== undefined && { frameCount: input.frameCount }),
     framesPerGrid: 1,
     outputResolution: 1,
     jpegQuality: 1,
   };
   const info: VideoInfo = {
-    durationSeconds: durationSeconds ?? Infinity,
+    durationSeconds: input.durationSeconds ?? Infinity,
     width: 1,
     height: 1,
   };
@@ -37,18 +39,22 @@ export function estimateSheetCount(totalFrames: number, framesPerGrid: number): 
   return Math.ceil(totalFrames / framesPerGrid);
 }
 
-export function countGridPackingBlanks(
-  framesPerGrid: number,
-  sourceAspect: number,
-  outputResolution: number,
-  gutterPx: number,
-): number | null {
+export function keyframesPerSecond(keyframeCount: number, rangeSeconds: number): number {
+  return rangeSeconds > 0 ? keyframeCount / rangeSeconds : 0;
+}
+
+export function isKeyframeDense(keyframeCount: number, rangeSeconds: number): boolean {
+  return keyframesPerSecond(keyframeCount, rangeSeconds) >= KEYFRAME_DENSE_PER_SECOND;
+}
+
+export function countGridPackingBlanks(framesPerGrid: number, grid: GridParams): number | null {
   if (framesPerGrid <= 0) return null;
   try {
-    const layout = computeOptimalGrid(framesPerGrid, sourceAspect, outputResolution, gutterPx);
+    const layout = computeOptimalGrid(framesPerGrid, grid);
     return layout.cols * layout.rows - framesPerGrid;
-  } catch {
-    return null;
+  } catch (err) {
+    if (err instanceof Vid2GridError && err.code === "invalid_request") return null;
+    throw err;
   }
 }
 
@@ -58,15 +64,21 @@ export interface FramesPerGridSuggestion {
   sheets: number;
 }
 
-export function suggestFramesPerGrid(
-  totalFrames: number,
-  currentValue: number,
-  sourceAspect: number,
-  outputResolution: number,
-  gutterPx: number,
+export interface SuggestFramesPerGridInput {
+  totalFrames: number;
+  currentValue: number;
+  grid: GridParams;
+  searchRadius?: number;
+  maxSuggestions?: number;
+}
+
+export function suggestFramesPerGrid({
+  totalFrames,
+  currentValue,
+  grid,
   searchRadius = 12,
   maxSuggestions = 4,
-): FramesPerGridSuggestion[] {
+}: SuggestFramesPerGridInput): FramesPerGridSuggestion[] {
   if (totalFrames <= 0 || currentValue <= 0) return [];
 
   const candidates: FramesPerGridSuggestion[] = [];
@@ -74,17 +86,12 @@ export function suggestFramesPerGrid(
   const max = currentValue + searchRadius;
   for (let framesPerGrid = min; framesPerGrid <= max; framesPerGrid++) {
     if (framesPerGrid === currentValue) continue;
-    const wastedCells = countGridPackingBlanks(
-      framesPerGrid,
-      sourceAspect,
-      outputResolution,
-      gutterPx,
-    );
+    const wastedCells = countGridPackingBlanks(framesPerGrid, grid);
     if (wastedCells === null) continue;
     candidates.push({
       framesPerGrid,
       wastedCells,
-      sheets: Math.ceil(totalFrames / framesPerGrid),
+      sheets: estimateSheetCount(totalFrames, framesPerGrid),
     });
   }
 

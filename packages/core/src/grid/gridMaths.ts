@@ -1,4 +1,12 @@
+import { Vid2GridError } from "../errors";
+
 export const GUTTER_PX = 8;
+
+export interface GridParams {
+  sourceAspect: number;
+  outputResolution: number;
+  gutterPx: number;
+}
 
 export interface GridLayout {
   cols: number;
@@ -9,16 +17,35 @@ export interface GridLayout {
   offsetY: number;
 }
 
-export function computeOptimalGrid(
-  frameCount: number,
-  sourceAspect: number,
-  outputResolution: number,
+// Every cell has a gutter before it and the last has one after it too.
+function spanWithGutters(count: number, cellSize: number, gutterPx: number): number {
+  return count * cellSize + (count + 1) * gutterPx;
+}
+
+export function cellOrigin(
+  layout: GridLayout,
+  cellIndex: number,
   gutterPx: number,
-): GridLayout {
-  if (frameCount <= 0) throw new Error("frameCount must be positive");
-  if (sourceAspect <= 0) throw new Error("sourceAspect must be positive");
-  if (outputResolution <= 0) throw new Error("outputResolution must be positive");
-  if (gutterPx < 0) throw new Error("gutterPx must not be negative");
+): { x: number; y: number } {
+  const col = cellIndex % layout.cols;
+  const row = Math.floor(cellIndex / layout.cols);
+  return {
+    x: layout.offsetX + spanWithGutters(col, layout.cellW, gutterPx),
+    y: layout.offsetY + spanWithGutters(row, layout.cellH, gutterPx),
+  };
+}
+
+function assertGridInputs(frameCount: number, grid: GridParams): void {
+  const invalid = (message: string) => new Vid2GridError("invalid_request", message);
+  if (frameCount <= 0) throw invalid("frameCount must be positive");
+  if (grid.sourceAspect <= 0) throw invalid("sourceAspect must be positive");
+  if (grid.outputResolution <= 0) throw invalid("outputResolution must be positive");
+  if (grid.gutterPx < 0) throw invalid("gutterPx must not be negative");
+}
+
+export function computeOptimalGrid(frameCount: number, grid: GridParams): GridLayout {
+  assertGridInputs(frameCount, grid);
+  const { sourceAspect, outputResolution, gutterPx } = grid;
 
   let best: GridLayout | null = null;
   let bestArea = -1;
@@ -26,8 +53,8 @@ export function computeOptimalGrid(
   for (let cols = 1; cols <= frameCount; cols++) {
     const rows = Math.ceil(frameCount / cols);
 
-    const availW = outputResolution - (cols + 1) * gutterPx;
-    const availH = outputResolution - (rows + 1) * gutterPx;
+    const availW = outputResolution - spanWithGutters(cols, 0, gutterPx);
+    const availH = outputResolution - spanWithGutters(rows, 0, gutterPx);
     if (availW <= 0 || availH <= 0) continue;
 
     const cellWByWidth = availW / cols;
@@ -49,21 +76,22 @@ export function computeOptimalGrid(
       bestArea = area;
       const cellWInt = Math.trunc(cellW);
       const cellHInt = Math.trunc(cellH);
-      const gridW = cols * cellWInt + (cols + 1) * gutterPx;
-      const gridH = rows * cellHInt + (rows + 1) * gutterPx;
       best = {
         cols,
         rows,
         cellW: cellWInt,
         cellH: cellHInt,
-        offsetX: Math.floor((outputResolution - gridW) / 2),
-        offsetY: Math.floor((outputResolution - gridH) / 2),
+        offsetX: Math.floor((outputResolution - spanWithGutters(cols, cellWInt, gutterPx)) / 2),
+        offsetY: Math.floor((outputResolution - spanWithGutters(rows, cellHInt, gutterPx)) / 2),
       };
     }
   }
 
   if (best === null) {
-    throw new Error("output_resolution too small to fit frame_count frames with the given gutter");
+    throw new Vid2GridError(
+      "invalid_request",
+      "output_resolution too small to fit frame_count frames with the given gutter",
+    );
   }
   return best;
 }

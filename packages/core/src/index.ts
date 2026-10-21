@@ -1,13 +1,26 @@
-export { validateCollagePlanRequest, type CollagePlanRequest } from "./plan/request";
-export type { VideoInfo } from "./probe/videoInfo";
+export { Vid2GridError, type Vid2GridErrorCode } from "./errors";
+export { clamp, roundToTenth } from "./math";
 
-export { GUTTER_PX } from "./grid/gridMaths";
+export {
+  collagePlanRequestProblem,
+  validateCollagePlanRequest,
+  type CollagePlanRequest,
+  type SamplingRange,
+} from "./plan/request";
+export { sourceAspect, type VideoInfo } from "./probe/videoInfo";
+export { rotationFromMatrix } from "./probe/rotation";
+
+export { GUTTER_PX, type GridParams } from "./grid/gridMaths";
 export {
   countGridPackingBlanks,
   estimateExtractedFrameCount,
   estimateSheetCount,
+  isKeyframeDense,
+  keyframesPerSecond,
   suggestFramesPerGrid,
+  type FrameCountEstimateInput,
   type FramesPerGridSuggestion,
+  type SuggestFramesPerGridInput,
 } from "./plan/frameSuggestions";
 export { CUSTOM_OPTION, MODEL_RESOLUTION_PRESETS } from "./grid/modelProfiles";
 
@@ -17,7 +30,13 @@ export { paintSheetFromPlan } from "./render/paintSheetFromPlan";
 export { vttToPlainText, type TranscriptCue } from "./transcript/vtt";
 
 export { buildRenderPlan } from "./plan/buildRenderPlan";
-export { roundToMicroseconds } from "./plan/framePlanning";
+export {
+  keyframesInRange,
+  MICROSECONDS_PER_SECOND,
+  roundToMicroseconds,
+  secondsToMicroseconds,
+} from "./plan/framePlanning";
+export { buildGridsFolderName, formatClock } from "./presentation";
 export {
   RENDER_PLAN_VERSION,
   type PlannedCell,
@@ -35,13 +54,15 @@ export type {
   ClockPort,
   CollagePorts,
   FrameCapturePort,
-  ProbeOptions,
+  Phase,
+  PortProgress,
+  PortProgressCallback,
   ProbePort,
+  Progress,
   ProgressCallback,
   SheetEncoderPort,
   SheetRenderJob,
   TextPort,
-  TranscribeProgressCallback,
   TranscribeStage,
   TranscriptPort,
 } from "./pipeline/ports";
@@ -50,6 +71,8 @@ export {
   type GeneratedFile,
   type GenerateCollagesOptions,
   type GenerateCollagesResult,
-  type GenerationPhase,
   type GenerationTimings,
+  type PhaseTimings,
+  type Vid2GridWarning,
+  type WarningCode,
 } from "./pipeline/generateCollages";

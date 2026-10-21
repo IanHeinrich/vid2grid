@@ -1,4 +1,4 @@
-import { computeOptimalGrid, GUTTER_PX, type GridLayout } from "../grid/gridMaths";
+import { cellOrigin, computeOptimalGrid, GUTTER_PX, type GridLayout } from "../grid/gridMaths";
 import { combinedTranscriptFileName, gridFileName } from "./gridFileName";
 import {
   chooseTimestampFormat,
@@ -17,11 +17,14 @@ import {
   type RenderPlan,
   type RenderPlanStyle,
   type TimestampFormat,
+  type TranscriptWindow,
 } from "./renderPlan";
-import type { VideoInfo } from "../probe/videoInfo";
+import { sourceAspect, type VideoInfo } from "../probe/videoInfo";
 import { validateCollagePlanRequest, type CollagePlanRequest } from "./request";
 
 const WATERMARK_INSET_PX = 4;
+const STROKE_WIDTH_DIVISOR = 8;
+const MIN_STROKE_WIDTH_PX = 1;
 
 const STYLE: RenderPlanStyle = {
   background: "black",
@@ -31,49 +34,45 @@ const STYLE: RenderPlanStyle = {
   textBaseline: "top",
 };
 
+interface CellContext {
+  layout: GridLayout;
+  timestampFormat: TimestampFormat;
+  fontSizePx: number;
+  strokeWidthPx: number;
+}
+
 export function buildRenderPlan(request: CollagePlanRequest, info: VideoInfo): RenderPlan {
   validateCollagePlanRequest(request);
+  return buildRenderPlanUnvalidated(request, info);
+}
 
-  const layout = computeOptimalGrid(
-    request.framesPerGrid,
-    info.width / info.height,
-    request.outputResolution,
-    GUTTER_PX,
-  );
+export function buildRenderPlanUnvalidated(
+  request: CollagePlanRequest,
+  info: VideoInfo,
+): RenderPlan {
+  const layout = computeOptimalGrid(request.framesPerGrid, {
+    sourceAspect: sourceAspect(info),
+    outputResolution: request.outputResolution,
+    gutterPx: GUTTER_PX,
+  });
   const frames = planFrameTimestamps(request, info);
   const timestampFormat = chooseTimestampFormat(
     frames[frames.length - 1]?.timestampSeconds,
     request.targetFps,
   );
-
   const fontSizePx = Math.max(MIN_FONT_SIZE, Math.floor(layout.cellH / FONT_HEIGHT_DIVISOR));
-  const strokeWidthPx = Math.max(1, Math.floor(fontSizePx / 8));
+  const strokeWidthPx = Math.max(
+    MIN_STROKE_WIDTH_PX,
+    Math.floor(fontSizePx / STROKE_WIDTH_DIVISOR),
+  );
 
-  const sheets: PlannedSheet[] = [];
-  for (let first = 0; first < frames.length; first += request.framesPerGrid) {
-    const sheetIndex = sheets.length;
-    sheets.push({
-      sheetIndex,
-      fileName: gridFileName(sheetIndex),
-      cells: frames
-        .slice(first, first + request.framesPerGrid)
-        .map((frame, cellIndex) =>
-          planCell(frame, cellIndex, layout, timestampFormat, fontSizePx, strokeWidthPx),
-        ),
-    });
-  }
-
-  if (request.transcript?.scope === "per-sheet") {
-    const windows = computeSheetWindows(
-      sheets.map((sheet) => ({ timestamps: sheet.cells.map((cell) => cell.timestampSeconds) })),
-      request.startSeconds,
-      request.endSeconds,
-    );
-    sheets.forEach((sheet, i) => {
-      const window = windows[i];
-      if (window) sheet.transcript = window;
-    });
-  }
+  const sheets = planSheets(frames, request.framesPerGrid, {
+    layout,
+    timestampFormat,
+    fontSizePx,
+    strokeWidthPx,
+  });
+  if (request.transcript?.scope === "per-sheet") attachSheetWindows(sheets, request);
 
   return {
     version: RENDER_PLAN_VERSION,
@@ -90,30 +89,54 @@ export function buildRenderPlan(request: CollagePlanRequest, info: VideoInfo): R
     timestampFormat,
     frames,
     sheets,
-    ...(request.transcript?.scope === "combined"
-      ? {
-          combinedTranscript: {
-            startSeconds: roundToMicroseconds(request.startSeconds),
-            endSeconds: roundToMicroseconds(request.endSeconds),
-            fileName: combinedTranscriptFileName(),
-          },
-        }
-      : {}),
+    ...(request.transcript?.scope === "combined" && {
+      combinedTranscript: combinedTranscriptWindow(request),
+    }),
   };
 }
 
-function planCell(
-  frame: PlannedFrame,
-  cellIndex: number,
-  layout: GridLayout,
-  timestampFormat: TimestampFormat,
-  fontSizePx: number,
-  strokeWidthPx: number,
-): PlannedCell {
-  const col = cellIndex % layout.cols;
-  const row = Math.floor(cellIndex / layout.cols);
-  const x = layout.offsetX + GUTTER_PX + col * (layout.cellW + GUTTER_PX);
-  const y = layout.offsetY + GUTTER_PX + row * (layout.cellH + GUTTER_PX);
+function planSheets(
+  frames: PlannedFrame[],
+  framesPerGrid: number,
+  context: CellContext,
+): PlannedSheet[] {
+  const sheets: PlannedSheet[] = [];
+  for (let first = 0; first < frames.length; first += framesPerGrid) {
+    const sheetIndex = sheets.length;
+    sheets.push({
+      sheetIndex,
+      fileName: gridFileName(sheetIndex),
+      cells: frames
+        .slice(first, first + framesPerGrid)
+        .map((frame, cellIndex) => planCell(frame, cellIndex, context)),
+    });
+  }
+  return sheets;
+}
+
+function attachSheetWindows(sheets: PlannedSheet[], request: CollagePlanRequest): void {
+  const windows = computeSheetWindows(
+    sheets.map((sheet) => ({ timestamps: sheet.cells.map((cell) => cell.timestampSeconds) })),
+    request.startSeconds,
+    request.endSeconds,
+  );
+  sheets.forEach((sheet, i) => {
+    const window = windows[i];
+    if (window) sheet.transcript = window;
+  });
+}
+
+function combinedTranscriptWindow(request: CollagePlanRequest): TranscriptWindow {
+  return {
+    startSeconds: roundToMicroseconds(request.startSeconds),
+    endSeconds: roundToMicroseconds(request.endSeconds),
+    fileName: combinedTranscriptFileName(),
+  };
+}
+
+function planCell(frame: PlannedFrame, cellIndex: number, context: CellContext): PlannedCell {
+  const { layout, timestampFormat, fontSizePx, strokeWidthPx } = context;
+  const { x, y } = cellOrigin(layout, cellIndex, GUTTER_PX);
 
   const watermark = (
     text: string,

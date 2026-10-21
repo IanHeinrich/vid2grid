@@ -1,10 +1,15 @@
-export function gridFileName(index: number): string {
-  return `grid_${String(index + 1).padStart(4, "0")}.jpg`;
+const GRID_INDEX_DIGITS = 4;
+
+function gridBaseName(index: number): string {
+  return `grid_${String(index + 1).padStart(GRID_INDEX_DIGITS, "0")}`;
 }
 
-/** Same numbering as `gridFileName`, so `grid_0001.vtt` sits paired with `grid_0001.jpg`. */
+export function gridFileName(index: number): string {
+  return `${gridBaseName(index)}.jpg`;
+}
+
 export function gridTranscriptFileName(index: number): string {
-  return `grid_${String(index + 1).padStart(4, "0")}.vtt`;
+  return `${gridBaseName(index)}.vtt`;
 }
 
 export function combinedTranscriptFileName(): string {

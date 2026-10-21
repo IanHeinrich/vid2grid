@@ -1,4 +1,14 @@
-export function canvasToJpegBlob(canvas: HTMLCanvasElement, quality = 80): Promise<Blob> {
+export const DEFAULT_JPEG_QUALITY = 80;
+
+// Plans carry quality as a percentage; canvas encoders take a fraction.
+export function jpegQualityFraction(percent: number): number {
+  return percent / 100;
+}
+
+export function canvasToJpegBlob(
+  canvas: HTMLCanvasElement,
+  quality = DEFAULT_JPEG_QUALITY,
+): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob(
       (blob) => {
@@ -6,7 +16,7 @@ export function canvasToJpegBlob(canvas: HTMLCanvasElement, quality = 80): Promi
         else reject(new Error("Failed to encode JPEG"));
       },
       "image/jpeg",
-      quality / 100,
+      jpegQualityFraction(quality),
     );
   });
 }

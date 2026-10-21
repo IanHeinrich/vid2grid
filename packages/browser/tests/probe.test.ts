@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { probeVideo } from "../src/probe/probe";
+import { probeVideo, readKeyframeTimes } from "../src/probe/probe";
 
 // The demuxing half of the probe is the extractor's; what matters here is whether
 // probeVideo reaches for it at all.
@@ -59,9 +59,7 @@ describe("probeVideo", () => {
     // applied any container rotation, so a 90/270 clip arrives swapped.
     stubVideo({ duration: 12.5, videoWidth: 352, videoHeight: 640 });
 
-    expect(
-      await probeVideo(videoFile("portrait.webm", "video/webm"), { keyframeTimestamps: false }),
-    ).toEqual({
+    expect(await probeVideo(videoFile("portrait.webm", "video/webm"))).toEqual({
       durationSeconds: 12.5,
       width: 352,
       height: 640,
@@ -71,60 +69,49 @@ describe("probeVideo", () => {
   it("reports a duration of 0 when the container has none", async () => {
     stubVideo({ duration: NaN, videoWidth: 640, videoHeight: 480 });
 
-    expect(
-      await probeVideo(videoFile("stream.webm", "video/webm"), { keyframeTimestamps: false }),
-    ).toMatchObject({ durationSeconds: 0 });
+    expect(await probeVideo(videoFile("stream.webm", "video/webm"))).toMatchObject({
+      durationSeconds: 0,
+    });
   });
 
-  it("leaves the demuxer alone when keyframe timestamps weren't asked for", async () => {
+  it("leaves the demuxer alone", async () => {
     stubVideo({ duration: 3, videoWidth: 640, videoHeight: 480 });
 
-    const info = await probeVideo(videoFile("clip.mp4", "video/mp4"), {
-      keyframeTimestamps: false,
-    });
+    const info = await probeVideo(videoFile("clip.mp4", "video/mp4"));
 
     expect(readKeyframeTimestamps).not.toHaveBeenCalled();
-    expect("keyframeTimestampsSeconds" in info).toBe(false);
-  });
-
-  it("reports the demuxed keyframe timestamps when they were asked for", async () => {
-    stubVideo({ duration: 3, videoWidth: 640, videoHeight: 480 });
-
-    const info = await probeVideo(videoFile("clip.mp4", "video/mp4"), {
-      keyframeTimestamps: true,
-    });
-
-    expect(readKeyframeTimestamps).toHaveBeenCalledTimes(1);
-    expect(info.keyframeTimestampsSeconds).toEqual([0, 1, 2]);
-  });
-
-  it("omits keyframe timestamps when the file isn't demuxable here", async () => {
-    stubVideo({ duration: 3, videoWidth: 640, videoHeight: 480 });
-
-    const info = await probeVideo(videoFile("clip.webm", "video/webm"), {
-      keyframeTimestamps: true,
-    });
-
-    expect(readKeyframeTimestamps).not.toHaveBeenCalled();
-    expect("keyframeTimestampsSeconds" in info).toBe(false);
-  });
-
-  it("omits keyframe timestamps rather than failing when the demuxer throws", async () => {
-    stubVideo({ duration: 3, videoWidth: 640, videoHeight: 480 });
-    readKeyframeTimestamps.mockRejectedValue(new Error("chunk load failed"));
-
-    const info = await probeVideo(videoFile("clip.mp4", "video/mp4"), {
-      keyframeTimestamps: true,
-    });
-
     expect("keyframeTimestampsSeconds" in info).toBe(false);
   });
 
   it("rejects when the element fails to load", async () => {
     stubVideo("error");
 
-    await expect(
-      probeVideo(videoFile("broken.mp4", "video/mp4"), { keyframeTimestamps: false }),
-    ).rejects.toThrowError(/loadedmetadata/);
+    await expect(probeVideo(videoFile("broken.mp4", "video/mp4"))).rejects.toThrowError(
+      /loadedmetadata/,
+    );
+  });
+});
+
+describe("readKeyframeTimes", () => {
+  it("reports the demuxed keyframe timestamps", async () => {
+    expect(await readKeyframeTimes(videoFile("clip.mp4", "video/mp4"))).toEqual([0, 1, 2]);
+  });
+
+  it("is undefined when the file isn't demuxable here", async () => {
+    expect(await readKeyframeTimes(videoFile("clip.webm", "video/webm"))).toBeUndefined();
+    expect(readKeyframeTimestamps).not.toHaveBeenCalled();
+  });
+
+  it("is undefined when the demuxer declines the file", async () => {
+    readKeyframeTimestamps.mockResolvedValue(null);
+
+    expect(await readKeyframeTimes(videoFile("clip.mp4", "video/mp4"))).toBeUndefined();
+  });
+
+  it("rejects with the demuxer's own error when it throws", async () => {
+    const demuxFailure = new Error("chunk load failed");
+    readKeyframeTimestamps.mockRejectedValue(demuxFailure);
+
+    await expect(readKeyframeTimes(videoFile("clip.mp4", "video/mp4"))).rejects.toBe(demuxFailure);
   });
 });

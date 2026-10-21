@@ -1,19 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { drawRotated, rotationFromMatrix } from "../src/capture/webcodecsExtractor";
-
-// 16.16 fixed-point unit, as stored in the tkhd display matrix.
-const FP = 65536;
-
-describe("rotationFromMatrix", () => {
-  it("reads the four canonical tkhd display rotations", () => {
-    expect(rotationFromMatrix([FP, 0, 0, 0, FP, 0, 0, 0, 1 << 30])).toBe(0);
-    expect(rotationFromMatrix([0, FP, 0, -FP, 0, 0, 0, 0, 1 << 30])).toBe(90);
-    expect(rotationFromMatrix([-FP, 0, 0, 0, -FP, 0, 0, 0, 1 << 30])).toBe(180);
-    expect(rotationFromMatrix([0, -FP, 0, FP, 0, 0, 0, 0, 1 << 30])).toBe(270);
-  });
-
-  // The 90-degree matrix above is the one a real phone clip carried: coded 640x352, displayed 352x640.
-});
+import { drawRotated } from "../src/capture/webcodecsExtractor";
 
 function canvasContext(): CanvasRenderingContext2D {
   const canvas = document.createElement("canvas");
