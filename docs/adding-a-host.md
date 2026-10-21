@@ -36,7 +36,13 @@ Transcription is optional. A host that offers it fills the
 `TranscriptPort` in
 [`pipeline/ports.ts`](../packages/core/src/pipeline/ports.ts) and writes the
 cues inside each sheet's `transcript` window; one that does not just leaves
-`transcript` out of the request.
+`transcript` out of the request. Core's
+[`transcript/`](../packages/core/src/transcript/) does the rest:
+`cuesFromSegments` turns a recogniser's segments into cues on the video's
+timeline, `transcriptFiles(plan, renderedSheetCount, endSeconds, cues)` gives
+each `.vtt` file's name and text, and `transcriptionFailedWarning` and
+`noTranscriptionPortWarning` (`NO_TRANSCRIPTION_PORT` in TypeScript) are the
+warnings to report instead of failing the run. All four are in the embed.
 
 ## Two ways to get the planner
 

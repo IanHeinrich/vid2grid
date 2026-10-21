@@ -4,8 +4,15 @@ import { resolveKeyframeSampling } from "./plan/keyframeFallback";
 import { optionSpecsFor, requestFromOptions } from "./plan/options";
 import { RENDER_PLAN_VERSION } from "./plan/renderPlan";
 import { collagePlanRequestProblem, validateCollagePlanRequest } from "./plan/request";
+import { buildGridsFolderName } from "./presentation";
 import { displaySize, normalizeRotationClockwise } from "./probe/displaySize";
 import { sheetDrawOps } from "./render/drawOps";
+import { cuesFromSegments } from "./transcript/segments";
+import {
+  NO_TRANSCRIPTION_PORT,
+  transcriptFiles,
+  transcriptionFailedWarning,
+} from "./transcript/transcriptFiles";
 
 export interface EmbeddedCore {
   call(name: string, argsJson: string): string;
@@ -25,6 +32,15 @@ const FUNCTIONS = new Map<string, (...args: never[]) => unknown>([
   ["normalizeRotationClockwise", normalizeRotationClockwise],
   ["optionSpecs", optionSpecsFor],
   ["requestFromOptions", requestFromOptions],
+  ["cuesFromSegments", cuesFromSegments],
+  ["transcriptFiles", transcriptFiles],
+  ["transcriptionFailedWarning", transcriptionFailedWarning],
+  ["noTranscriptionPortWarning", () => NO_TRANSCRIPTION_PORT],
+  [
+    "gridsFolderName",
+    (sourceFileName: string, nowIso: string) =>
+      buildGridsFolderName(sourceFileName, new Date(nowIso)),
+  ],
   ["version", () => RENDER_PLAN_VERSION],
 ]);
 

@@ -6,6 +6,7 @@ import re
 import threading
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from fractions import Fraction
 from importlib.resources import files
 from typing import Literal, NotRequired, TypedDict, cast
@@ -18,6 +19,8 @@ from .contract import (
     RenderPlan,
     RenderPlanJson,
     SizeJson,
+    TranscriptCue,
+    TranscriptCueJson,
     VideoInfo,
     WatermarkAnchor,
 )
@@ -116,6 +119,23 @@ class KeyframeSampling:
     warning: str | None = None
 
 
+class TranscriptSegmentJson(TypedDict):
+    start: float
+    end: float | None
+    text: str
+
+
+class TranscriptFileJson(TypedDict):
+    fileName: str
+    vtt: str
+
+
+@dataclass(frozen=True, slots=True)
+class TranscriptFile:
+    file_name: str
+    vtt: str
+
+
 class _Success(TypedDict):
     ok: Literal[True]
     value: object
@@ -210,6 +230,11 @@ def normalize_rotation_clockwise(ccw_degrees: float) -> int:
     return cast("int", call("normalizeRotationClockwise", ccw_degrees))
 
 
+def grids_folder_name(source_file_name: str, now: datetime) -> str:
+    iso = now.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    return cast("str", call("gridsFolderName", source_file_name, iso))
+
+
 def option_specs(capabilities: Sequence[HostCapability] = ()) -> list[OptionSpec]:
     return cast("list[OptionSpec]", call("optionSpecs", list(capabilities)))
 
@@ -221,6 +246,41 @@ def request_from_options(
     given = {name: value for name, value in values.items() if value is not None}
     request = call("requestFromOptions", given, info.to_dict(), list(capabilities))
     return CollagePlanRequest.from_dict(cast("CollagePlanRequestJson", request))
+
+
+def cues_from_segments(
+    segments: Sequence[TranscriptSegmentJson], offset_seconds: float
+) -> list[TranscriptCue]:
+    cues = cast("list[TranscriptCueJson]", call("cuesFromSegments", list(segments), offset_seconds))
+    return [TranscriptCue.from_dict(cue) for cue in cues]
+
+
+def transcript_files(
+    plan: RenderPlan,
+    rendered_sheet_count: int,
+    end_seconds: float,
+    cues: Sequence[TranscriptCue],
+) -> list[TranscriptFile]:
+    files = cast(
+        "list[TranscriptFileJson]",
+        call(
+            "transcriptFiles",
+            plan.to_dict(),
+            rendered_sheet_count,
+            end_seconds,
+            [cue.to_dict() for cue in cues],
+        ),
+    )
+    return [TranscriptFile(file_name=file["fileName"], vtt=file["vtt"]) for file in files]
+
+
+def transcription_failed_warning(reason: str, error_code: Vid2GridErrorCode | None = None) -> str:
+    args: tuple[object, ...] = (reason,) if error_code is None else (reason, error_code)
+    return cast("WarningJson", call("transcriptionFailedWarning", *args))["message"]
+
+
+def no_transcription_port_warning() -> str:
+    return cast("WarningJson", call("noTranscriptionPortWarning"))["message"]
 
 
 def _engine() -> MiniRacer:

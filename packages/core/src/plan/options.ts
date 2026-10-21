@@ -133,14 +133,14 @@ export const OPTION_SPECS: readonly OptionSpec[] = [
     flag: "max-keyframes",
     type: "integer",
     exclusiveMin: 0,
-    help: "with --keyframes, thin the keyframes evenly to at most this many",
+    help: "with keyframe sampling, thin the keyframes evenly to at most this many",
   },
   {
     name: "frameCount",
     flag: "frame-count",
     type: "integer",
     exclusiveMin: 0,
-    help: "exactly this many evenly spaced frames, in place of --fps",
+    help: "exactly this many evenly spaced frames, in place of the fps",
   },
   {
     name: "transcript",

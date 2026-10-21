@@ -6,7 +6,7 @@ import {
   type AutomaticSpeechRecognitionPipeline,
   type WhisperTokenizer,
 } from "@huggingface/transformers";
-import type { TranscribeStage } from "@vid2grid/core";
+import type { TranscribeStage, TranscriptSegment } from "@vid2grid/core";
 import { errorMessage } from "../shared/errors";
 import { getWorkerScope } from "../shared/workerScope";
 
@@ -18,15 +18,9 @@ export interface TranscribeRequest {
   samples: Float32Array;
 }
 
-export interface TranscriptionChunk {
-  text: string;
-  start: number;
-  end: number;
-}
-
 export type TranscribeWorkerMessage =
   | { type: "progress"; stage: TranscribeStage; percent: number }
-  | { type: "result"; chunks: TranscriptionChunk[] }
+  | { type: "result"; segments: TranscriptSegment[] }
   | { type: "error"; message: string };
 
 const scope = getWorkerScope<TranscribeRequest, TranscribeWorkerMessage>();
@@ -95,12 +89,12 @@ scope.onmessage = async (event) => {
 
     const result = Array.isArray(output) ? output[0] : output;
     if (!result) throw new Error("Transcriber returned no result");
-    const chunks: TranscriptionChunk[] = (result.chunks ?? []).map((chunk) => ({
-      text: chunk.text.trim(),
+    const segments: TranscriptSegment[] = (result.chunks ?? []).map((chunk) => ({
+      text: chunk.text,
       start: chunk.timestamp[0],
-      end: chunk.timestamp[1] ?? chunk.timestamp[0],
+      end: chunk.timestamp[1] ?? null,
     }));
-    scope.postMessage({ type: "result", chunks });
+    scope.postMessage({ type: "result", segments });
   } catch (err) {
     scope.postMessage({ type: "error", message: errorMessage(err) });
   }

@@ -232,9 +232,14 @@ sampled fallback and its warning, as `generateCollages` applies it),
 `displaySize`, `normalizeRotationClockwise`, `optionSpecs` (the options a CLI
 or tool exposes for the host capabilities it passes, with their flags and
 defaults), `requestFromOptions` (option values, a `VideoInfo` and the same
-capabilities to a request, defaults filled in) and `version`. An optional
-request or info field (`frameCount`, `keyframeTimestampsSeconds` and the like)
-is left out when unset, never sent as `null`, and so is
+capabilities to a request, defaults filled in), `cuesFromSegments` (a speech
+model's segments to transcript cues), `transcriptFiles` (the plan, the rendered
+sheet count, the end time and the cues to each `.vtt` file's name and text),
+`transcriptionFailedWarning`, `noTranscriptionPortWarning`, `gridsFolderName`
+(a video's file name and an ISO time to the web app's download folder name)
+and `version`. An optional request or info field (`frameCount`,
+`keyframeTimestampsSeconds` and the like) is left out when unset, never sent as
+`null`, and so is
 `resolveKeyframeSampling`'s optional third argument, the reason keyframes could
 not be read. The one `null` is `displaySize`'s third argument, which every call
 passes: `null` for a video with no sample aspect ratio, an object with

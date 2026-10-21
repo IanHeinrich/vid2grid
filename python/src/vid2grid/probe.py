@@ -6,19 +6,20 @@ from pathlib import Path
 
 import av
 from av.container import InputContainer
+from av.stream import Stream
 from av.video.stream import VideoStream
 
 from ._core import display_size as display_size
 from ._core import normalize_rotation_clockwise as normalize_rotation_clockwise
 from .contract import VideoInfo
-from .errors import InternalError
+from .errors import InternalError, InvalidRequestError
 
 _log = logging.getLogger(__name__)
 
 
 def probe_video(path: str | Path, *, keyframes: bool = False) -> VideoInfo:
     with av.open(str(path)) as container:
-        stream = container.streams.video[0]
+        stream = _video_stream(container, path)
         rotation = normalize_rotation_clockwise(_display_rotation_ccw(container, stream))
         width, height = display_size(
             stream.codec_context.width,
@@ -48,18 +49,24 @@ def probe(path: str | Path, *, keyframes: bool = False) -> VideoInfo:
 
 def read_keyframe_timestamps(path: str | Path) -> tuple[float, ...]:
     with av.open(str(path)) as container:
-        return _keyframe_timestamps(container, container.streams.video[0])
+        return _keyframe_timestamps(container, _video_stream(container, path))
 
 
-def stream_time_base(stream: VideoStream) -> Fraction:
+def stream_time_base(stream: Stream) -> Fraction:
     if stream.time_base is None:
-        raise InternalError("the video stream has no time base")
+        raise InternalError(f"the {stream.type} stream has no time base")
     return Fraction(stream.time_base.numerator, stream.time_base.denominator)
 
 
 # Per-frame calls into V8 would be slow, so core's rule, floor(x * 1e6 + 0.5), is mirrored here.
 def round_to_microseconds(seconds: float) -> float:
     return math.floor(seconds * 1e6 + 0.5) / 1e6
+
+
+def _video_stream(container: InputContainer, path: str | Path) -> VideoStream:
+    if not container.streams.video:
+        raise InvalidRequestError(f"{path} has no video stream")
+    return container.streams.video[0]
 
 
 def _sample_aspect_ratio(stream: VideoStream) -> Fraction | None:

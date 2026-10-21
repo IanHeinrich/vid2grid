@@ -79,6 +79,12 @@ class PlannedCellJson(TypedDict):
     watermarks: list[PlannedWatermarkJson]
 
 
+class TranscriptCueJson(TypedDict):
+    start: float
+    end: float
+    text: str
+
+
 class TranscriptWindowJson(TypedDict):
     startSeconds: float
     endSeconds: float
@@ -331,6 +337,20 @@ class PlannedCell:
             height=data["height"],
             watermarks=tuple(PlannedWatermark.from_dict(w) for w in data["watermarks"]),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class TranscriptCue:
+    start: float
+    end: float
+    text: str
+
+    def to_dict(self) -> TranscriptCueJson:
+        return {"start": self.start, "end": self.end, "text": self.text}
+
+    @classmethod
+    def from_dict(cls, data: TranscriptCueJson) -> "TranscriptCue":
+        return cls(start=float(data["start"]), end=float(data["end"]), text=data["text"])
 
 
 @dataclass(frozen=True, slots=True)
