@@ -179,7 +179,7 @@ export async function generateCollages<TSource, TImage, TBinary>(
     options.onTiming?.({ phaseMs: timer.phaseMs, frameCount, sheetCount });
 
   const images = await timer.time("extracting", () =>
-    ports.frames.capture(source, plan, progressFor(options, "extracting")),
+    ports.frames.capture(source, plan, resolved.info, progressFor(options, "extracting")),
   );
   if (images.length === 0) {
     reportTiming(0, 0);

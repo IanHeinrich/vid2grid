@@ -8,8 +8,9 @@ call the output files.
 `packages/core` is the only place that decides any of it
 ([`plan/buildRenderPlan.ts`](../packages/core/src/plan/buildRenderPlan.ts),
 typed in [`plan/renderPlan.ts`](../packages/core/src/plan/renderPlan.ts)). An
-**executor** (the browser one in `packages/browser`, the headless one in
-`python/`) only decodes, scales, pastes, draws text and encodes. That keeps
+**executor** (the browser one in `packages/browser`, the Node.js one in
+`packages/node`, the headless Python one in `python/`) only decodes, scales,
+pastes, draws text and encodes. That keeps
 the policy in one implementation and one set of tests, whatever language the
 host is written in: `python/` does not port the planner, it runs core's own
 code (see [Hosts without JavaScript](#hosts-without-javascript)).
@@ -170,7 +171,8 @@ in the plan; hosts must not recompute them.
 1. Decode the source and capture one image per `plan.frames` entry, in order:
    the first frame **at or after** each `timestampSeconds`. The frame's time
    and the planned time are both rounded to microseconds with
-   `floor(t * 1e6 + 0.5) / 1e6` before they are compared. Returning fewer
+   `floor(t * 1e6 + 0.5) / 1e6` before they are compared. A frame whose time
+   is not a finite number (no pts) fills no planned frame. Returning fewer
    images than planned is allowed (the stream ended early); more is not.
 2. Turn each captured frame clockwise by the video's display rotation (0, 90,
    180 or 270; `normalizeRotationClockwise` converts the counter-clockwise
@@ -209,13 +211,24 @@ JavaScript host by running the same draw ops on a canvas
 (`fixtures/render-plans/` pins steps 1-6's inputs, `fixtures/draw-ops/` step
 3's ops, and `fixtures/frames/` step 1's choice of source frame), and
 `generateCollages` drives the whole sequence through the ports in
-[`pipeline/ports.ts`](../packages/core/src/pipeline/ports.ts).
+[`pipeline/ports.ts`](../packages/core/src/pipeline/ports.ts). Step 1's rule is
+core's too: `createFrameMatcher` decides which planned frames each decoded frame
+fills, and `isKeyframePlan` decides when a capture may decode keyframes alone.
+The capture port receives the `VideoInfo` the plan was built from for that
+decision.
 
 **One documented deviation.** The browser's `<video>` fallback (used when
 WebCodecs or the ISO-BMFF demuxer cannot handle the file) sets `currentTime`,
 which seeks to the _nearest_ frame rather than the first frame at or after the
-timestamp. The WebCodecs path and the Python executor both implement the
-at-or-after rule.
+timestamp. The browser's WebCodecs path and the Node executor match frames with
+`createFrameMatcher` and decide keyframe decodes with `isKeyframePlan`; the
+Python executor calls `isKeyframePlan` through the embedded core and applies
+the same at-or-after rule in its own per-frame loop.
+
+**One known limitation.** A container whose seek lands after the target, as
+ffmpeg's MPEG-TS demuxer can, makes the hosts that seek through ffmpeg (Node and
+Python) pick their first frames late, because the frames before the landing
+point are never decoded.
 
 ## Hosts without JavaScript
 
@@ -229,20 +242,22 @@ envelope: `{"ok": true, "value": ...}`, or `{"ok": false, "code": ...,
 `internal`. The functions are `buildRenderPlan`, `collagePlanRequestProblem`,
 `validateCollagePlanRequest`, `sheetDrawOps`, `resolveKeyframeSampling` (the
 sampled fallback and its warning, as `generateCollages` applies it),
-`displaySize`, `normalizeRotationClockwise`, `optionSpecs` (the options a CLI
-or tool exposes for the host capabilities it passes, with their flags and
-defaults), `requestFromOptions` (option values, a `VideoInfo` and the same
-capabilities to a request, defaults filled in), `cuesFromSegments` (a speech
-model's segments to transcript cues), `transcriptFiles` (the plan, the rendered
-sheet count, the end time and the cues to each `.vtt` file's name and text),
+`displaySize`, `normalizeRotationClockwise`, `isKeyframePlan` (a plan, or an
+object holding just its `frames`, and the keyframe times, to whether a capture
+may decode keyframes alone), `optionSpecs` (the options a CLI or tool exposes
+for the host capabilities it passes, with their flags and defaults),
+`requestFromOptions` (option values, a `VideoInfo` and the same capabilities to
+a request, defaults filled in), `cuesFromSegments` (a speech model's segments
+to transcript cues), `transcriptFiles` (the plan, the rendered sheet count, the
+end time and the cues to each `.vtt` file's name and text),
 `transcriptionFailedWarning`, `noTranscriptionPortWarning`, `gridsFolderName`
 (a video's file name and an ISO time to the web app's download folder name)
 and `version`. An optional request or info field (`frameCount`,
 `keyframeTimestampsSeconds` and the like) is left out when unset, never sent as
-`null`, and so is
-`resolveKeyframeSampling`'s optional third argument, the reason keyframes could
-not be read. The one `null` is `displaySize`'s third argument, which every call
-passes: `null` for a video with no sample aspect ratio, an object with
+`null`, and so are `resolveKeyframeSampling`'s optional third argument, the
+reason keyframes could not be read, and `isKeyframePlan`'s keyframe times when
+there are none. The one `null` is `displaySize`'s third argument, which every
+call passes: `null` for a video with no sample aspect ratio, an object with
 `numerator` and `denominator` otherwise.
 
 `python/` loads that script once per process into an embedded V8

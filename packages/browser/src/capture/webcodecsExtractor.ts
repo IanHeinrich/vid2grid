@@ -12,6 +12,8 @@ import {
   type VisualSampleEntry,
 } from "mp4box";
 import {
+  createFrameMatcher,
+  isKeyframePlan,
   keyframesInRange,
   MICROSECONDS_PER_SECOND,
   roundToMicroseconds,
@@ -145,21 +147,19 @@ export function selectKeyframeSampleIndices(
   samples: Sample[],
   frames: PlannedFrame[],
 ): number[] | null {
-  if (frames.length === 0) return null;
+  if (frames.length === 0 || !isKeyframePlan({ frames }, keyframeTimestampsFromSamples(samples))) {
+    return null;
+  }
   const indexByTime = new Map<number, number>();
   samples.forEach((sample, index) => {
     if (!sample.is_sync) return;
     const time = roundToMicroseconds(sampleTimeSeconds(sample));
     if (!indexByTime.has(time)) indexByTime.set(time, index);
   });
-
-  const indices: number[] = [];
-  for (const frame of frames) {
-    const index = indexByTime.get(frame.timestampSeconds);
-    if (index === undefined) return null;
-    indices.push(index);
-  }
-  return indices;
+  return frames.flatMap((frame) => {
+    const index = indexByTime.get(roundToMicroseconds(frame.timestampSeconds));
+    return index === undefined ? [] : [index];
+  });
 }
 
 // A wrapper because TS otherwise carries stale "state !== closed" narrowing across an `await`.
@@ -201,22 +201,6 @@ export function drawRotated(
   ctx.restore();
 }
 
-/** The wanted indices a frame at `timestampSeconds` fills, given the next unfilled one, so a
- * sample the decoder never emitted shifts none of the others. */
-export function planIndicesForFrame(
-  wanted: number[],
-  nextIndex: number,
-  timestampSeconds: number,
-): number[] {
-  const filled: number[] = [];
-  for (let i = nextIndex; i < wanted.length; i++) {
-    const target = wanted[i];
-    if (target === undefined || timestampSeconds < target) break;
-    filled.push(i);
-  }
-  return filled;
-}
-
 export interface FrameCollector {
   consume(frame: VideoFrame): void;
   isComplete: () => boolean;
@@ -237,7 +221,7 @@ export function createFrameCollector(
 ): FrameCollector {
   const images = new Array<ImageBitmap | undefined>(wanted.length);
   const pendingCaptures: Promise<void>[] = [];
-  let wantedIndex = 0;
+  const matcher = createFrameMatcher(wanted);
   let capturedCount = 0;
   let complete = false;
   let markComplete!: () => void;
@@ -247,11 +231,7 @@ export function createFrameCollector(
 
   return {
     consume(frame) {
-      for (const capturedIndex of planIndicesForFrame(
-        wanted,
-        wantedIndex,
-        frame.timestamp / MICROSECONDS_PER_SECOND,
-      )) {
+      for (const capturedIndex of matcher.fill(frame.timestamp / MICROSECONDS_PER_SECOND)) {
         drawRotated(ctx, frame, cellW, cellH, rotation);
         pendingCaptures.push(
           createImageBitmap(canvas).then((image) => {
@@ -260,9 +240,8 @@ export function createFrameCollector(
             onProgress?.({ done: capturedCount, total: wanted.length });
           }),
         );
-        wantedIndex = capturedIndex + 1;
       }
-      if (wantedIndex >= wanted.length && !complete) {
+      if (matcher.done && !complete) {
         complete = true;
         markComplete();
       }

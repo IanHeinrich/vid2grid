@@ -18,7 +18,11 @@ async function transcribeVideoAudio(
 export function createBrowserPorts(): CollagePorts<File, ImageBitmap, Blob> {
   return {
     probe: { probe: probeVideo, readKeyframeTimes },
-    frames: { capture: extractFramesAuto },
+    // The WebCodecs path decides a keyframe decode from the demuxed sync samples, the same
+    // times readKeyframeTimes reports, so it also catches a sampled plan that hit only keyframes.
+    frames: {
+      capture: (file, plan, _info, onProgress) => extractFramesAuto(file, plan, onProgress),
+    },
     sheets: { encode: renderSheetsToBlobs },
     text: { encodeText: (text, mimeType) => new Blob([text], { type: mimeType }) },
     transcript: { transcribe: transcribeVideoAudio },

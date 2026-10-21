@@ -65,6 +65,7 @@ export {
   type TranscriptOption,
 } from "./plan/options";
 export { resolveKeyframeSampling, type KeyframeSamplingDecision } from "./plan/keyframeFallback";
+export { createFrameMatcher, isKeyframePlan, type FrameMatcher } from "./plan/frameMatching";
 export {
   keyframesInRange,
   MICROSECONDS_PER_SECOND,

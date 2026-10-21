@@ -236,6 +236,15 @@ def grids_folder_name(source_file_name: str, now: datetime) -> str:
     return cast("str", call("gridsFolderName", source_file_name, iso))
 
 
+# Core's own rule for when a capture may decode keyframes alone. Unset keyframe times are
+# left out of the call rather than sent as null.
+def is_keyframe_plan(plan: RenderPlan, keyframe_timestamps_seconds: Sequence[float] | None) -> bool:
+    args: tuple[object, ...] = ({"frames": [frame.to_dict() for frame in plan.frames]},)
+    if keyframe_timestamps_seconds is not None:
+        args += (list(keyframe_timestamps_seconds),)
+    return cast("bool", call("isKeyframePlan", *args))
+
+
 def option_specs(capabilities: Sequence[HostCapability] = ()) -> list[OptionSpec]:
     return cast("list[OptionSpec]", call("optionSpecs", list(capabilities)))
 

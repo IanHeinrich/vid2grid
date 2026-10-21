@@ -202,6 +202,14 @@ def test_keyframes_in_range_keep_keyframe_sampling() -> None:
     assert resolved.warning is None
 
 
+def test_is_keyframe_plan_is_cores_rule() -> None:
+    plan = _core.build_render_plan(collage_request(target_fps=1.0, end_seconds=2.0), INFO)
+
+    assert _core.is_keyframe_plan(plan, (0.0, 1.0, 2.0))
+    assert not _core.is_keyframe_plan(plan, (0.0,))
+    assert not _core.is_keyframe_plan(plan, None)
+
+
 def test_option_specs_name_every_request_option_with_a_flag() -> None:
     specs = _core.option_specs(("transcription",))
 

@@ -11,6 +11,7 @@ from av.video.frame import VideoFrame
 from av.video.stream import VideoStream
 from PIL import Image
 
+from ._core import is_keyframe_plan
 from .contract import RenderPlan, Size, VideoInfo, is_quarter_turn
 from .errors import InternalError
 from .probe import round_to_microseconds, stream_time_base
@@ -50,16 +51,11 @@ def iter_source_frames(
         stream = container.streams.video[0]
         matches = (
             _match_keyframes(container, stream, wanted)
-            if _is_keyframe_plan(wanted, info)
+            if is_keyframe_plan(plan, info.keyframe_timestamps_seconds)
             else _match_sampled(container, stream, wanted, info)
         )
         for _, frame in matches:
             yield frame
-
-
-def _is_keyframe_plan(wanted: Sequence[float], info: VideoInfo) -> bool:
-    keyframes = info.keyframe_timestamps_seconds
-    return keyframes is not None and set(wanted) <= set(keyframes)
 
 
 def _match_keyframes(
