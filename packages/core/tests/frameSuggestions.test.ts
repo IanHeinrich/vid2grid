@@ -5,7 +5,7 @@ import {
   estimateExtractedFrameCount,
   estimateSheetCount,
   suggestFramesPerGrid,
-} from "../src/grid/frameSuggestions";
+} from "../src/plan/frameSuggestions";
 
 const OUTPUT_RESOLUTION = 1024;
 const PORTRAIT_ASPECT = 9 / 16;

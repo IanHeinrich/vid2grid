@@ -143,15 +143,15 @@ moves one language and not the other fails CI.
 <details>
 <summary>Click to expand the browser pipeline.</summary>
 
-See [packages/](packages/) and [web/](web/) for the full source:
+See [packages/](packages/) and [apps/web/](apps/web/) for the full source:
 
-1. [packages/browser/src/extraction/frameExtraction.ts](packages/browser/src/extraction/frameExtraction.ts) picks
+1. [packages/browser/src/capture/frameExtraction.ts](packages/browser/src/capture/frameExtraction.ts) picks
    the fastest available extraction strategy. For supported browsers and ISO-BMFF files
    (mp4/mov/m4v) it demuxes the file with mp4box.js and decodes the wanted
    sample range in one pass with a WebCodecs `VideoDecoder`
-   ([packages/browser/src/extraction/webcodecsExtractor.ts](packages/browser/src/extraction/webcodecsExtractor.ts)), including
+   ([packages/browser/src/capture/webcodecsExtractor.ts](packages/browser/src/capture/webcodecsExtractor.ts)), including
    an optional keyframe-only fast path for Keyframe fast mode. Otherwise it
-   falls back to [packages/browser/src/extraction/extractor.ts](packages/browser/src/extraction/extractor.ts), which seeks an
+   falls back to [packages/browser/src/capture/extractor.ts](packages/browser/src/capture/extractor.ts), which seeks an
    in-memory `<video>` element to a fixed time-step between the requested
    start/end time and draws each sampled frame to an offscreen `<canvas>`.
    Either way, frames are captured directly at their final collage cell size.
@@ -166,18 +166,18 @@ See [packages/](packages/) and [web/](web/) for the full source:
 3. [packages/core/src/render/paintSheetFromPlan.ts](packages/core/src/render/paintSheetFromPlan.ts) draws each sampled frame into
    its final cell position on a collage sheet, watermarks it with its
    timestamp/frame index, and fills any left-over cells with black.
-   [packages/browser/src/rendering/sheetRenderer.ts](packages/browser/src/rendering/sheetRenderer.ts) parallelises this
+   [packages/browser/src/render/sheetRenderer.ts](packages/browser/src/render/sheetRenderer.ts) parallelises this
    across a pool of Web Workers
-   ([packages/browser/src/rendering/renderWorker.ts](packages/browser/src/rendering/renderWorker.ts) +
-   [packages/browser/src/rendering/workerPool.ts](packages/browser/src/rendering/workerPool.ts)) that draw onto an
+   ([packages/browser/src/render/renderWorker.ts](packages/browser/src/render/renderWorker.ts) +
+   [packages/browser/src/render/workerPool.ts](packages/browser/src/render/workerPool.ts)) that draw onto an
    `OffscreenCanvas` and JPEG-encode each sheet directly, falling back to
    synchronous main-thread rendering when Workers or `OffscreenCanvas` aren't
    available.
 4. When Generate transcript is on,
-   [packages/browser/src/extraction/audioExtraction.ts](packages/browser/src/extraction/audioExtraction.ts) decodes the
+   [packages/browser/src/capture/audioExtraction.ts](packages/browser/src/capture/audioExtraction.ts) decodes the
    video's audio track to mono 16kHz PCM via the Web Audio API, and
-   [packages/browser/src/transcription/transcription.ts](packages/browser/src/transcription/transcription.ts) runs it through a
-   Whisper model in [packages/browser/src/transcription/transcriptionWorker.ts](packages/browser/src/transcription/transcriptionWorker.ts)
+   [packages/browser/src/transcribe/transcription.ts](packages/browser/src/transcribe/transcription.ts) runs it through a
+   Whisper model in [packages/browser/src/transcribe/transcriptionWorker.ts](packages/browser/src/transcribe/transcriptionWorker.ts)
    (transformers.js, off the main thread), turning the model's chunk-level
    timestamps into WebVTT cues.
 5. [packages/core/src/pipeline/generateCollages.ts](packages/core/src/pipeline/generateCollages.ts)
@@ -185,7 +185,7 @@ See [packages/](packages/) and [web/](web/) for the full source:
    ports in [packages/core/src/pipeline/ports.ts](packages/core/src/pipeline/ports.ts),
    which [packages/browser/src/index.ts](packages/browser/src/index.ts) implements
    for the browser. It returns named JPEG `Blob`s (plus any transcript files)
-   that [web/src/main.ts](web/src/main.ts) renders into the gallery and zips up
+   that [apps/web/src/main.ts](apps/web/src/main.ts) renders into the gallery and zips up
    for download.
 
 </details>
@@ -243,7 +243,7 @@ new planner port to.
 
 This repo is an npm workspaces monorepo: `packages/core` holds the DOM-free
 pure logic, `packages/browser` implements its ports with browser APIs, and
-`web/` (a plain Vite + TypeScript project, no framework) is the app that uses
+`apps/web/` (a plain Vite + TypeScript project, no framework) is the app that uses
 them. `python/` is a separate, non-npm package with its own toolchain; see
 [python/README.md](python/README.md). All commands below are run from the
 repo root.
@@ -254,15 +254,15 @@ cd vid2grid
 npm ci
 ```
 
-| Command                           | Description                                                                                                      |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `npm run dev`                     | Start the Vite dev server with hot reload.                                                                       |
-| `npm test`                        | Run the vitest suite across every workspace (jsdom + vitest-canvas-mock for `web/`; see [web/tests](web/tests)). |
-| `npm run typecheck`               | Type-check every package (`tsc -b`).                                                                             |
-| `npm run build`                   | Type-check, then produce a production build in `web/dist`.                                                       |
-| `npm run preview --workspace web` | Serve the `web/dist` production build locally.                                                                   |
-| `npm run format`                  | Format the repo with Prettier.                                                                                   |
-| `npm run fixtures`                | Regenerate `fixtures/render-plans/` from the planner (required by any planner change).                           |
+| Command                                | Description                                                                                                                     |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`                          | Start the Vite dev server with hot reload.                                                                                      |
+| `npm test`                             | Run the vitest suite across every workspace (jsdom + vitest-canvas-mock for `apps/web/`; see [apps/web/tests](apps/web/tests)). |
+| `npm run typecheck`                    | Type-check every package (`tsc -b`).                                                                                            |
+| `npm run build`                        | Type-check, then produce a production build in `apps/web/dist`.                                                                 |
+| `npm run preview --workspace apps/web` | Serve the `apps/web/dist` production build locally.                                                                             |
+| `npm run format`                       | Format the repo with Prettier.                                                                                                  |
+| `npm run fixtures`                     | Regenerate `fixtures/render-plans/` from the planner (required by any planner change).                                          |
 
 There's no lint step. `npm run typecheck` (which `npm run build` runs first)
 is the type-check gate, `npm test` is the correctness gate, and `npm run
@@ -274,9 +274,9 @@ format` is the format step. All three should be clean before opening a PR.
 The [pages.yml](.github/workflows/pages.yml) workflow runs a `test` job (npm
 install, `npm test`, `npm run typecheck`, then regenerates fixtures and fails
 on drift) and a `python` job (pytest + ruff across Ubuntu, Windows and macOS)
-on every push/PR touching the workspaces. On `main`, if `web/package.json`'s
+on every push/PR touching the workspaces. On `main`, if `apps/web/package.json`'s
 `version` has changed to a value with no existing `vX.Y.Z` git tag, it also
-tags the release, publishes a GitHub Release, and deploys `web/dist` to
+tags the release, publishes a GitHub Release, and deploys `apps/web/dist` to
 GitHub Pages.
 
 ## Contributing

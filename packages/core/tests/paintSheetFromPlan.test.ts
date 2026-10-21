@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { buildRenderPlan } from "../src/plan/buildRenderPlan";
 import { paintSheetFromPlan } from "../src/render/paintSheetFromPlan";
 import type { SheetContext2D } from "../src/render/sheetContext";
-import type { CollagePlanRequest, VideoInfo } from "../src/types";
+import type { CollagePlanRequest } from "../src/plan/request";
+import type { VideoInfo } from "../src/probe/videoInfo";
 
 const INFO: VideoInfo = { durationSeconds: 3, width: 320, height: 240 };
 const REQUEST: CollagePlanRequest = {

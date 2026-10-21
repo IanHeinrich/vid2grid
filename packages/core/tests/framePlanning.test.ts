@@ -4,7 +4,8 @@ import {
   roundToMicroseconds,
   subsampleEvenly,
 } from "../src/plan/framePlanning";
-import type { CollagePlanRequest, VideoInfo } from "../src/types";
+import type { CollagePlanRequest } from "../src/plan/request";
+import type { VideoInfo } from "../src/probe/videoInfo";
 
 const INFO: VideoInfo = { durationSeconds: 10, width: 640, height: 480 };
 

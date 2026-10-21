@@ -1,4 +1,4 @@
-import type { TimestampFormat } from "../plan/renderPlan";
+import type { TimestampFormat } from "./renderPlan";
 
 export const FONT_HEIGHT_DIVISOR = 16;
 export const MIN_FONT_SIZE = 8;

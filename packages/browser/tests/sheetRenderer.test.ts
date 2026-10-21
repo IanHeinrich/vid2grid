@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildRenderPlan, type SheetRenderJob } from "@vid2grid/core";
-import { renderSheetsToBlobs } from "../src/rendering/sheetRenderer";
+import { renderSheetsToBlobs } from "../src/render/sheetRenderer";
 
 // jsdom has neither `Worker` nor `OffscreenCanvas`, so only the main-thread fallback runs
 // here. Plan-to-job routing is core's to test; this asks whether a JPEG Blob comes back.

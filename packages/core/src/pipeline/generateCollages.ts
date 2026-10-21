@@ -1,4 +1,5 @@
-import { validateCollagePlanRequest, type CollagePlanRequest, type VideoInfo } from "../types";
+import { validateCollagePlanRequest, type CollagePlanRequest } from "../plan/request";
+import type { VideoInfo } from "../probe/videoInfo";
 import { buildRenderPlan } from "../plan/buildRenderPlan";
 import type { RenderPlan, TranscriptWindow } from "../plan/renderPlan";
 import { cuesInWindow, cuesToVtt, type TranscriptCue } from "../transcript/vtt";

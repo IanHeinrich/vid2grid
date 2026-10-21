@@ -4,7 +4,7 @@ Contributions are welcome: bug reports, feature ideas, and PRs.
 
 This is an npm workspaces monorepo with four areas: [packages/core](packages/core)
 (DOM-free pure logic and the `RenderPlan` planner), [packages/browser](packages/browser)
-(the browser executor), [web](web) (the Vite app), and [python](python) (the
+(the browser executor), [apps/web](apps/web) (the Vite app), and [python](python) (the
 headless Python executor, its own toolchain outside npm).
 
 ## Workflow
@@ -15,7 +15,7 @@ headless Python executor, its own toolchain outside npm).
    over comments).
 3. Add or update tests for behavioral changes in that package's flat `tests/`
    directory (see [packages/core/tests](packages/core/tests) and
-   [web/tests](web/tests)). Then run `npm run format` and make sure `npm test`
+   [apps/web/tests](apps/web/tests)). Then run `npm run format` and make sure `npm test`
    and `npm run build` both pass locally (all from the repo root; `npm run build`
    runs `npm run typecheck` first).
 4. A change under `packages/core/src/plan/` (or a helper it uses) changes the
@@ -24,7 +24,7 @@ headless Python executor, its own toolchain outside npm).
    matching planner logic in `python/src/vid2grid/planner.py`. See
    [docs/render-plan.md](docs/render-plan.md).
 5. Open a PR against `main`.
-6. **Don't bump `web/package.json`'s `version`** in your PR. That's reserved
+6. **Don't bump `apps/web/package.json`'s `version`** in your PR. That's reserved
    for maintainers, since a version bump landing on `main` triggers an
    automatic tagged release + Pages deploy.
 

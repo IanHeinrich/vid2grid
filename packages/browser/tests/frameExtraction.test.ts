@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RenderPlan } from "@vid2grid/core";
-import { extractFramesAuto } from "../src/extraction/frameExtraction";
+import { extractFramesAuto } from "../src/capture/frameExtraction";
 
 // Both extractors are the modules under the router, not the router: what is under test
 // is which one it settles on.
@@ -8,8 +8,8 @@ const { extractFrames, extractFramesWebCodecs } = vi.hoisted(() => ({
   extractFrames: vi.fn<() => Promise<ImageBitmap[]>>(),
   extractFramesWebCodecs: vi.fn<() => Promise<ImageBitmap[] | null>>(),
 }));
-vi.mock("../src/extraction/extractor", () => ({ extractFrames }));
-vi.mock("../src/extraction/webcodecsExtractor", () => ({ extractFramesWebCodecs }));
+vi.mock("../src/capture/extractor", () => ({ extractFrames }));
+vi.mock("../src/capture/webcodecsExtractor", () => ({ extractFramesWebCodecs }));
 
 const PLAN = { frames: [], cell: { width: 8, height: 8 } } as unknown as RenderPlan;
 const seekImages = ["seek"] as unknown as ImageBitmap[];

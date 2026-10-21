@@ -3,7 +3,7 @@ import {
   keyframeTimestampsFromSamples,
   planIndicesForFrame,
   selectKeyframeSampleIndices,
-} from "../src/extraction/webcodecsExtractor";
+} from "../src/capture/webcodecsExtractor";
 import type { Sample } from "mp4box";
 
 // jsdom has no VideoDecoder, so only these pure helpers of the fast path can be tested here.

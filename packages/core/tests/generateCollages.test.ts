@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { generateCollages } from "../src/pipeline/generateCollages";
 import type { CollagePorts, ProbeOptions, SheetRenderJob } from "../src/pipeline/ports";
 import type { RenderPlan } from "../src/plan/renderPlan";
-import type { CollagePlanRequest, VideoInfo } from "../src/types";
+import type { CollagePlanRequest } from "../src/plan/request";
+import type { VideoInfo } from "../src/probe/videoInfo";
 import type { TranscriptCue } from "../src/transcript/vtt";
 
 // Images and encoded files are plain strings here: real Blob/ImageBitmap behaviour is the

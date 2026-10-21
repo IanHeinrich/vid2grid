@@ -1,6 +1,6 @@
 import type { PlannedSheet, RenderPlan } from "../plan/renderPlan";
 import type { TranscriptCue } from "../transcript/vtt";
-import type { VideoInfo } from "../types";
+import type { VideoInfo } from "../probe/videoInfo";
 
 export type ProgressCallback = (done: number, total: number) => void;
 
