@@ -1,31 +1,40 @@
 import itertools
 import statistics
-from collections.abc import Iterator, Sequence
+from collections.abc import Generator, Iterator, Sequence
 from pathlib import Path
-from typing import Any
 
 import av
+from av.container import InputContainer
+from av.video.codeccontext import VideoCodecContext
+from av.video.frame import VideoFrame
+from av.video.stream import VideoStream
 from PIL import Image
 
 from .contract import RenderPlan, Size, VideoInfo
+from .errors import InternalError
 from .planner import round_to_microseconds
+from .probe import is_quarter_turn
 
 _DEFAULT_KEYFRAME_INTERVAL_SECONDS = 2.0
+_RESEEK_AFTER_KEYFRAME_INTERVALS = 2
+_MIN_RESEEK_GAP_SECONDS = 1.0
 
-# Pillow's ROTATE_n turns counter-clockwise; VideoInfo.rotation is clockwise.
-_ROTATION_TRANSPOSE = {
-    90: Image.Transpose.ROTATE_270,
-    180: Image.Transpose.ROTATE_180,
-    270: Image.Transpose.ROTATE_90,
-}
+_Matches = Iterator[tuple[int, VideoFrame]]
 
 
 def capture_frames(path: str | Path, plan: RenderPlan, info: VideoInfo) -> list[Image.Image | None]:
-    """One cell-sized image per `plan.frames` entry, `None` where the stream ended first."""
+    images: list[Image.Image | None] = list(iter_frame_images(path, plan, info))
+    return images + [None] * (len(plan.frames) - len(images))
+
+
+# Yields one cell-sized image per `plan.frames` entry in order, stopping early where the
+# stream ends, so a caller can hold one sheet's images at a time.
+def iter_frame_images(
+    path: str | Path, plan: RenderPlan, info: VideoInfo
+) -> Generator[Image.Image, None, None]:
     wanted = [frame.timestamp_seconds for frame in plan.frames]
-    images: list[Image.Image | None] = [None] * len(wanted)
     if not wanted:
-        return images
+        return
 
     with av.open(str(path)) as container:
         stream = container.streams.video[0]
@@ -34,9 +43,8 @@ def capture_frames(path: str | Path, plan: RenderPlan, info: VideoInfo) -> list[
             if _is_keyframe_plan(wanted, info)
             else _match_sampled(container, stream, wanted, info)
         )
-        for index, frame in matches:
-            images[index] = _to_cell_image(frame, plan.cell, info.rotation)
-    return images
+        for _, frame in matches:
+            yield _to_cell_image(frame, plan.cell, info.rotation)
 
 
 def _is_keyframe_plan(wanted: Sequence[float], info: VideoInfo) -> bool:
@@ -45,23 +53,30 @@ def _is_keyframe_plan(wanted: Sequence[float], info: VideoInfo) -> bool:
 
 
 def _match_keyframes(
-    container: Any, stream: Any, wanted: Sequence[float]
-) -> Iterator[tuple[int, Any]]:
+    container: InputContainer, stream: VideoStream, wanted: Sequence[float]
+) -> _Matches:
     _skip_non_keyframes(stream.codec_context)
-    return _match_in_order(_decoded_frames(container, stream), wanted)
+    next_index = 0
+    for frame in _decoded_frames(container, stream):
+        next_index = yield from _reached_by(frame, wanted, next_index)
+        if next_index >= len(wanted):
+            return
 
 
-def _skip_non_keyframes(codec_context: Any) -> None:
+def _skip_non_keyframes(codec_context: VideoCodecContext) -> None:
     try:
         codec_context.skip_frame = "NONKEY"
     except (AttributeError, ValueError) as exc:
-        raise RuntimeError(f"PyAV {av.__version__} rejects skip_frame='NONKEY'") from exc
+        raise InternalError(f"PyAV {av.__version__} rejects skip_frame='NONKEY'") from exc
 
 
 def _match_sampled(
-    container: Any, stream: Any, wanted: Sequence[float], info: VideoInfo
-) -> Iterator[tuple[int, Any]]:
-    gap_seconds = max(2 * _keyframe_interval_seconds(info), 1.0)
+    container: InputContainer, stream: VideoStream, wanted: Sequence[float], info: VideoInfo
+) -> _Matches:
+    gap_seconds = max(
+        _RESEEK_AFTER_KEYFRAME_INTERVALS * _keyframe_interval_seconds(info),
+        _MIN_RESEEK_GAP_SECONDS,
+    )
     frames = _seeked_frames(container, stream, wanted[0])
     seeked_at_index = 0
     last_time: float | None = None
@@ -81,23 +96,22 @@ def _match_sampled(
         if frame is None:
             return
         last_time = frame.time
-        # Rounded because the browser matches against whole-microsecond VideoFrame timestamps.
-        while next_index < len(wanted) and round_to_microseconds(frame.time) >= wanted[next_index]:
-            yield next_index, frame
-            next_index += 1
+        next_index = yield from _reached_by(frame, wanted, next_index)
 
 
-def _match_in_order(frames: Iterator[Any], wanted: Sequence[float]) -> Iterator[tuple[int, Any]]:
-    next_index = 0
-    for frame in frames:
-        while next_index < len(wanted) and round_to_microseconds(frame.time) >= wanted[next_index]:
-            yield next_index, frame
-            next_index += 1
-        if next_index >= len(wanted):
-            return
+def _reached_by(
+    frame: VideoFrame, wanted: Sequence[float], next_index: int
+) -> Generator[tuple[int, VideoFrame], None, int]:
+    # Rounded because the browser matches against whole-microsecond VideoFrame timestamps.
+    while next_index < len(wanted) and round_to_microseconds(frame.time) >= wanted[next_index]:
+        yield next_index, frame
+        next_index += 1
+    return next_index
 
 
-def _seeked_frames(container: Any, stream: Any, target: float) -> Iterator[Any]:
+def _seeked_frames(
+    container: InputContainer, stream: VideoStream, target: float
+) -> Iterator[VideoFrame]:
     container.seek(int(target / stream.time_base), stream=stream)
     frames = _decoded_frames(container, stream)
     first = next(frames, None)
@@ -108,7 +122,7 @@ def _seeked_frames(container: Any, stream: Any, target: float) -> Iterator[Any]:
     return _decoded_frames(container, stream)
 
 
-def _decoded_frames(container: Any, stream: Any) -> Iterator[Any]:
+def _decoded_frames(container: InputContainer, stream: VideoStream) -> Iterator[VideoFrame]:
     return (frame for frame in container.decode(stream) if frame.pts is not None)
 
 
@@ -120,8 +134,8 @@ def _keyframe_interval_seconds(info: VideoInfo) -> float:
     return statistics.median(deltas)
 
 
-def _to_cell_image(frame: Any, cell: Size, rotation: int) -> Image.Image:
-    turned = rotation in (90, 270)
+def _to_cell_image(frame: VideoFrame, cell: Size, rotation: int) -> Image.Image:
+    turned = is_quarter_turn(rotation)
     scaled = frame.reformat(
         width=cell.height if turned else cell.width,
         height=cell.width if turned else cell.height,
@@ -129,5 +143,6 @@ def _to_cell_image(frame: Any, cell: Size, rotation: int) -> Image.Image:
         interpolation="BICUBIC",
     )
     image: Image.Image = scaled.to_image()
-    transpose = _ROTATION_TRANSPOSE.get(rotation)
-    return image if transpose is None else image.transpose(transpose)
+    # Pillow's rotate turns counter-clockwise; VideoInfo.rotation is clockwise. At whole quarter
+    # turns with expand=True it is a lossless transpose.
+    return image if rotation == 0 else image.rotate(-rotation, expand=True)

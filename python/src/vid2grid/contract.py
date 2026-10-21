@@ -333,7 +333,7 @@ class RenderPlan:
     combined_transcript: TranscriptWindow | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        """The contract's `RenderPlan` JSON, byte-comparable with the repo's fixtures."""
+        """The contract's `RenderPlan` JSON, equal as a dict to the repo's fixtures."""
         plan: dict[str, Any] = {
             "version": self.version,
             "canvas": self.canvas.to_dict(),

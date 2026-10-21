@@ -3,13 +3,13 @@ from dataclasses import replace
 from pathlib import Path
 
 import av
-from conftest import collage_request
+from helpers import collage_request
 from PIL import Image
 
+from vid2grid.capture import capture_frames
 from vid2grid.contract import PlannedFrame, RenderPlan, VideoInfo
-from vid2grid.decode import capture_frames
 from vid2grid.planner import build_render_plan
-from vid2grid.probe import probe
+from vid2grid.probe import probe_video
 
 
 def _plan(info: VideoInfo, *, end_seconds: float, frame_count: int) -> RenderPlan:
@@ -53,7 +53,7 @@ def _bytes(images: Sequence[Image.Image | None]) -> list[bytes | None]:
 
 
 def test_captures_the_first_frame_at_or_after_each_timestamp(tiny_video: Path) -> None:
-    info = probe(tiny_video)
+    info = probe_video(tiny_video)
     # Against a 10 fps source these want the frames at 0.0, 0.5 and 1.0.
     plan = _plan_at(info, [0.0, 0.45, 1.0])
     reference = _decoded_through(tiny_video, plan)
@@ -71,7 +71,7 @@ def test_captures_the_first_frame_at_or_after_each_timestamp(tiny_video: Path) -
 
 
 def test_a_keyframe_plan_captures_every_probed_keyframe(tiny_video: Path) -> None:
-    info = probe(tiny_video, keyframes=True)
+    info = probe_video(tiny_video, keyframes=True)
     keyframes = info.keyframe_timestamps_seconds
     assert keyframes is not None
     request = collage_request(
@@ -86,8 +86,8 @@ def test_a_keyframe_plan_captures_every_probed_keyframe(tiny_video: Path) -> Non
 
 
 def test_a_sparse_plan_reseeks_to_the_same_frames_as_a_decode_through(tiny_video: Path) -> None:
-    without_keyframes = probe(tiny_video)
-    with_keyframes = probe(tiny_video, keyframes=True)
+    without_keyframes = probe_video(tiny_video)
+    with_keyframes = probe_video(tiny_video, keyframes=True)
     plan = _plan(without_keyframes, end_seconds=5.7, frame_count=2)
     assert [frame.timestamp_seconds for frame in plan.frames] == [0.0, 2.85]
 

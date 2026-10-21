@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
-from conftest import collage_request
+from helpers import collage_request
 
 from vid2grid.contract import CollageRequest, RenderPlan, TimestampFormat, VideoInfo
 from vid2grid.planner import (
@@ -21,24 +21,20 @@ from vid2grid.planner import (
 )
 
 
-def _fixture_dir() -> Path | None:
+def _fixture_dir() -> Path:
     for parent in Path(__file__).resolve().parents:
         candidate = parent / "fixtures" / "render-plans"
         if candidate.is_dir():
             return candidate
-    return None
+    raise FileNotFoundError("fixtures/render-plans/ is not reachable from this checkout")
 
 
 def _fixture_paths() -> list[Path]:
-    directory = _fixture_dir()
-    return [] if directory is None else sorted(directory.glob("*.json"))
+    return sorted(_fixture_dir().glob("*.json"))
 
 
 def test_fixture_directory_is_not_empty() -> None:
-    directory = _fixture_dir()
-    if directory is None:
-        pytest.skip("fixtures/render-plans/ is not reachable from this checkout")
-    assert list(directory.glob("*.json"))
+    assert _fixture_paths()
 
 
 @pytest.mark.parametrize("path", _fixture_paths(), ids=lambda path: path.stem)

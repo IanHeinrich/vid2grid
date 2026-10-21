@@ -12,7 +12,6 @@ _ANCHORS = {"top-left": "la", "top-right": "ra"}
 def paint_sheet(
     plan: RenderPlan, sheet: PlannedSheet, images: Sequence[Image.Image | None]
 ) -> Image.Image:
-    """Composite one sheet: `images` is aligned to `sheet.cells`, `None` leaves the background."""
     canvas = Image.new("RGB", plan.canvas.as_tuple(), plan.style.background)
     draw = ImageDraw.Draw(canvas)
 
@@ -34,7 +33,6 @@ def paint_sheet(
 
 
 def save_jpeg(image: Image.Image, path: str | Path, quality: int) -> None:
-    """Encode one painted sheet as JPEG."""
     image.save(path, format="JPEG", quality=quality)
 
 

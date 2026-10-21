@@ -5,8 +5,9 @@ from pathlib import Path
 import av
 import pytest
 
+import vid2grid
 from vid2grid.planner import round_to_microseconds
-from vid2grid.probe import display_size, normalize_rotation_clockwise, probe
+from vid2grid.probe import display_size, normalize_rotation_clockwise, probe_video
 
 
 def _decoded_keyframe_seconds(path: Path) -> set[float]:
@@ -20,7 +21,7 @@ def _decoded_keyframe_seconds(path: Path) -> set[float]:
 
 
 def test_probe_reads_the_synthesised_video(tiny_video: Path) -> None:
-    info = probe(tiny_video)
+    info = probe_video(tiny_video)
     assert abs(info.duration_seconds - 3.0) < 0.2
     assert (info.width, info.height) == (320, 240)
     assert abs(info.fps - 10) < 0.1
@@ -29,8 +30,14 @@ def test_probe_reads_the_synthesised_video(tiny_video: Path) -> None:
     assert info.keyframe_timestamps_seconds is None
 
 
+def test_the_deprecated_probe_alias_warns_and_probes(tiny_video: Path) -> None:
+    with pytest.warns(DeprecationWarning, match="probe_video"):
+        info = vid2grid.probe(tiny_video, keyframes=True)
+    assert info == probe_video(tiny_video, keyframes=True)
+
+
 def test_probe_treats_an_unset_sample_aspect_ratio_as_square(curator_mp4: Path) -> None:
-    info = probe(curator_mp4, keyframes=True)
+    info = probe_video(curator_mp4, keyframes=True)
     assert (info.width, info.height) == (160, 120)
     assert abs(info.duration_seconds - 3.0) < 0.2
     assert abs(info.fps - 10) < 0.1
@@ -38,7 +45,7 @@ def test_probe_treats_an_unset_sample_aspect_ratio_as_square(curator_mp4: Path) 
 
 
 def test_probe_keyframes_are_ascending_and_in_range(tiny_video: Path) -> None:
-    info = probe(tiny_video, keyframes=True)
+    info = probe_video(tiny_video, keyframes=True)
     keyframes = info.keyframe_timestamps_seconds
     assert keyframes
 

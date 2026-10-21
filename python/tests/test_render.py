@@ -1,11 +1,11 @@
 from dataclasses import replace
 
-from conftest import collage_request
+from helpers import collage_request
 from PIL import Image
 
 from vid2grid.contract import RenderPlan, VideoInfo
-from vid2grid.paint import paint_sheet
 from vid2grid.planner import build_render_plan
+from vid2grid.render import paint_sheet
 
 FLAT_FILL = (128, 128, 128)
 
