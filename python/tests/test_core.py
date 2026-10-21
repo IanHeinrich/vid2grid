@@ -3,6 +3,8 @@ import math
 import multiprocessing
 import numbers
 import os
+import subprocess
+import sys
 from fractions import Fraction
 
 import pytest
@@ -149,6 +151,18 @@ def test_a_forked_child_gets_its_own_engine() -> None:
     # Pool's exit terminates a hung child, so a regression fails here instead of hanging.
     with multiprocessing.get_context("fork").Pool(1) as pool:
         assert pool.apply_async(_version_in_child).get(timeout=30) == 1
+
+
+def test_a_process_that_used_the_engine_exits() -> None:
+    # Unfixed, Python 3.13 hung here on every run and 3.11 on about one in ten.
+    for _ in range(5):
+        completed = subprocess.run(
+            [sys.executable, "-c", "from vid2grid import _core; _core.version()"],
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+        assert completed.returncode == 0, completed.stderr
 
 
 def test_keyframe_sampling_without_keyframes_is_an_invalid_request() -> None:
