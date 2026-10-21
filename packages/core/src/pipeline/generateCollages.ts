@@ -2,9 +2,10 @@ import { Vid2GridError } from "../errors";
 import { validateCollagePlanRequest, type CollagePlanRequest } from "../plan/request";
 import type { VideoInfo } from "../probe/videoInfo";
 import { buildRenderPlanUnvalidated } from "../plan/buildRenderPlan";
-import { keyframesInRange } from "../plan/framePlanning";
+import { resolveKeyframeSampling } from "../plan/keyframeFallback";
 import type { RenderPlan, TranscriptWindow } from "../plan/renderPlan";
 import { cuesInWindow, cuesToVtt } from "../transcript/vtt";
+import type { Vid2GridWarning } from "../warnings";
 import type {
   ClockPort,
   CollagePorts,
@@ -23,13 +24,7 @@ export interface GenerationTimings {
   sheetCount: number;
 }
 
-export type WarningCode =
-  "keyframes_unavailable" | "no_transcription_port" | "no_audio" | "transcription_failed";
-
-export interface Vid2GridWarning {
-  code: WarningCode;
-  message: string;
-}
+export type { Vid2GridWarning, WarningCode } from "../warnings";
 
 export interface GeneratedFile<TBinary> {
   name: string;
@@ -52,14 +47,6 @@ export interface GenerateCollagesOptions {
 }
 
 const TRANSCRIPT_FAILED_PREFIX = "Transcript generation failed: ";
-
-function keyframesUnavailable(reason?: string): Vid2GridWarning {
-  const detail = reason === undefined ? "" : ` (${reason})`;
-  return {
-    code: "keyframes_unavailable",
-    message: `Keyframes unavailable${detail}; sampled by target FPS instead`,
-  };
-}
 
 function errorReason(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -116,20 +103,14 @@ async function resolveVideoInfo<TSource>(
   return { info: keyframeTimestampsSeconds ? { ...info, keyframeTimestampsSeconds } : info };
 }
 
-// buildRenderPlan throws on keyframe mode without times, which is right for a host
-// calling it directly; here the old sampled behaviour is the better answer.
 function planWithKeyframeFallback(
   request: CollagePlanRequest,
   { info, keyframeFailure }: ResolvedVideoInfo,
   onWarning?: (warning: Vid2GridWarning) => void,
 ): RenderPlan {
-  const keyframes = info.keyframeTimestampsSeconds ?? [];
-  const inRange = keyframesInRange(keyframes, request.startSeconds, request.endSeconds);
-  if (request.keyframeSampling && inRange.length === 0) {
-    onWarning?.(keyframesUnavailable(keyframeFailure));
-    return buildRenderPlanUnvalidated({ ...request, keyframeSampling: false }, info);
-  }
-  return buildRenderPlanUnvalidated(request, info);
+  const decision = resolveKeyframeSampling(request, info, keyframeFailure);
+  if (decision.warning) onWarning?.(decision.warning);
+  return buildRenderPlanUnvalidated(decision.request, info);
 }
 
 function jobsForCapturedSheets<TImage>(

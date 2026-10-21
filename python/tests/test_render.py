@@ -1,11 +1,12 @@
 from dataclasses import replace
 
-from conftest import collage_request
+from helpers import collage_request
 from PIL import Image
 
+from vid2grid import build_render_plan
+from vid2grid._core import sheet_draw_ops
 from vid2grid.contract import RenderPlan, VideoInfo
-from vid2grid.paint import paint_sheet
-from vid2grid.planner import build_render_plan
+from vid2grid.render import paint_sheet
 
 FLAT_FILL = (128, 128, 128)
 
@@ -50,3 +51,35 @@ def test_a_right_anchored_watermark_stays_inside_its_cell() -> None:
     ]
     assert ink_columns
     assert max(ink_columns) < cell.x + cell.width
+
+
+def test_a_missing_image_also_skips_its_cells_text() -> None:
+    plan = _plan()
+    sheet = plan.sheets[0]
+    filled = Image.new("RGB", (plan.cell.width, plan.cell.height), FLAT_FILL)
+
+    canvas = paint_sheet(plan, sheet, [None, filled])
+
+    for empty in sheet.cells[:1] + sheet.cells[2:]:
+        region = canvas.crop((empty.x, empty.y, empty.x + empty.width, empty.y + empty.height))
+        assert region.getbbox() is None
+
+
+def test_draw_ops_paint_the_background_then_each_cells_image_and_text() -> None:
+    plan = _plan()
+    ops = sheet_draw_ops(plan, 0)
+
+    assert ops[0] == {
+        "kind": "fillRect",
+        "x": 0,
+        "y": 0,
+        "width": plan.canvas.width,
+        "height": plan.canvas.height,
+        "color": plan.style.background,
+    }
+    expected = [
+        (kind, index)
+        for index, cell in enumerate(plan.sheets[0].cells)
+        for kind in ["image"] + ["text"] * len(cell.watermarks)
+    ]
+    assert [(op["kind"], op["cellIndex"]) for op in ops[1:] if op["kind"] != "fillRect"] == expected

@@ -11,7 +11,8 @@ typed in [`plan/renderPlan.ts`](../packages/core/src/plan/renderPlan.ts)). An
 **executor** (the browser one in `packages/browser`, the headless one in
 `python/`) only decodes, scales, pastes, draws text and encodes. That keeps
 the policy in one implementation and one set of tests, whatever language the
-host is written in.
+host is written in: `python/` does not port the planner, it runs core's own
+code (see [Hosts without JavaScript](#hosts-without-javascript)).
 
 ```
 CollagePlanRequest + VideoInfo  ->  buildRenderPlan  ->  RenderPlan  ->  executor  ->  JPEG sheets (+ .vtt)
@@ -129,8 +130,9 @@ burned-in timestamp shows milliseconds.
 **Microsecond rounding.** Every timestamp and transcript boundary passes through
 `floor(t * 1e6 + 0.5) / 1e6`. That is spelled out rather than using a built-in:
 JavaScript's `Math.round` rounds a half up and Python's `round` rounds a half to
-even, so the two ports would disagree on exact half-microseconds and the golden
-fixtures would not match.
+even, so a host that matches decoded frame times against the plan in its own
+language must use this rule too, or it would disagree on exact
+half-microseconds.
 
 **Layout.** `computeOptimalGrid` searches every column count and picks the one
 that maximises a single cell's area inside the square canvas without distorting
@@ -169,13 +171,18 @@ in the plan; hosts must not recompute them.
 2. Scale each captured frame to exactly `plan.cell`, preserving the display
    orientation (any container rotation already applied, so `VideoInfo.width`
    and `height` are display dimensions).
-3. Per sheet, fill a `plan.canvas`-sized surface with `style.background`, then
-   paste each cell's image at its `x`/`y`/`width`/`height`. A cell with no
-   captured image is left as background.
-4. Draw each watermark at `fontSizePx` in `style.fontFamily` with
-   `style.textBaseline`, stroked in `style.textStroke` then filled with
-   `style.textFill`. A canvas uses `lineWidth = 2 * strokeWidthPx`; Pillow uses
-   `stroke_width = strokeWidthPx`.
+3. Per sheet, run core's `sheetDrawOps(plan, sheetIndex)` on a
+   `plan.canvas`-sized surface, in order. It returns a `fillRect` with
+   `style.background` over the whole canvas, then for each cell an `image` op
+   (paste that cell's captured image at its `x`/`y`, already `width` by
+   `height`) followed by its `text` ops. A cell with no captured image is left
+   as background: skip its `image` op and its `text` ops, which carry the same
+   `cellIndex`.
+4. Draw each `text` op at `fontSizePx` in `fontFamily` with `baseline`,
+   anchored at its `anchor` corner, stroked in `stroke` then filled with
+   `fill`. Pillow uses `stroke_width = strokeWidthPx`; a canvas uses
+   `lineWidth = 2 * strokeWidthPx`. Pillow cannot resolve a CSS generic family
+   like `sans-serif`, so `python/` draws with Pillow's bundled default font.
 5. Encode each sheet as JPEG at `plan.jpegQuality` (1-100) and name it
    `sheet.fileName`.
 6. If a transcript was asked for, keep the cues overlapping each window and
@@ -192,7 +199,8 @@ as a sampled one instead and reports a warning, where `buildRenderPlan` on its
 own throws.
 
 `packages/core`'s `paintSheetFromPlan` implements steps 3 and 4 for any
-JavaScript host (`fixtures/render-plans/` pins steps 1-6's inputs), and
+JavaScript host by running the same draw ops on a canvas
+(`fixtures/render-plans/` pins steps 1-6's inputs), and
 `generateCollages` drives the whole sequence through the ports in
 [`pipeline/ports.ts`](../packages/core/src/pipeline/ports.ts).
 
@@ -202,8 +210,34 @@ which seeks to the _nearest_ frame rather than the first frame at or after the
 timestamp. The WebCodecs path and the Python executor both implement the
 at-or-after rule.
 
+## Hosts without JavaScript
+
+A host in another language embeds core rather than porting it.
+`npm run bundle` builds [`embed.ts`](../packages/core/src/embed.ts) into one
+script, `python/src/vid2grid/_core.js`, that defines a global `vid2gridCore`
+with a single function, `call(name, argsJson)`. `argsJson` is a JSON array of
+positional arguments in the camelCase shapes above, and the result is a JSON
+envelope: `{"ok": true, "value": ...}`, or `{"ok": false, "code": ...,
+"message": ...}` where `code` is `invalid_request`, `no_audio`, `no_frames` or
+`internal`. The functions are `buildRenderPlan`, `collagePlanRequestProblem`,
+`validateCollagePlanRequest`, `sheetDrawOps`, `resolveKeyframeSampling` (the
+sampled fallback and its warning, as `generateCollages` applies it),
+`displaySize`, `normalizeRotationClockwise` and `version`. An optional request
+or info field (`frameCount`, `keyframeTimestampsSeconds` and the like) is left
+out when unset, never sent as `null`, and so is `resolveKeyframeSampling`'s
+optional third argument, the reason keyframes could not be read. The one `null`
+is `displaySize`'s third argument, which every call passes: `null` for a video
+with no sample aspect ratio, an object with `numerator` and `denominator`
+otherwise.
+
+`python/` loads that script once per process into an embedded V8
+(`mini-racer`) and maps each error code to its own exception class, so its
+plans are core's plans by construction. It checks that against every fixture
+in `python/tests/test_planner.py`.
+
 ## Changing the planner
 
-A planner change is not done until the fixtures move with it: run
-`npm run fixtures` in the same PR, and CI's `git diff --exit-code fixtures/`
-will fail if they drift.
+A planner change is not done until the generated files move with it: run
+`npm run fixtures` and `npm run bundle` in the same PR, and CI's
+`git diff --exit-code` over `fixtures/` and `python/src/vid2grid/_core.js` will
+fail if either drifts.

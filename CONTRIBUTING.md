@@ -21,8 +21,10 @@ headless Python executor, its own toolchain outside npm).
    tests too).
 4. A change under `packages/core/src/plan/` (or a helper it uses) changes the
    `RenderPlan` contract, so it isn't done until the same PR also runs
-   `npm run fixtures` to regenerate `fixtures/render-plans/` and updates the
-   matching planner logic in `python/src/vid2grid/planner.py`. See
+   `npm run fixtures` to regenerate `fixtures/render-plans/` and
+   `npm run bundle` to regenerate `python/src/vid2grid/_core.js`, the copy of
+   core the Python package runs. CI fails if either is stale. The Python
+   package needs no matching edit. See
    [docs/render-plan.md](docs/render-plan.md).
 5. Open a PR against `main`.
 6. **Don't bump `apps/web/package.json`'s `version`** in your PR. That's reserved
@@ -36,9 +38,11 @@ For larger changes, consider opening an issue first to discuss the approach.
 Its toolchain lives outside npm and runs from [python](python).
 [python/README.md](python/README.md) has the commands; pytest, both ruff
 checks and mypy must be clean before opening a PR.
-`python/tests/test_planner.py` checks the planner against the same
-`fixtures/render-plans/` goldens as the TypeScript planner, so a planner
-change must keep both in sync (see step 4 above).
+It plans by running core's own code, bundled into
+`python/src/vid2grid/_core.js` by `npm run bundle`, through an embedded V8
+(`mini-racer`), so there is no Python planner to keep in sync. Never edit
+`_core.js` by hand. `python/tests/test_planner.py` runs every
+`fixtures/render-plans/` golden through that bundle (see step 4 above).
 
 ## Merge requirements
 
@@ -46,7 +50,7 @@ change must keep both in sync (see step 4 above).
 directly. Every change lands via a pull request that must have:
 
 - A passing `test` CI check (tests, typecheck, lint, core coverage and the
-  fixtures diff from the repo root, from
+  fixtures and core bundle diffs from the repo root, from
   [.github/workflows/pages.yml](.github/workflows/pages.yml)).
 - A passing `python` CI check (pytest, ruff and mypy for `python/` across Ubuntu,
   Windows and macOS, from the same workflow).

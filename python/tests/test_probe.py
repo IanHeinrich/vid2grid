@@ -5,8 +5,13 @@ from pathlib import Path
 import av
 import pytest
 
-from vid2grid.planner import round_to_microseconds
-from vid2grid.probe import display_size, normalize_rotation_clockwise, probe
+import vid2grid
+from vid2grid.probe import (
+    display_size,
+    normalize_rotation_clockwise,
+    probe_video,
+    round_to_microseconds,
+)
 
 
 def _decoded_keyframe_seconds(path: Path) -> set[float]:
@@ -20,7 +25,7 @@ def _decoded_keyframe_seconds(path: Path) -> set[float]:
 
 
 def test_probe_reads_the_synthesised_video(tiny_video: Path) -> None:
-    info = probe(tiny_video)
+    info = probe_video(tiny_video)
     assert abs(info.duration_seconds - 3.0) < 0.2
     assert (info.width, info.height) == (320, 240)
     assert abs(info.fps - 10) < 0.1
@@ -29,8 +34,20 @@ def test_probe_reads_the_synthesised_video(tiny_video: Path) -> None:
     assert info.keyframe_timestamps_seconds is None
 
 
+def test_the_deprecated_probe_alias_warns_and_probes(tiny_video: Path) -> None:
+    with pytest.warns(DeprecationWarning, match="probe_video"):
+        info = vid2grid.probe(tiny_video, keyframes=True)
+    assert info == probe_video(tiny_video, keyframes=True)
+
+
+def test_the_deprecated_probe_alias_imports_from_the_probe_module() -> None:
+    from vid2grid.probe import probe
+
+    assert probe is vid2grid.probe
+
+
 def test_probe_treats_an_unset_sample_aspect_ratio_as_square(curator_mp4: Path) -> None:
-    info = probe(curator_mp4, keyframes=True)
+    info = probe_video(curator_mp4, keyframes=True)
     assert (info.width, info.height) == (160, 120)
     assert abs(info.duration_seconds - 3.0) < 0.2
     assert abs(info.fps - 10) < 0.1
@@ -38,7 +55,7 @@ def test_probe_treats_an_unset_sample_aspect_ratio_as_square(curator_mp4: Path) 
 
 
 def test_probe_keyframes_are_ascending_and_in_range(tiny_video: Path) -> None:
-    info = probe(tiny_video, keyframes=True)
+    info = probe_video(tiny_video, keyframes=True)
     keyframes = info.keyframe_timestamps_seconds
     assert keyframes
 
@@ -86,3 +103,17 @@ def test_display_size(
 )
 def test_normalize_rotation_clockwise(ccw_degrees: float, expected: int) -> None:
     assert normalize_rotation_clockwise(ccw_degrees) == expected
+
+
+@pytest.mark.parametrize(
+    ("seconds", "expected"),
+    [
+        (0, 0),
+        (1 / 3, 0.333333),
+        (0.0000005, 0.000001),
+        (2.0000004, 2.0),
+        (-0.0000016, -2e-06),
+    ],
+)
+def test_round_to_microseconds_matches_cores_rule(seconds: float, expected: float) -> None:
+    assert round_to_microseconds(seconds) == expected

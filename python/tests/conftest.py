@@ -2,28 +2,13 @@ from pathlib import Path
 
 import av
 import pytest
+from av.video.stream import VideoStream
 from PIL import Image, ImageDraw
-
-from vid2grid.contract import CollageRequest
 
 VIDEO_WIDTH = 320
 VIDEO_HEIGHT = 240
 VIDEO_FRAME_RATE = 10
 VIDEO_FRAME_COUNT = 30
-
-
-def collage_request(**overrides: object) -> CollageRequest:
-    """A request over the whole `tiny_video` range; pass overrides for anything else."""
-    fields: dict[str, object] = {
-        "start_seconds": 0.0,
-        "end_seconds": 3.0,
-        "target_fps": 4.0,
-        "frames_per_grid": 4,
-        "output_resolution": 512,
-        "jpeg_quality": 85,
-    }
-    fields.update(overrides)
-    return CollageRequest(**fields)  # type: ignore[arg-type]
 
 
 @pytest.fixture(scope="session")
@@ -46,6 +31,7 @@ def tiny_video(request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPath
 def _write_video(path: Path, codec: str) -> None:
     with av.open(str(path), "w") as container:
         stream = container.add_stream(codec, rate=VIDEO_FRAME_RATE)
+        assert isinstance(stream, VideoStream)
         stream.width = VIDEO_WIDTH
         stream.height = VIDEO_HEIGHT
         stream.pix_fmt = "yuv420p"

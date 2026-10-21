@@ -1,18 +1,22 @@
+import logging
 import math
+import warnings
 from fractions import Fraction
 from pathlib import Path
-from typing import Any
 
 import av
+from av.container import InputContainer
+from av.video.stream import VideoStream
 
+from ._core import display_size as display_size
+from ._core import normalize_rotation_clockwise as normalize_rotation_clockwise
 from .contract import VideoInfo
-from .planner import round_to_microseconds
+from .errors import InternalError
 
-_QUARTER_TURNS = (90, 270)
+_log = logging.getLogger(__name__)
 
 
-def probe(path: str | Path, *, keyframes: bool = False) -> VideoInfo:
-    """Read one video's duration, display-oriented size, frame rate, codec and rotation."""
+def probe_video(path: str | Path, *, keyframes: bool = False) -> VideoInfo:
     with av.open(str(path)) as container:
         stream = container.streams.video[0]
         rotation = normalize_rotation_clockwise(_display_rotation_ccw(container, stream))
@@ -35,33 +39,30 @@ def probe(path: str | Path, *, keyframes: bool = False) -> VideoInfo:
         )
 
 
-def display_size(
-    coded_width: int,
-    coded_height: int,
-    sample_aspect_ratio: Fraction | None,
-    rotation: int,
-) -> tuple[int, int]:
-    """The size a player shows, matching the browser's `video.videoWidth/videoHeight`."""
-    # ffmpeg's convention stretches the width by the sample aspect ratio, never the height.
-    width = (
-        coded_width
-        if sample_aspect_ratio is None or sample_aspect_ratio == 1
-        else round(coded_width * sample_aspect_ratio)
+def probe(path: str | Path, *, keyframes: bool = False) -> VideoInfo:
+    warnings.warn(
+        "vid2grid.probe is deprecated, use vid2grid.probe_video", DeprecationWarning, stacklevel=2
     )
-    if rotation in _QUARTER_TURNS:
-        return coded_height, width
-    return width, coded_height
+    return probe_video(path, keyframes=keyframes)
 
 
-def normalize_rotation_clockwise(ccw_degrees: float) -> int:
-    """Turn ffmpeg's counter-clockwise display rotation into 0, 90, 180 or 270 clockwise."""
-    # ffmpeg reports the rotation to apply counter-clockwise while every executor of this
-    # contract rotates clockwise, so the sign flips. floor(x + 0.5) is JavaScript's Math.round.
-    quarters = math.floor(-ccw_degrees / 90 + 0.5)
-    return int(quarters * 90) % 360
+def read_keyframe_timestamps(path: str | Path) -> tuple[float, ...]:
+    with av.open(str(path)) as container:
+        return _keyframe_timestamps(container, container.streams.video[0])
 
 
-def _sample_aspect_ratio(stream: Any) -> Fraction | None:
+def stream_time_base(stream: VideoStream) -> Fraction:
+    if stream.time_base is None:
+        raise InternalError("the video stream has no time base")
+    return Fraction(stream.time_base.numerator, stream.time_base.denominator)
+
+
+# Per-frame calls into V8 would be slow, so core's rule, floor(x * 1e6 + 0.5), is mirrored here.
+def round_to_microseconds(seconds: float) -> float:
+    return math.floor(seconds * 1e6 + 0.5) / 1e6
+
+
+def _sample_aspect_ratio(stream: VideoStream) -> Fraction | None:
     # PyAV 19 reports an unset ratio as ffmpeg's 0/1 where PyAV 18 gave None.
     ratio = getattr(stream, "sample_aspect_ratio", None)
     if ratio is None or ratio.numerator == 0:
@@ -69,7 +70,7 @@ def _sample_aspect_ratio(stream: Any) -> Fraction | None:
     return Fraction(ratio.numerator, ratio.denominator)
 
 
-def _display_rotation_ccw(container: Any, stream: Any) -> float:
+def _display_rotation_ccw(container: InputContainer, stream: VideoStream) -> float:
     rotate = stream.metadata.get("rotate")
     if rotate is not None:
         # The container's "rotate" tag is clockwise where a display matrix is counter-clockwise.
@@ -78,31 +79,35 @@ def _display_rotation_ccw(container: Any, stream: Any) -> float:
     # decoded frame; rewind afterwards so a keyframe walk still sees the whole stream.
     try:
         frame = next(container.decode(stream), None)
-    except av.FFmpegError:
+    except av.FFmpegError as exc:
+        _log.warning(
+            "could not decode a frame to read the display rotation, assuming none: %s", exc
+        )
         return 0.0
     finally:
         container.seek(0)
     return 0.0 if frame is None else float(frame.rotation)
 
 
-def _duration_seconds(container: Any, stream: Any) -> float:
+def _duration_seconds(container: InputContainer, stream: VideoStream) -> float:
     if container.duration is not None:
         return float(container.duration / av.time_base)
-    if stream.duration is not None:
+    if stream.duration is not None and stream.time_base is not None:
         return float(stream.duration * stream.time_base)
     return 0.0
 
 
-def _frame_rate(stream: Any) -> float:
+def _frame_rate(stream: VideoStream) -> float:
     rate = stream.average_rate or stream.guessed_rate
     return 0.0 if rate is None else float(rate)
 
 
-def _keyframe_timestamps(container: Any, stream: Any) -> tuple[float, ...]:
+def _keyframe_timestamps(container: InputContainer, stream: VideoStream) -> tuple[float, ...]:
     # Composition time, so it lines up with the browser demuxer's sample `cts`; demux order
     # is decode order, hence the sort.
+    time_base = stream_time_base(stream)
     timestamps = [
-        round_to_microseconds(float(packet.pts * stream.time_base))
+        round_to_microseconds(float(packet.pts * time_base))
         for packet in container.demux(stream)
         if packet.pts is not None and packet.is_keyframe
     ]

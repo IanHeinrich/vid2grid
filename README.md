@@ -133,12 +133,14 @@ flowchart TD
 ```
 
 Sheets from different hosts match in geometry and burned-in text, never in
-bytes: a canvas and Pillow rasterise the same string differently. The ten
-golden plans in [fixtures/render-plans/](fixtures/render-plans/) are what keeps
-the TypeScript and Python planners identical. Both
-`packages/core/tests/renderPlanFixtures.test.ts` and
-`python/tests/test_planner.py` are pinned to them, so a planner change that
-moves one language and not the other fails CI.
+bytes: a canvas and Pillow rasterise the same string differently. There is
+one planner, core's. The Python package does not port it: it runs core's own
+code, bundled into `python/src/vid2grid/_core.js` by `npm run bundle`, in an
+embedded V8. The ten golden plans in
+[fixtures/render-plans/](fixtures/render-plans/) pin core's output through
+`packages/core/tests/renderPlanFixtures.test.ts`, and
+`python/tests/test_planner.py` runs every one of them through the bundle. CI
+regenerates both the fixtures and the bundle and fails if either has drifted.
 
 <details>
 <summary>Click to expand the browser pipeline.</summary>
@@ -214,10 +216,13 @@ Same `RenderPlan` contract as the browser app, no transcription. See
 ### From another language or service
 
 Write your own executor. Build the plan (or accept one built elsewhere), then
-decode, scale, paste, draw text and encode as the plan says.
-[docs/render-plan.md](docs/render-plan.md) is the spec, and the golden plans in
+decode, scale, paste, draw text and encode as the plan says. A host that can
+run JavaScript can embed core's bundle the way the Python package does instead
+of porting the planner.
+[docs/render-plan.md](docs/render-plan.md) is the spec, including that embed
+surface, and the golden plans in
 [fixtures/render-plans/](fixtures/render-plans/) are test inputs you can pin a
-new planner port to.
+new executor to.
 
 <details>
 <summary>Known limitations</summary>
@@ -263,6 +268,7 @@ npm ci
 | `npm run preview --workspace apps/web` | Serve the `apps/web/dist` production build locally.                                                                             |
 | `npm run format`                       | Format the repo with Prettier.                                                                                                  |
 | `npm run fixtures`                     | Regenerate `fixtures/render-plans/` from the planner (required by any planner change).                                          |
+| `npm run bundle`                       | Regenerate `python/src/vid2grid/_core.js`, the copy of core the Python package runs (required by any planner change).           |
 
 There's no lint step. `npm run typecheck` (which `npm run build` runs first)
 is the type-check gate, `npm test` is the correctness gate, and `npm run
@@ -272,9 +278,9 @@ format` is the format step. All three should be clean before opening a PR.
 [python/README.md](python/README.md) for the uv (or venv) commands.
 
 The [pages.yml](.github/workflows/pages.yml) workflow runs a `test` job (npm
-install, `npm test`, `npm run typecheck`, then regenerates fixtures and fails
-on drift) and a `python` job (pytest + ruff across Ubuntu, Windows and macOS)
-on every push/PR touching the workspaces. On `main`, if `apps/web/package.json`'s
+install, `npm test`, `npm run typecheck`, then regenerates the fixtures and the
+core bundle and fails on drift) and a `python` job (pytest + ruff across
+Ubuntu, Windows and macOS) on every push/PR touching the workspaces. On `main`, if `apps/web/package.json`'s
 `version` has changed to a value with no existing `vX.Y.Z` git tag, it also
 tags the release, publishes a GitHub Release, and deploys `apps/web/dist` to
 GitHub Pages.
