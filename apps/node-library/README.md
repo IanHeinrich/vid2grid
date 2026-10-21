@@ -1,42 +1,37 @@
-# @vid2grid/node
+# @vid2grid/node (Node library)
 
-The Node.js host for vid2grid. It runs the same planner as the browser app
-(`generateCollages` from `@vid2grid/core`) and implements its ports with
-ffprobe, ffmpeg and a Skia canvas, so a video becomes the same collage sheets
-from the command line or a Node script. Nothing is uploaded and no browser is
-involved.
+Turns a video into collage sheets, grid JPEGs packing many timestamped
+frames, from a Node.js script. It runs the same planner as the website and
+implements its steps with ffprobe, ffmpeg and a Skia canvas, so the sheets
+match every other way of using vid2grid. No browser is involved. The
+[Node command line](../node-cli/) is built on it.
 
-The binaries come prebuilt from npm: `ffmpeg-static`, `@ffprobe-installer/ffprobe`
-and `@napi-rs/canvas`. There is nothing to install system-wide, but they add
-about 195 MB to `node_modules` (on Windows x64: ffmpeg 80 MB, ffprobe 78 MB,
-the canvas 37 MB). ffprobe and the canvas arrive as per-platform npm packages;
-`ffmpeg-static` instead downloads its binary from its GitHub releases in an
-install script, so `npm ci --ignore-scripts` leaves this package without ffmpeg.
+## Install
 
-## Command line
+The package is private and not on npm, so it runs from a clone. It needs
+Node 20 or later. From the repo root:
 
-From the repo root, after `npm ci`:
-
-```sh
-npm run build --workspace packages/node
-node packages/node/dist/cli.js clip.mp4 -o sheets --fps 4 --frames-per-grid 9
+```bash
+npm ci
+npm run build --workspace apps/node-library
 ```
 
-The flags, their defaults and the `--help` text are generated from core's
-`optionSpecsFor` (the shared `OPTION_SPECS`), and the values go through core's
-`requestFromOptions`, so the CLI offers exactly the options every host does
-and fills in the same defaults. Run `--help` for the list. `--transcript` is
-not offered, because this host has no transcription.
+Code in this workspace then imports it as `@vid2grid/node`, as the command
+line does. The build bundles core into `dist/`, because Node cannot load
+core's TypeScript source directly.
 
-It prints the path of each sheet it wrote, `grid_0001.jpg` onwards, named by
-the plan. The package declares a `vid2grid-node` bin for the same entry point.
+ffmpeg, ffprobe and the canvas come prebuilt from npm (`ffmpeg-static`,
+`@ffprobe-installer/ffprobe` and `@napi-rs/canvas`), so nothing is installed
+system-wide. They add about 195 MB to `node_modules`. `ffmpeg-static`
+downloads its binary in an install script, so `npm ci --ignore-scripts`
+leaves the library without ffmpeg.
 
-## From Node
+## Usage
 
 ```ts
 import { renderVideo } from "@vid2grid/node";
 
-const { sheetPaths, timings, warnings } = await renderVideo(
+const { plan, sheetPaths, timings, warnings } = await renderVideo(
   "clip.mp4",
   {
     startSeconds: 0,
@@ -50,69 +45,58 @@ const { sheetPaths, timings, warnings } = await renderVideo(
 );
 ```
 
-`createNodePorts()` returns the ports on their own for a caller that wants to
-run `generateCollages` itself and keep the JPEG buffers in memory.
+`renderVideo(path, request, outDir, options?)` plans the sheets and writes
+each one to `outDir` as soon as it is encoded, `grid_0001.jpg` onwards. It
+returns the `RenderPlan`, the paths written, the timings and any warnings.
+`options` takes `onProgress` and a `videoInfo` you have already probed. The
+folder is made on the first sheet, so a rejected request leaves none; a run
+that fails partway leaves the sheets written before the failure.
+
+The library also exports:
+
+- `createNodePorts()`: the ports on their own, for a caller that runs core's
+  `generateCollages` itself and keeps the JPEG buffers in memory.
+- `probeVideo(path)` and `readKeyframeTimes(path)`: the video's info and its
+  keyframe times.
+- `captureFrames` and `encodeSheet`: the capture and encode steps.
 
 ## How it follows the plan
 
-- **Probe**: ffprobe reads the duration and the coded size, and core's
-  `displaySize` and `normalizeRotationClockwise` apply the sample aspect ratio
-  and the rotation (a display matrix or a `rotate` tag), as for every host.
-  Keyframe times are read from the packets only when keyframe mode asks for
-  them.
-- **Capture**: one ffmpeg process per run decodes from the keyframe before the
-  first planned time, scales each frame to the plan's cell and pipes it out as
-  raw RGBA. Each planned time takes the first decoded frame at or after it,
-  compared at whole microseconds, by core's `createFrameMatcher`. When core's
-  `isKeyframePlan` finds every planned time among the probed keyframes, ffmpeg
-  decodes keyframes alone. Each frame's time comes from ffmpeg's `showinfo`
-  log, and every frame that is kept has its pixels checked against the
-  checksum logged with that time, so a frame lost between the two outputs
-  fails the run. ffmpeg is stopped as soon as the last planned frame is
-  filled. Frames are yielded in plan order as ffmpeg produces them, and its
-  output is paused while a frame waits to be pulled, so ffmpeg blocks rather
-  than decoding ahead.
-- **Render**: each sheet is painted by core's `paintSheetFromPlan` onto an
-  `@napi-rs/canvas` canvas and encoded as JPEG at the plan's quality. Two
-  sheets encode at once, so painting one on the main thread overlaps the JPEG
-  encode of the other on libuv's thread pool. `renderVideo` writes each sheet
-  to disk as soon as it is encoded, through core's `streamCollages`. Because
-  sheets are written as they finish, a run that fails leaves the sheets
-  written before the failure on disk.
-- **Memory**: it stays flat however many frames are planned. At most three
-  sheets' frames are held at once, each frame raw RGBA at the cell size: two
-  sheets encoding or waiting to be written, and the one being captured. A
-  1024 px sheet of 9 frames has cells of roughly 330 by 250 pixels, about
-  330 KB each, so the frames stay under about 9 MB, plus two sheet canvases,
-  for a clip of any length.
+- **Probe**: ffprobe reads the duration and coded size; core applies the
+  sample aspect ratio and rotation, as for every host. Keyframe times are read
+  only when keyframe sampling asks for them.
+- **Capture**: one ffmpeg process per run decodes from the keyframe before
+  the first planned time, scales each frame to its cell and pipes it out as
+  raw RGBA. Each planned time takes the first frame at or after it. When every
+  planned time is a keyframe, ffmpeg decodes keyframes alone.
+- **Render**: core's `paintSheetFromPlan` paints each sheet onto an
+  `@napi-rs/canvas` canvas, which encodes it as JPEG. Two sheets encode at
+  once.
+- **Memory** stays flat however long the video: at most three sheets' frames
+  are held at once.
 
-## What it does not do
+## Limits
 
-- **No transcription.** The transcript port is optional in core and this host
-  leaves it out. A request with `transcript` set still renders its sheets and
-  reports a `no_transcription_port` warning.
-- Within one run ffmpeg decodes every frame between the first and the last
-  planned time. The Python package seeks across long gaps instead, so a very
-  low frame rate over a long video is slower here.
-- The package is private and not yet published to npm.
+- No transcription. A request with `transcript` set still renders its sheets
+  and reports a `no_transcription_port` warning.
+- ffmpeg decodes every frame between the first and last planned time. The
+  Python library seeks across long gaps instead, so a very low frame rate over
+  a long video is slower here.
 
 ## Development
 
-Run from the repo root:
+From the repo root:
 
-```sh
-npm test --workspace packages/node
-npm run build --workspace packages/node
+```bash
+npx vitest run --root apps/node-library
+npm run build --workspace apps/node-library
 ```
 
-The conformance checks against the shared goldens in `fixtures/` (probe and
-frame selection over `fixtures/frames/`, painting over `fixtures/draw-ops/`)
-run on their own with:
+The conformance test holds the library to the shared goldens in
+[fixtures/](../../fixtures/): probing and frame choice over
+`fixtures/frames/`, painting over `fixtures/draw-ops/`. It runs on its own
+with:
 
-```sh
-npx vitest run --root packages/node tests/conformance.test.ts
+```bash
+npx vitest run --root apps/node-library tests/conformance.test.ts
 ```
-
-The build bundles `@vid2grid/core` with Vite into `dist/`, because Node cannot
-load core's TypeScript source directly, and leaves the packages carrying native
-binaries external.

@@ -1,11 +1,11 @@
 # vid2grid
 
 Turns a video into "collage sheets": grid images packing many timestamped
-frames into one JPEG, sized for feeding into AI vision models. `apps/web/` is the
-primary app: plain TypeScript and Vite, no framework, running entirely
-client-side (`<video>`/`<canvas>`, WebCodecs, Web Workers, transformers.js).
-No server, nothing uploaded. `python/` is a headless executor of the same
-plan for use outside the browser.
+frames into one JPEG, sized for feeding into AI vision models. One DOM-free
+planner in `packages/core` decides everything; executors for the browser,
+Node.js and Python only move pixels. Ways in: the website, a Python library,
+CLI and MCP server, and a Node.js library and CLI. `docs/architecture.md` is
+the map.
 
 ## Commands (all run from the repo root of this npm workspaces monorepo)
 
@@ -19,23 +19,33 @@ plan for use outside the browser.
 | `npm run format`    | `prettier --write .` from the root.                                            |
 | `npm run dev`       | Vite dev server for `apps/web/`.                                               |
 | `npm run fixtures`  | Regenerates `fixtures/render-plans/` and `fixtures/draw-ops/` from core.       |
-| `npm run bundle`    | Regenerates `python/src/vid2grid/_core.js`: core bundled for `python/`.        |
+| `npm run bundle`    | Regenerates `apps/python-library/src/vid2grid/_core.js`: core for Python.      |
 
 `npm test`, `npm run lint` and `npm run build` must all pass before a change is
 done. CI also runs `npm run coverage --workspace packages/core`, which holds
 core to its coverage thresholds.
 
-The Python package is its own toolchain and does not go through npm: run its
-checks from `python/`, per `python/README.md`.
+The root workspaces are `packages/*`, `apps/web`, `apps/node-library` and
+`apps/node-cli`. The three Python apps are not npm workspaces: each is its own
+uv project, checked from its own folder with `uv sync --all-groups`,
+`uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .` and
+`uv run mypy`.
 
-| Package                  | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/core`          | `@vid2grid/core`, DOM-free pure logic. `tsconfig` sets `lib: ["ES2022"]` and `types: []` so any browser API is a compile error, and it must have no `dependencies` (enforced by `packages/core/tests/dependencies.test.ts`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `packages/browser`       | `@vid2grid/browser`, the browser executor: core's ports implemented with `<video>`/`<canvas>`, WebCodecs + mp4box, an OffscreenCanvas worker pool, Web Audio and a transformers.js Whisper worker. Owns every browser-only dependency.                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `packages/node`          | `@vid2grid/node`, the Node.js executor: core's ports implemented with ffprobe/ffmpeg (`@ffprobe-installer/ffprobe`, `ffmpeg-static`) and `@napi-rs/canvas`, plus a `vid2grid-node` CLI whose flags come from core's `OPTION_SPECS`. Vite bundles core into `dist/`. `tests/conformance.test.ts` holds it to the draw-op and frame goldens. No transcription.                                                                                                                                                                                                                                                                                                                                   |
-| `apps/web/`              | The Vite app: UI markup, wiring, state, download. It calls `generateCollages` from `@vid2grid/core` with the ports from `@vid2grid/browser`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `python/`                | `vid2grid`, the headless executor: core's own planner, bundled into `src/vid2grid/_core.js` and run through an embedded V8 (`mini-racer`), plus a PyAV/Pillow executor. `pip install`able and depending only on `av`, `Pillow` and `mini-racer`; the `transcribe` extra adds faster-whisper, the `mcp` extra an MCP server.                                                                                                                                                                                                                                                                                                                                                                    |
-| `fixtures/` + `scripts/` | `fixtures/render-plans/*.json` are golden `RenderPlan`s, written only by `scripts/generateRenderPlanFixtures.ts` (`npm run fixtures`) and read back by `packages/core/tests/renderPlanFixtures.test.ts` and by `python/tests/test_planner.py`. Generated and Prettier-ignored: nothing edits them by hand. The same script writes `fixtures/draw-ops/`. `python/tests/test_conformance.py` is the Python package's conformance test, holding it to the draw-op and frame goldens. `fixtures/frames/` is recorded by `scripts/recordFrameFixtures.py` over `fixtures/videos/` (two videos, the second generated by `scripts/makeKeyframeVideo.py`). A new host follows `docs/adding-a-host.md`. |
+| Folder                   | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/core`          | `@vid2grid/core`, the DOM-free planner. `tsconfig` sets `lib: ["ES2022"]` and `types: []` so any browser API is a compile error, and it must have no `dependencies` (enforced by `packages/core/tests/dependencies.test.ts`).                                                                                                                                                                                                                                             |
+| `packages/browser`       | `@vid2grid/browser`, the browser executor: core's ports with `<video>`/`<canvas>`, WebCodecs + mp4box, an OffscreenCanvas worker pool, Web Audio and a transformers.js Whisper worker. Owns every browser-only dependency.                                                                                                                                                                                                                                                |
+| `apps/web`               | The Vite website: plain TypeScript, no framework, entirely client-side, nothing uploaded. UI markup, wiring, state, download. Calls `generateCollages` from core with the browser ports. Its `package.json` version is the release key.                                                                                                                                                                                                                                   |
+| `apps/node-library`      | `@vid2grid/node`, the Node.js executor: ffprobe/ffmpeg and `@napi-rs/canvas`, core bundled into `dist/`. `tests/conformance.test.ts` holds it to the draw-op and frame goldens. No transcription.                                                                                                                                                                                                                                                                         |
+| `apps/node-cli`          | `@vid2grid/node-cli`, the `vid2grid-node` command, flags from `OPTION_SPECS`. Vite inlines core and keeps `@vid2grid/node` external, so build the library before running it.                                                                                                                                                                                                                                                                                              |
+| `apps/python-library`    | `vid2grid`, the Python executor: PyAV and Pillow, with core bundled into `src/vid2grid/_core.js` and run in `mini-racer`. The `transcribe` extra adds faster-whisper. `options.py` has `plan_from_options` and `render_from_options`, which the Python CLI and MCP server share.                                                                                                                                                                                          |
+| `apps/python-cli`        | `vid2grid-cli`, module `vid2grid_cli`, the `vid2grid` command.                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `apps/mcp-server`        | `vid2grid-mcp`, module `vid2grid_mcp`, an MCP server.                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `fixtures/` + `scripts/` | Goldens. `scripts/generateRenderPlanFixtures.ts` (`npm run fixtures`) alone writes `fixtures/render-plans/` and `fixtures/draw-ops/`; generated and Prettier-ignored. `scripts/recordFrameFixtures.py` records `fixtures/frames/` over `fixtures/videos/` (the second video is made by `scripts/makeKeyframeVideo.py`). Read by core's fixture tests, the Node conformance test and the Python planner and conformance tests. A new host follows `docs/adding-a-host.md`. |
+
+`apps/python-cli` and `apps/mcp-server` depend on `vid2grid` by a git
+reference, and `[tool.uv.sources]` points it at `../python-library`, so local
+work and `uvx --from git+...` both use the library from the same commit.
 
 ## Rules a worker may not read elsewhere
 
@@ -63,8 +73,9 @@ checks from `python/`, per `python/README.md`.
   `packages/core/src/render/drawOps.ts` reaches, which moves
   `fixtures/draw-ops/`. Any change to what
   `packages/core/src/embed.ts` reaches also reruns `npm run bundle`, which
-  rewrites `python/src/vid2grid/_core.js`. CI diffs both, so either drifting
-  fails it. `python/` runs that bundle, so it needs no matching edit.
+  rewrites `apps/python-library/src/vid2grid/_core.js`. CI diffs both, so
+  either drifting fails it. The Python apps run that bundle, so they need no
+  matching edit.
   `docs/render-plan.md` is the contract's spec and moves with it.
 - **All UI markup is in `apps/web/index.html`.** There are no framework templates;
   `apps/web/src/main.ts` wires that markup to the modules.

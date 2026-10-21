@@ -144,6 +144,23 @@ def test_plan_only_with_json_prints_the_plan_results_dict(
     assert json.loads(capsys.readouterr().out) == plan_from_options(TINY, RUN_VALUES).to_dict()
 
 
+def test_plan_only_with_json_carries_the_plans_warnings(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unreadable(path: str | Path) -> tuple[float, ...]:
+        raise av.InvalidDataError(1094995529, "Invalid data found when processing input")
+
+    monkeypatch.setattr(sheets, "read_keyframe_timestamps", unreadable)
+    values = {**RUN_VALUES, "keyframeSampling": True}
+
+    code = cli.main([str(TINY), *RUN_FLAGS, "--keyframes", "--plan-only", "--json"])
+
+    printed = json.loads(capsys.readouterr().out)
+    assert code == 0
+    assert printed == plan_from_options(TINY, values).to_dict()
+    assert printed["warnings"][0].startswith("Keyframes unavailable (")
+
+
 def test_a_run_writes_the_sheets_core_names(
     capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:

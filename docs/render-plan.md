@@ -9,11 +9,11 @@ call the output files.
 ([`plan/buildRenderPlan.ts`](../packages/core/src/plan/buildRenderPlan.ts),
 typed in [`plan/renderPlan.ts`](../packages/core/src/plan/renderPlan.ts)). An
 **executor** (the browser one in `packages/browser`, the Node.js one in
-`packages/node`, the headless Python one in `python/`) only decodes, scales,
-pastes, draws text and encodes. That keeps
-the policy in one implementation and one set of tests, whatever language the
-host is written in: `python/` does not port the planner, it runs core's own
-code (see [Hosts without JavaScript](#hosts-without-javascript)).
+`apps/node-library`, the Python one in `apps/python-library`) only decodes,
+scales, pastes, draws text and encodes. That keeps the policy in one
+implementation and one set of tests, whatever language the host is written
+in: the Python library does not port the planner, it runs core's own code
+(see [Hosts without JavaScript](#hosts-without-javascript)).
 [adding-a-host.md](adding-a-host.md) is the short guide to writing a new
 executor and proving it conforms.
 
@@ -190,7 +190,8 @@ in the plan; hosts must not recompute them.
    anchored at its `anchor` corner, stroked in `stroke` then filled with
    `fill`. Pillow uses `stroke_width = strokeWidthPx`; a canvas uses
    `lineWidth = 2 * strokeWidthPx`. Pillow cannot resolve a CSS generic family
-   like `sans-serif`, so `python/` draws with Pillow's bundled default font.
+   like `sans-serif`, so the Python library draws with Pillow's bundled
+   default font.
 5. Encode each sheet as JPEG at `plan.jpegQuality` (1-100) and name it
    `sheet.fileName`.
 6. If a transcript was asked for, keep the cues overlapping each window and
@@ -238,12 +239,13 @@ point are never decoded.
 
 A host in another language embeds core rather than porting it.
 `npm run bundle` builds [`embed.ts`](../packages/core/src/embed.ts) into one
-script, `python/src/vid2grid/_core.js`, that defines a global `vid2gridCore`
-with a single function, `call(name, argsJson)`. `argsJson` is a JSON array of
-positional arguments in the camelCase shapes above, and the result is a JSON
-envelope: `{"ok": true, "value": ...}`, or `{"ok": false, "code": ...,
-"message": ...}` where `code` is `invalid_request`, `no_audio`, `no_frames` or
-`internal`. The functions are `buildRenderPlan`, `collagePlanRequestProblem`,
+script, `apps/python-library/src/vid2grid/_core.js`, that defines a global
+`vid2gridCore` with a single function, `call(name, argsJson)`. `argsJson` is
+a JSON array of positional arguments in the camelCase shapes above, and the
+result is a JSON envelope: `{"ok": true, "value": ...}`, or
+`{"ok": false, "code": ..., "message": ...}` where `code` is
+`invalid_request`, `no_audio`, `no_frames` or `internal`. The functions are
+`buildRenderPlan`, `collagePlanRequestProblem`,
 `validateCollagePlanRequest`, `sheetDrawOps`, `resolveKeyframeSampling` (the
 sampled fallback and its warning, as `generateCollages` applies it),
 `displaySize`, `normalizeRotationClockwise`, `isKeyframePlan` (a plan, or an
@@ -264,16 +266,16 @@ there are none. The one `null` is `displaySize`'s third argument, which every
 call passes: `null` for a video with no sample aspect ratio, an object with
 `numerator` and `denominator` otherwise.
 
-`python/` loads that script once per process into an embedded V8
+`apps/python-library` loads that script once per process into an embedded V8
 (`mini-racer`) and maps each error code to its own exception class, so its
 plans are core's plans by construction. It checks that against every fixture
-in `python/tests/test_planner.py`.
+in `apps/python-library/tests/test_planner.py`.
 
 ## Changing the planner
 
 A planner change is not done until the generated files move with it: run
 `npm run fixtures` (the plan and draw-op goldens) and `npm run bundle` in the
 same PR, and CI's `git diff --exit-code` over `fixtures/` and
-`python/src/vid2grid/_core.js` will fail if either drifts. If it moves planned
-times, rerecord the frame goldens too, as
+`apps/python-library/src/vid2grid/_core.js` will fail if either drifts. If it
+moves planned times, rerecord the frame goldens too, as
 [adding-a-host.md](adding-a-host.md#proving-conformance) describes.

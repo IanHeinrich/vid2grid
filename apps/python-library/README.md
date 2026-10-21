@@ -1,39 +1,87 @@
-# vid2grid (Python)
+# vid2grid (Python library)
 
-Turns a video into "collage sheets": grid JPEGs packing many timestamped frames
-into one image, sized for feeding into AI vision models. This is the headless
-executor of the same `RenderPlan` contract the browser app uses. PyAV decodes,
-Pillow paints, and faster-whisper transcribes when the `transcribe` extra is
-installed.
+The Python package `vid2grid`: turns a video into collage sheets, grid JPEGs
+packing many timestamped frames, without a browser. PyAV decodes, Pillow
+paints, and faster-whisper transcribes when the `transcribe` extra is
+installed. The [command line](../python-cli/) and the
+[MCP server](../mcp-server/) are built on it.
 
-It has no planner of its own. `src/vid2grid/_core.js` is `packages/core`
-bundled by `npm run bundle` (generated, never edited by hand), and `_core.py`
-runs it in an embedded V8 through `mini-racer`, so every plan, every validation
-message, the keyframe fallback and its warning, the display size and the draw
-ops for each sheet come from core itself. `tests/test_planner.py` runs every
-`fixtures/render-plans/` golden through it. It depends on `av`, `Pillow` and
-`mini-racer`. `mini-racer` ships prebuilt wheels for Linux (manylinux 2.27+
-and musllinux), macOS and Windows, each on x64 and arm64; anywhere else pip
-builds it from source.
+It has no planner of its own. `src/vid2grid/_core.js` is
+[packages/core](../../packages/core/) bundled by `npm run bundle` (generated,
+never edited by hand), and it runs in an embedded V8 through `mini-racer`.
+Every plan, validation message and warning comes from core itself, so sheets
+match the website's geometry and burned-in text: same cells, same timestamps,
+same `grid_0001.jpg` file names. They do not match its bytes, because a canvas
+and Pillow rasterise text differently.
 
+## Install
+
+It is not on a package index, so every install names the git URL:
+
+```bash
+pip install "git+https://github.com/IanHeinrich/vid2grid#subdirectory=apps/python-library"
 ```
-pip install git+https://github.com/IanHeinrich/vid2grid#subdirectory=python
+
+With transcripts:
+
+```bash
+pip install "vid2grid[transcribe] @ git+https://github.com/IanHeinrich/vid2grid#subdirectory=apps/python-library"
 ```
 
-It is not on a package index, so every install names the git URL. For
-transcripts, add the `transcribe` extra, which brings in `faster-whisper`:
+It needs Python 3.11 or later and depends on `av`, `Pillow` and `mini-racer`.
+`mini-racer` ships wheels for Linux (manylinux 2.27+ and musllinux), macOS and
+Windows, each on x64 and arm64; anywhere else pip builds it from source.
 
-```
-pip install "vid2grid[transcribe] @ git+https://github.com/IanHeinrich/vid2grid#subdirectory=python"
-```
+## Usage
+
+### From options
+
+The simplest entry point takes options keyed by core's camelCase names, the
+same ones the command line and MCP server take. A missing option, or `None`,
+gets core's default.
 
 ```python
-from vid2grid import probe_video, render_single_sheet, render_sheets, CollagePlanRequest
+from vid2grid import plan_from_options, render_from_options
+
+planned = plan_from_options("clip.mp4", {"targetFps": 2, "framesPerGrid": 16})
+print(len(planned.plan.sheets), planned.warnings)
+
+result = render_from_options("clip.mp4", "sheets", {"targetFps": 2, "framesPerGrid": 16})
+for sheet in result.sheets:
+    print(sheet.path, sheet.first_timestamp_seconds, sheet.last_timestamp_seconds)
+```
+
+- `plan_from_options(path, values)` probes the video and returns a
+  `PlanResult` with the `RenderPlan` and its `warnings`, without decoding a
+  frame.
+- `render_from_options(path, out_dir, values)` probes, plans and writes the
+  sheets and any transcript, returning a `RenderResult`. An `out_dir` of
+  `None` means `default_out_dir(path)`, a new folder beside the video named
+  the way the website names its download.
+- `option_specs(host_capabilities())` lists every option this install can
+  honour, with its `name`, `flag`, `type`, `default` and `help`.
+  `host_capabilities()` is `("transcription",)` when the `transcribe` extra is
+  installed and `()` otherwise, so `transcript` is offered only when it can be
+  done.
+
+The options are `startSeconds`, `endSeconds`, `targetFps`, `framesPerGrid`,
+`outputResolution`, `jpegQuality`, `keyframeSampling`, `maxKeyframes`,
+`frameCount` and, with the extra, `transcript` (`"none"`, `"per-sheet"` or
+`"combined"`). An unknown name, a value of the wrong type or a `transcript`
+without the extra raises `InvalidRequestError`.
+
+When keyframe sampling is asked for but the keyframes cannot be read, or none
+fall in the range, the plan samples by target FPS instead and a warning says
+so.
+
+### With a request
+
+`render_sheets` takes a full `CollagePlanRequest`:
+
+```python
+from vid2grid import CollagePlanRequest, probe_video, render_sheets
 
 info = probe_video("clip.mp4")
-result = render_single_sheet("clip.mp4", out_path="sheet.jpg", frames=16)
-print(result.sheet_path, result.frame_count, result.timings_ms)
-
 request = CollagePlanRequest(
     start_seconds=0.0,
     end_seconds=info.duration_seconds,
@@ -45,147 +93,92 @@ request = CollagePlanRequest(
 batch = render_sheets("clip.mp4", request, "sheets/")
 ```
 
-Sheets match the web app's geometry and burned-in text exactly: same cell
-rectangles, same timestamps, same `grid_0001.jpg` file names. They do not match
-its bytes, because a canvas and Pillow measure and rasterise text differently,
-so never compare rendered pixels between the two executors.
+### One sheet
 
-A CLI or tool built on this package needs three calls from `vid2grid`, all
-taking option values keyed by core's camelCase option names (`None` counts as
-unset):
+`render_single_sheet` puts an exact number of frames on one sheet. Its
+defaults (16 frames, 1024 px, quality 85) are its own.
 
-- `option_specs(host_capabilities())` lists every option this install can
-  honour, with its `name`, `flag`, `type`, `default` and `help`.
-  `host_capabilities()` is `("transcription",)` when the `transcribe` extra is
-  installed and `()` otherwise, so `transcript` is offered only when it can be
-  done.
-- `plan_from_options(path, values)` probes the video (reading its keyframes
-  only when `keyframeSampling` is set) and returns a `PlanResult` holding the
-  `RenderPlan` core builds and its `warnings`, without decoding a frame. When
-  the keyframes cannot be read or none fall in the range, the plan samples by
-  target FPS instead and the warning says so, exactly as `render_sheets` does.
-  `PlanResult.to_dict()` is `{"plan": ..., "warnings": [...]}`.
-- `render_from_options(path, out_dir, values)` probes, plans and writes the
-  sheets and any transcript, returning a `RenderResult`. An `out_dir` of `None`
-  is `default_out_dir(path)`, a new folder beside the video named as the web
-  app names its download. When a transcript is asked for it uses a
-  `WhisperTranscriber()` unless you pass `transcriber=`.
+```python
+from vid2grid import render_single_sheet
 
-A missing video, or a file with no video stream, raises `InvalidRequestError`
-and one PyAV cannot read raises `InternalError`, so a caller of either needs to
-catch only `Vid2GridError`.
+result = render_single_sheet("clip.mp4", out_path="sheet.jpg", frames=16)
+print(result.to_sheet_row())
+```
 
-Both convert the values with `request_from_options(values, info,
-host_capabilities())`, which fills in the web app's defaults and raises
-`InvalidRequestError` for an unknown name, a value of the wrong type, an enum
-value outside the spec's `values` and a `transcript` on an install without the
-extra.
-`render_single_sheet`'s defaults (16 frames, quality 85) are deliberately its
-own: it is curator's single-sheet API, not the generic entry point.
+### Results
 
-`RenderResult.sheets` holds a `WrittenSheet` for each sheet written, with its
+`RenderResult.sheets` holds a `WrittenSheet` per sheet written, with its
 `path` and the `first_timestamp_seconds` and `last_timestamp_seconds` of the
 frames actually captured on it. Those can differ from the plan, because a
-stream that ends early cuts the last sheet short and drops any sheet after it.
-`RenderResult.to_dict()` is the JSON both the CLI and the MCP server report, in
-core's camelCase:
+stream that ends early cuts the last sheet short. `RenderResult.to_dict()` is
+the JSON the command line's `--json` prints and the MCP server returns:
 
-```
+```json
 {
-  "sheets": [{"path": ..., "firstTimestampSeconds": ..., "lastTimestampSeconds": ...}],
-  "transcriptPaths": [...],
-  "warnings": [...],
-  "frameCount": ...,
-  "timingsMs": {"extracting": ..., "rendering": ...},
-  "vid2gridVersion": ...
+  "sheets": [{ "path": "...", "firstTimestampSeconds": 0, "lastTimestampSeconds": 8 }],
+  "transcriptPaths": [],
+  "warnings": [],
+  "frameCount": 9,
+  "timingsMs": { "extracting": 0, "rendering": 0 },
+  "vid2gridVersion": "..."
 }
 ```
 
 `timingsMs` gains `transcribing` when a transcript was made.
+`PlanResult.to_dict()` is `{"plan": ..., "warnings": [...]}`.
 
-`tests/test_conformance.py` holds the package to the repo's host-independent
-goldens: core's draw ops for every `fixtures/render-plans/` case and the
-painter running exactly those ops, and, for each `fixtures/frames/` case, the
-probed info and the source frame capture picks for every planned time (read
-through `capture.iter_source_frames`).
+### Errors
 
-The modules are named after the host ports they implement: `probe.py` reads a
-video's `VideoInfo` with `probe_video`, `capture.py` decodes the planned frames
-with PyAV, `render.py` paints a sheet by running core's draw ops with Pillow and
-encodes it, and `sheets.py` runs them in turn. It probes the video once (skipped
-when you pass `info`), reads the keyframe times in a second pass only in
-keyframe mode when the info has none, then captures and paints one sheet at a
-time. `probe` is still exported as a deprecated alias of `probe_video`, and
-`CollageRequest` as an alias of `CollagePlanRequest`. A range with no capturable
-frames raises `NoFramesError`, a `Vid2GridError` whose `code` is `"no_frames"`
-and which is still a `ValueError`. When `probe_video` cannot decode a frame to
-read the display rotation, it assumes none and logs a warning on the
-`vid2grid.probe` logger rather than raising a Python warning.
+Every error is a `Vid2GridError` with a `code`. A missing video, or a file
+with no video stream, raises `InvalidRequestError`; one PyAV cannot read
+raises `InternalError`; a range with no capturable frames raises
+`NoFramesError`, which is also a `ValueError`.
 
-Transcription follows core's rules, not its own. `render_sheets` takes an
-optional `transcriber`, any callable taking the path, start and end seconds and
-returning `TranscriptCue`s, the same shape as core's transcript port. When
-`request.transcript_scope` is set it calls it once over the request's range and
-writes the `.vtt` files core's `transcriptFiles` names and fills, one per
-rendered sheet or a single `transcript.vtt`, into `RenderResult.transcript_paths`.
-A transcriber that raises, or a missing one, leaves the sheets in place and adds
-core's warning to `RenderResult.warnings`, as `generateCollages` does.
+## Transcription
+
+With the `transcribe` extra, a request whose `transcript` is `"per-sheet"`
+writes one `.vtt` per sheet and `"combined"` writes a single
+`transcript.vtt`. Cue times are on the video's timeline, matching the
+timestamps on the sheets.
+
+`render_from_options` uses `WhisperTranscriber()` unless you pass
+`transcriber=`. `render_sheets` takes `transcriber=` too. A transcriber is any
+callable taking the path and the start and end seconds and returning
+`TranscriptCue`s.
 `WhisperTranscriber(model="tiny.en", device="cpu", compute_type="int8")` is the
-one this package ships: `transcribe.decode_audio` decodes the range with PyAV
-to 16 kHz mono float32, raising `NoAudioError` when there is no audio stream,
-and core's `cuesFromSegments` puts faster-whisper's segments back on the
-video's timeline exactly as the browser does with its Whisper chunks. The model
-is downloaded on first use and kept loaded for later calls.
-`tests/test_transcribe.py` has one test against a real model, skipped unless
-`VID2GRID_WHISPER_TEST=1` is set.
+one this package ships. Its model downloads on first use and stays loaded for
+later calls. A video with no audio track, or a transcriber that raises, leaves
+the sheets in place and adds a warning.
 
-## Command line
+## Development
 
-`vid2grid VIDEO [-o OUT_DIR]` renders the sheets, and `python -m vid2grid` does
-the same. Its flags are not written out in `cli.py`: they are built from
-`option_specs(host_capabilities())`, so `--fps`, `--frames-per-grid` and the rest
-come from core with its help text and defaults, and `--transcript` appears only
-when the `transcribe` extra is installed. A flag left off is unset and core
-fills in its default. Without `-o` the sheets go in a folder beside the video,
-named by `default_out_dir`, which uses core's folder name as the web app does.
+From `apps/python-library/`:
 
-```
-vid2grid clip.mp4 --fps 2 --frames-per-grid 16 -o sheets/
-vid2grid clip.mp4 --plan-only
+```bash
+uv sync --all-groups
+uv run pytest
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy
 ```
 
-It prints one line per sheet with its path and the first and last timestamp
-captured on it, then any transcript paths, and sends warnings to stderr.
-`--json` prints `RenderResult.to_dict()` instead. `--plan-only` writes nothing:
-it prints the `RenderPlan` as JSON and sends its warnings to stderr, or with
-`--json` prints `PlanResult.to_dict()`. Either way `--json` prints the same
-dict the MCP server returns for that call. A `Vid2GridError` prints
-`vid2grid: <message>` to stderr and exits 2 for `invalid_request`, a missing
-video among them, and 1 otherwise.
+`tests/test_transcribe.py` has one test against a real Whisper model, skipped
+unless `VID2GRID_WHISPER_TEST=1` is set.
 
-## MCP server
+`tests/test_planner.py` runs every golden plan in
+[fixtures/render-plans/](../../fixtures/render-plans/) through the bundled
+core, and `tests/test_conformance.py` holds the package to core's draw ops and
+to the frame choices recorded in [fixtures/frames/](../../fixtures/frames/).
+After a change to how frames are picked, re-record those from this folder:
 
-The `mcp` extra adds `vid2grid-mcp`, an MCP server on stdio that lets an agent
-make sheets from a local video. It has two tools. `video_to_sheets` takes a
-`path`, an optional `outDir` (the same `default_out_dir` as the CLI when
-omitted) and every option from `option_specs(host_capabilities())` under its
-camelCase name, and returns `RenderResult.to_dict()`, the same dict the CLI's
-`--json` prints. `plan_video` takes the same options without `outDir` and
-returns `PlanResult.to_dict()`, the `RenderPlan` with any warnings, so the sheet
-count and timestamps can be checked before rendering. The tool schemas are
-built from the option specs, and core checks the values, so a bad one comes
-back as a tool error carrying core's message and error code.
-
-To register it with Claude Code:
-
-```
-claude mcp add vid2grid -- uvx --from "vid2grid[mcp] @ git+https://github.com/IanHeinrich/vid2grid#subdirectory=python" vid2grid-mcp
+```bash
+uv run python ../../scripts/recordFrameFixtures.py
 ```
 
-Other MCP clients take the same command and arguments.
+A change to core reaches this package only through the bundle: run
+`npm run bundle` from the repo root.
 
-Development, from this directory:
-
-```
-uv sync --all-groups && uv run pytest && uv run ruff check . && uv run ruff format --check . && uv run mypy
-```
+The modules are named after the ports they implement: `probe.py` reads a
+video's `VideoInfo`, `capture.py` decodes the planned frames, `render.py`
+paints a sheet by running core's draw ops with Pillow, and `sheets.py` runs
+them in turn, one sheet at a time.
