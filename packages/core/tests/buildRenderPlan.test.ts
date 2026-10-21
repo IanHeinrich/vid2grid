@@ -36,17 +36,17 @@ describe("buildRenderPlan, worked example", () => {
   it("plans 6 frames from 0 to 2.5s across 2 sheets", () => {
     expect(plan.frames.map((frame) => frame.timestampSeconds)).toEqual([0, 0.5, 1, 1.5, 2, 2.5]);
     expect(plan.sheets.map((sheet) => sheet.fileName)).toEqual(["grid_0001.jpg", "grid_0002.jpg"]);
-    expect(plan.sheets[1].cells.map((cell) => cell.frameIndex)).toEqual([4, 5]);
+    expect(plan.sheets[1]?.cells.map((cell) => cell.frameIndex)).toEqual([4, 5]);
   });
 
   it("places cells at the gutter-stepped pixel positions", () => {
-    expect(plan.sheets[0].cells.map((cell) => [cell.x, cell.y])).toEqual([
+    expect(plan.sheets[0]?.cells.map((cell) => [cell.x, cell.y])).toEqual([
       [8, 69],
       [260, 69],
       [8, 260],
       [260, 260],
     ]);
-    for (const cell of plan.sheets[0].cells) {
+    for (const cell of plan.sheets[0]?.cells ?? []) {
       expect([cell.width, cell.height]).toEqual([244, 183]);
     }
   });
@@ -57,7 +57,7 @@ describe("buildRenderPlan, worked example", () => {
       showMinutes: false,
       showMilliseconds: true,
     });
-    expect(plan.sheets[0].cells[0].watermarks).toEqual([
+    expect(plan.sheets[0]?.cells[0]?.watermarks).toEqual([
       {
         text: "00.000",
         anchor: "top-left",
@@ -78,7 +78,7 @@ describe("buildRenderPlan, worked example", () => {
   });
 
   it("anchors the frame index at the cell's right edge and the timestamp at its left", () => {
-    const [timestamp, index] = plan.sheets[1].cells[1].watermarks;
+    const [timestamp, index] = plan.sheets[1]?.cells[1]?.watermarks ?? [];
     expect(timestamp).toMatchObject({ text: "02.500", anchor: "top-left", x: 264 });
     expect(index).toMatchObject({ text: "5", anchor: "top-right", x: 500 });
   });
@@ -111,8 +111,8 @@ describe("buildRenderPlan", () => {
 
     expect(plan.frames).toHaveLength(7);
     expect(plan.layout).toMatchObject({ cols: 2, rows: 2 });
-    expect(plan.sheets[1].cells).toHaveLength(3);
-    expect(plan.sheets[1].cells.map((cell) => [cell.x, cell.y])).toEqual([
+    expect(plan.sheets[1]?.cells).toHaveLength(3);
+    expect(plan.sheets[1]?.cells.map((cell) => [cell.x, cell.y])).toEqual([
       [8, 69],
       [260, 69],
       [8, 260],
@@ -126,7 +126,7 @@ describe("buildRenderPlan", () => {
     );
 
     expect(plan.cell.height).toBeLessThan(8 * 16);
-    expect(plan.sheets[0].cells[0].watermarks[0]).toMatchObject({
+    expect(plan.sheets[0]?.cells[0]?.watermarks[0]).toMatchObject({
       fontSizePx: 8,
       strokeWidthPx: 1,
     });
@@ -149,7 +149,7 @@ describe("buildRenderPlan", () => {
   it("omits transcript windows entirely when no transcript was asked for", () => {
     const plan = buildRenderPlan(workedRequest(), WORKED_INFO);
     expect(plan.combinedTranscript).toBeUndefined();
-    expect(plan.sheets[0].transcript).toBeUndefined();
+    expect(plan.sheets.map((sheet) => sheet.transcript)).toEqual([undefined, undefined]);
   });
 
   it("plans the source's keyframes when keyframe sampling is on", () => {

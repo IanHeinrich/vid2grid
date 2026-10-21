@@ -19,7 +19,7 @@ export function estimateExtractedFrameCount(
     startSeconds,
     endSeconds,
     targetFps,
-    frameCount,
+    ...(frameCount !== undefined && { frameCount }),
     framesPerGrid: 1,
     outputResolution: 1,
     jpegQuality: 1,

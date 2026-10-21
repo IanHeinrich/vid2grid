@@ -27,6 +27,7 @@ function fakeImage(width: number, height: number): ImageBitmap {
 
 function job(sheetIndex: number, imageCount: number): SheetRenderJob<ImageBitmap> {
   const sheet = PLAN.sheets[sheetIndex];
+  if (!sheet) throw new Error(`PLAN has no sheet ${sheetIndex}`);
   return {
     sheet,
     images: sheet.cells.map((_, i) =>

@@ -39,6 +39,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run coverage --workspace packages/core
       - run: npm run fixtures
       - run: git diff --exit-code fixtures/
 
@@ -65,6 +67,7 @@ jobs:
       - run: uv run pytest
       - run: uv run ruff check .
       - run: uv run ruff format --check .
+      - run: uv run mypy
 
   check-version:
     needs: [test, python]

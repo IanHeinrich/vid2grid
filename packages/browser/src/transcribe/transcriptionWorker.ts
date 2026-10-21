@@ -30,7 +30,7 @@ export type TranscribeWorkerMessage =
 // The DOM lib types `self` as a Window, so cast to just the surface used here rather
 // than pull in the conflicting WebWorker lib (see renderWorker.ts).
 interface TranscriptionWorkerScope {
-  onmessage: ((event: MessageEvent<TranscribeRequest>) => void) | null;
+  onmessage: ((event: MessageEvent<TranscribeRequest>) => void | Promise<void>) | null;
   postMessage(message: TranscribeWorkerMessage): void;
 }
 
@@ -99,6 +99,7 @@ scope.onmessage = async (event) => {
     scope.postMessage({ type: "progress", stage: "transcribe", percent: 100 });
 
     const result = Array.isArray(output) ? output[0] : output;
+    if (!result) throw new Error("Transcriber returned no result");
     const chunks: TranscriptionChunk[] = (result.chunks ?? []).map((chunk) => ({
       text: chunk.text.trim(),
       start: chunk.timestamp[0],

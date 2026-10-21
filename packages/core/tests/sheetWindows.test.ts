@@ -32,8 +32,8 @@ describe("computeSheetWindows", () => {
   it("rounds every boundary to whole microseconds", () => {
     const windows = computeSheetWindows([{ timestamps: [0] }, { timestamps: [1 / 3] }], 0, 1);
 
-    expect(windows[0].endSeconds).toBe(0.166667);
-    expect(windows[1].startSeconds).toBe(0.166667);
+    expect(windows[0]?.endSeconds).toBe(0.166667);
+    expect(windows[1]?.startSeconds).toBe(0.166667);
   });
 
   it("covers the whole range with a single sheet", () => {

@@ -1,3 +1,4 @@
+import itertools
 from fractions import Fraction
 from pathlib import Path
 
@@ -42,7 +43,7 @@ def test_probe_keyframes_are_ascending_and_in_range(tiny_video: Path) -> None:
     assert keyframes
 
     assert keyframes[0] == 0.0
-    assert all(later > earlier for earlier, later in zip(keyframes, keyframes[1:], strict=False))
+    assert all(later > earlier for earlier, later in itertools.pairwise(keyframes))
     assert all(0 <= timestamp <= info.duration_seconds for timestamp in keyframes)
     assert set(keyframes) <= _decoded_keyframe_seconds(tiny_video)
 

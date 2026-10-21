@@ -69,8 +69,9 @@ export function buildRenderPlan(request: CollagePlanRequest, info: VideoInfo): R
       request.startSeconds,
       request.endSeconds,
     );
-    windows.forEach((window, i) => {
-      sheets[i].transcript = window;
+    sheets.forEach((sheet, i) => {
+      const window = windows[i];
+      if (window) sheet.transcript = window;
     });
   }
 

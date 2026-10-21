@@ -11,7 +11,7 @@ requires-python = ">=3.11"
 dependencies = ["av>=14,<20", "Pillow>=10.1"]
 
 [dependency-groups]
-dev = ["pytest>=8.2", "ruff>=0.5"]
+dev = ["mypy>=1.10", "pytest>=8.2", "ruff>=0.5"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/vid2grid"]
@@ -25,4 +25,9 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+select = ["E", "F", "I", "UP", "B", "SIM", "RET", "PTH", "C4", "RUF", "TC", "PLE", "PLW"]
+
+[tool.mypy]
+strict = true
+files = ["src"]
+python_version = "3.11"

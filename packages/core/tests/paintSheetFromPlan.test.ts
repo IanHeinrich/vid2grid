@@ -61,6 +61,8 @@ function recordingContext(): { ctx: SheetContext2D<string>; calls: Call[] } {
 describe("paintSheetFromPlan", () => {
   const plan = buildRenderPlan(REQUEST, INFO);
   const sheet = plan.sheets[0];
+  const watermark = sheet?.cells[0]?.watermarks[0];
+  if (!sheet || !watermark) throw new Error("the planned sheet has no watermark");
 
   it("fills the whole canvas with the background before drawing anything", () => {
     const { ctx, calls } = recordingContext();
@@ -99,7 +101,7 @@ describe("paintSheetFromPlan", () => {
     expect(stroke).toEqual({
       call: "strokeText",
       args: ["00.000", 12, 73],
-      lineWidth: 2 * plan.sheets[0].cells[0].watermarks[0].strokeWidthPx,
+      lineWidth: 2 * watermark.strokeWidthPx,
       strokeStyle: "white",
     });
     expect(calls.find((call) => call.call === "fillText")).toEqual({
@@ -118,7 +120,7 @@ describe("paintSheetFromPlan", () => {
 
     const indexFill = calls.filter((call) => call.call === "fillText")[1];
     // Planned right edge 248, minus one measured character.
-    expect(indexFill.args).toEqual(["0", 248 - CHARACTER_WIDTH, 73]);
+    expect(indexFill?.args).toEqual(["0", 248 - CHARACTER_WIDTH, 73]);
   });
 
   it("leaves a cell with no captured image untouched", () => {

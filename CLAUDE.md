@@ -9,17 +9,20 @@ plan for use outside the browser.
 
 ## Commands (all run from the repo root of this npm workspaces monorepo)
 
-| Command             | What it is                                                                        |
-| ------------------- | --------------------------------------------------------------------------------- |
-| `npm ci`            | Install. Root `node_modules` and `package-lock.json`; nothing per-package.        |
-| `npm test`          | `vitest run` across every workspace. The correctness gate.                        |
-| `npm run typecheck` | `tsc -b` in each package. The **type-check gate**; `npm run build` runs it first. |
-| `npm run build`     | Runs `typecheck`, then `vite build` for `apps/web/`.                              |
-| `npm run format`    | `prettier --write .` from the root. There is still no lint step.                  |
-| `npm run dev`       | Vite dev server for `apps/web/`.                                                  |
-| `npm run fixtures`  | Regenerates `fixtures/render-plans/` from the planner.                            |
+| Command             | What it is                                                                     |
+| ------------------- | ------------------------------------------------------------------------------ |
+| `npm ci`            | Install. Root `node_modules` and `package-lock.json`; nothing per-package.     |
+| `npm test`          | `vitest run` across every workspace. The correctness gate.                     |
+| `npm run typecheck` | `tsc` over `src` and `tests` in each package. The **type-check gate**.         |
+| `npm run lint`      | `eslint .` with typed rules; core may not import host packages or DOM globals. |
+| `npm run build`     | Runs `typecheck`, then `vite build` for `apps/web/`.                           |
+| `npm run format`    | `prettier --write .` from the root.                                            |
+| `npm run dev`       | Vite dev server for `apps/web/`.                                               |
+| `npm run fixtures`  | Regenerates `fixtures/render-plans/` from the planner.                         |
 
-`npm test` and `npm run build` must both pass before a change is done.
+`npm test`, `npm run lint` and `npm run build` must all pass before a change is
+done. CI also runs `npm run coverage --workspace packages/core`, which holds
+core to its coverage thresholds.
 
 The Python package is its own toolchain and does not go through npm: run its
 checks from `python/`, per `python/README.md`.
@@ -42,10 +45,11 @@ checks from `python/`, per `python/README.md`.
 - **`main` is protected.** No direct pushes, from anyone. Every change lands
   via a PR that needs the `test` check green and a review from the code owner
   in `.github/CODEOWNERS` (@IanHeinrich).
-- **`tsc -b` does not typecheck the tests.** Each package's `tsconfig.json`
-  `include` is `["src"]` (plus `apps/web/`'s `vite.config.ts`/`vitest.config.ts`),
-  so `tests/` is only ever exercised by vitest in every package. Do not assume
-  a green build says anything about them.
+- **Tests are typechecked through their own `tests/tsconfig.json`**, which
+  extends the package's and adds `tests/`. Every package compiles with
+  `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`: guard an index
+  rather than assert it (lint bans `!`), and pass an optional property with a
+  conditional spread rather than as `undefined`.
 - **Tests live in `<package>/tests/<module>.test.ts`**, flat, named after the
   module under test, not beside the source. `packages/core/src/grid/gridMaths.ts`
   is covered by `packages/core/tests/gridMaths.test.ts`.

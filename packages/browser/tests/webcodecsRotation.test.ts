@@ -30,7 +30,7 @@ function fakeFrame(width: number, height: number): CanvasImageSource {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
-  return canvas as unknown as CanvasImageSource;
+  return canvas;
 }
 
 describe("drawRotated", () => {

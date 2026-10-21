@@ -12,7 +12,8 @@ export function subsampleEvenly<T>(values: readonly T[], max: number): T[] {
   if (max >= values.length) return [...values];
   const kept: T[] = [];
   for (let i = 0; i < max; i++) {
-    kept.push(values[Math.floor((i * values.length) / max)]);
+    const value = values[Math.floor((i * values.length) / max)];
+    if (value !== undefined) kept.push(value);
   }
   return kept;
 }

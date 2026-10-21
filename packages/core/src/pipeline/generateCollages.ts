@@ -81,8 +81,9 @@ function sheetWindowsForJobs<TImage>(
   endSeconds: number,
 ): TranscriptWindow[] {
   const windows = jobs.flatMap((job) => (job.sheet.transcript ? [job.sheet.transcript] : []));
-  if (windows.length === 0) return windows;
-  return [...windows.slice(0, -1), { ...windows[windows.length - 1], endSeconds }];
+  const last = windows[windows.length - 1];
+  if (!last) return windows;
+  return [...windows.slice(0, -1), { ...last, endSeconds }];
 }
 
 async function generateTranscriptFiles<TSource, TBinary>(
@@ -141,7 +142,7 @@ export async function generateCollages<TSource, TImage, TBinary>(
   if (images.length === 0) return { plan, sheets: [], transcriptFiles: [] };
 
   const jobs: SheetRenderJob<TImage>[] = plan.sheets
-    .filter((sheet) => sheet.cells[0].frameIndex < images.length)
+    .filter((sheet) => sheet.cells[0] !== undefined && sheet.cells[0].frameIndex < images.length)
     .map((sheet) => ({ sheet, images: sheet.cells.map((cell) => images[cell.frameIndex]) }));
 
   const renderStart = clock.now();
@@ -178,14 +179,17 @@ export async function generateCollages<TSource, TImage, TBinary>(
   options.onTiming?.({
     extractMs,
     renderMs,
-    transcribeMs,
+    ...(transcribeMs !== undefined && { transcribeMs }),
     frameCount: images.length,
     sheetCount: jobs.length,
   });
 
   return {
     plan,
-    sheets: encodedSheets.map((data, i) => ({ name: jobs[i].sheet.fileName, data })),
+    sheets: encodedSheets.flatMap((data, i) => {
+      const job = jobs[i];
+      return job ? [{ name: job.sheet.fileName, data }] : [];
+    }),
     transcriptFiles,
   };
 }

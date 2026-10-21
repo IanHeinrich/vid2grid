@@ -38,7 +38,7 @@ describe("keyframeTimestampsFromSamples", () => {
 // Which decoded frame ends up in each planned slot, the way both decode paths fold
 // the helper over the frames the decoder emits.
 function assignDecodedFrames(wanted: number[], decoded: number[]): (number | undefined)[] {
-  const filledBy: (number | undefined)[] = new Array(wanted.length);
+  const filledBy = new Array<number | undefined>(wanted.length);
   let nextIndex = 0;
   decoded.forEach((timestampSeconds, decodedIndex) => {
     for (const index of planIndicesForFrame(wanted, nextIndex, timestampSeconds)) {

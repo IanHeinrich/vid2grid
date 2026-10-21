@@ -14,6 +14,10 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "verbatimModuleSyntax": true,
+    "exactOptionalPropertyTypes": true,
     "types": ["vite/client"]
   },
   "include": ["src", "vite.config.ts", "vitest.config.ts"]

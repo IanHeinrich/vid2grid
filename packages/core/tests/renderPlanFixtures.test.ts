@@ -35,7 +35,7 @@ describe("fixtures/render-plans", () => {
   });
 
   it.each(fixtureFiles)("%s matches buildRenderPlan", (fileName) => {
-    const fixture: Fixture = JSON.parse(readFileSync(join(fixturesDir, fileName), "utf-8"));
+    const fixture = JSON.parse(readFileSync(join(fixturesDir, fileName), "utf-8")) as Fixture;
 
     expect(fixture.name).toBe(fileName.replace(/\.json$/, ""));
     expect(buildRenderPlan(fixture.request, fixture.info)).toStrictEqual(fixture.plan);

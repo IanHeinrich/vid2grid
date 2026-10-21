@@ -116,7 +116,7 @@ def _keyframe_interval_seconds(info: VideoInfo) -> float:
     keyframes = info.keyframe_timestamps_seconds
     if keyframes is None or len(keyframes) < 2:
         return _DEFAULT_KEYFRAME_INTERVAL_SECONDS
-    deltas = [later - earlier for earlier, later in zip(keyframes, keyframes[1:], strict=False)]
+    deltas = [later - earlier for earlier, later in itertools.pairwise(keyframes)]
     return statistics.median(deltas)
 
 
@@ -128,6 +128,6 @@ def _to_cell_image(frame: Any, cell: Size, rotation: int) -> Image.Image:
         format="rgb24",
         interpolation="BICUBIC",
     )
-    image = scaled.to_image()
+    image: Image.Image = scaled.to_image()
     transpose = _ROTATION_TRANSPOSE.get(rotation)
     return image if transpose is None else image.transpose(transpose)
