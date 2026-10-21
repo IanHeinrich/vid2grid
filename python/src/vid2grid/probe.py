@@ -54,7 +54,7 @@ def read_keyframe_timestamps(path: str | Path) -> tuple[float, ...]:
 def stream_time_base(stream: VideoStream) -> Fraction:
     if stream.time_base is None:
         raise InternalError("the video stream has no time base")
-    return stream.time_base
+    return Fraction(stream.time_base.numerator, stream.time_base.denominator)
 
 
 # Per-frame calls into V8 would be slow, so core's rule, floor(x * 1e6 + 0.5), is mirrored here.
