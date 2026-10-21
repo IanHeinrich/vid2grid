@@ -51,8 +51,9 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        # PyAV 19 dropped 3.11, so 3.12 is the only leg that resolves it.
-        python: ["3.11", "3.12"]
+        # PyAV 19 dropped 3.11, so only the 3.12 and 3.13 legs resolve it; 3.13 also catches
+        # exit hangs that 3.11 shows only rarely.
+        python: ["3.11", "3.12", "3.13"]
     defaults:
       run:
         working-directory: python
