@@ -1,3 +1,4 @@
+import atexit
 import json
 import math
 import numbers
@@ -302,6 +303,18 @@ def _start_afresh_after_fork() -> None:
 
 if hasattr(os, "register_at_fork"):
     os.register_at_fork(after_in_child=_start_afresh_after_fork)
+
+
+# Left to its finaliser, MiniRacer closes during interpreter shutdown, joins threads that can
+# no longer run and hangs the exit; atexit still runs while they can.
+def _close_engine() -> None:
+    with _slot.lock:
+        engine, _slot.engine = _slot.engine, None
+    if engine is not None:
+        engine.close()
+
+
+atexit.register(_close_engine)
 
 
 def _json_number(value: object) -> int | float:
