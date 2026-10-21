@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Vid2GridError } from "../src/errors";
 import { buildRenderPlan } from "../src/plan/buildRenderPlan";
 import type { CollagePlanRequest } from "../src/plan/request";
 import type { VideoInfo } from "../src/probe/videoInfo";
@@ -188,6 +189,26 @@ describe("buildRenderPlan", () => {
     );
     expect(() => buildRenderPlan(workedRequest({ maxKeyframes: 0 }), WORKED_INFO)).toThrowError(
       /max_keyframes/,
+    );
+  });
+
+  it("rejects with an invalid_request error", () => {
+    let thrown: unknown;
+    try {
+      buildRenderPlan(workedRequest({ targetFps: 0 }), WORKED_INFO);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(Vid2GridError);
+    expect(thrown).toMatchObject({
+      code: "invalid_request",
+      message: "target_fps must be positive",
+    });
+  });
+
+  it("rejects a video with no height", () => {
+    expect(() => buildRenderPlan(workedRequest(), { ...WORKED_INFO, height: 0 })).toThrowError(
+      Vid2GridError,
     );
   });
 

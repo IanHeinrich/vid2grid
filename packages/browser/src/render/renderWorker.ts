@@ -1,4 +1,9 @@
 import { paintSheetFromPlan, type PlannedSheet, type RenderPlan } from "@vid2grid/core";
+import { create2dOffscreenCanvas } from "../shared/canvas";
+import { errorMessage } from "../shared/errors";
+import { closeImages } from "../shared/images";
+import { getWorkerScope } from "../shared/workerScope";
+import { jpegQualityFraction } from "./canvasJpeg";
 
 export interface RenderSheetRequest {
   plan: RenderPlan;
@@ -11,31 +16,22 @@ export interface RenderSheetResponse {
   error?: string;
 }
 
-// The DOM lib types `self` as a Window, so cast to just the surface used here rather
-// than pull in the conflicting WebWorker lib.
-interface RenderWorkerScope {
-  onmessage: ((event: MessageEvent<RenderSheetRequest>) => void | Promise<void>) | null;
-  postMessage(message: RenderSheetResponse): void;
-}
-
-const scope = self as unknown as RenderWorkerScope;
+const scope = getWorkerScope<RenderSheetRequest, RenderSheetResponse>();
 
 scope.onmessage = async (event) => {
   const { plan, sheet, images } = event.data;
   try {
-    const canvas = new OffscreenCanvas(plan.canvas.width, plan.canvas.height);
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("OffscreenCanvas 2D context unavailable");
+    const { canvas, ctx } = create2dOffscreenCanvas(plan.canvas.width, plan.canvas.height);
 
     paintSheetFromPlan(ctx, plan, sheet, images);
     const blob = await canvas.convertToBlob({
       type: "image/jpeg",
-      quality: plan.jpegQuality / 100,
+      quality: jpegQualityFraction(plan.jpegQuality),
     });
-
-    for (const image of images) image?.close();
     scope.postMessage({ blob });
   } catch (err) {
-    scope.postMessage({ error: (err as Error).message });
+    scope.postMessage({ error: errorMessage(err) });
+  } finally {
+    closeImages(images);
   }
 };

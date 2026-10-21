@@ -22,18 +22,6 @@ export async function downloadAllAsZip(
   URL.revokeObjectURL(url);
 }
 
-function sanitizeForFileName(name: string): string {
-  const cleaned = name.replace(/[\\/:*?"<>|]+/g, "_").trim();
-  return cleaned || "video";
-}
-
-/** e.g. "myClip.mp4" -> "myClip_grids_2026-07-17_143000" */
-export function buildGridsFolderName(sourceFileName: string, now = new Date()): string {
-  const base = sanitizeForFileName(sourceFileName.replace(/\.[^./\\]+$/, ""));
-  const timestamp = now.toISOString().slice(0, 19).replace("T", "_").replace(/:/g, "");
-  return `${base}_grids_${timestamp}`;
-}
-
 export async function saveAllToFolder(
   sheets: GeneratedFile<Blob>[],
   folderName: string,

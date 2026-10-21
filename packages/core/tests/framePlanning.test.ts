@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { Vid2GridError } from "../src/errors";
 import {
+  keyframesInRange,
+  MICROSECONDS_PER_SECOND,
   planFrameTimestamps,
   roundToMicroseconds,
+  secondsToMicroseconds,
   subsampleEvenly,
 } from "../src/plan/framePlanning";
 import type { CollagePlanRequest } from "../src/plan/request";
@@ -30,6 +34,24 @@ describe("roundToMicroseconds", () => {
     expect(roundToMicroseconds(0.0000004)).toBe(0);
     expect(roundToMicroseconds(0.0000005)).toBe(0.000001);
     expect(roundToMicroseconds(2.5)).toBe(2.5);
+  });
+});
+
+describe("secondsToMicroseconds", () => {
+  it("rounds to a whole microsecond count by the same rule as roundToMicroseconds", () => {
+    expect(MICROSECONDS_PER_SECOND).toBe(1_000_000);
+    expect(secondsToMicroseconds(1.5)).toBe(1_500_000);
+    expect(secondsToMicroseconds(1 / 3)).toBe(333_333);
+    expect(secondsToMicroseconds(0.0000005)).toBe(1);
+    expect(secondsToMicroseconds(-0.0000005)).toBe(0);
+    expect(secondsToMicroseconds(1 / 3) / MICROSECONDS_PER_SECOND).toBe(roundToMicroseconds(1 / 3));
+  });
+});
+
+describe("keyframesInRange", () => {
+  it("keeps the keyframes inside the range, inclusive of both ends", () => {
+    expect(keyframesInRange([0, 0.5, 1, 1.5, 2], 0.5, 1.5)).toEqual([0.5, 1, 1.5]);
+    expect(keyframesInRange([0, 0.5, 1], 0.6, 0.9)).toEqual([]);
   });
 });
 
@@ -115,6 +137,9 @@ describe("planFrameTimestamps, keyframe mode", () => {
   it("throws when the video info carries no keyframe timestamps", () => {
     expect(() => planFrameTimestamps(request({ keyframeSampling: true }), INFO)).toThrowError(
       /keyframe_timestamps_seconds/,
+    );
+    expect(() => planFrameTimestamps(request({ keyframeSampling: true }), INFO)).toThrowError(
+      Vid2GridError,
     );
   });
 });

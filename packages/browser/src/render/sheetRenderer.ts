@@ -1,9 +1,11 @@
 import {
   paintSheetFromPlan,
-  type ProgressCallback,
+  type PortProgressCallback,
   type RenderPlan,
   type SheetRenderJob,
 } from "@vid2grid/core";
+import { create2dCanvas } from "../shared/canvas";
+import { closeImages } from "../shared/images";
 import { canvasToJpegBlob } from "./canvasJpeg";
 import { WorkerPool } from "./workerPool";
 import type { RenderSheetRequest, RenderSheetResponse } from "./renderWorker";
@@ -31,7 +33,7 @@ function getPool(): RenderPool {
 export async function renderSheetsToBlobs(
   plan: RenderPlan,
   jobs: SheetRenderJob<ImageBitmap>[],
-  onProgress?: ProgressCallback,
+  onProgress?: PortProgressCallback,
 ): Promise<Blob[]> {
   if (jobs.length === 0) return [];
   if (supportsWorkerRendering()) {
@@ -43,7 +45,7 @@ export async function renderSheetsToBlobs(
 async function renderWithWorkers(
   plan: RenderPlan,
   jobs: SheetRenderJob<ImageBitmap>[],
-  onProgress?: ProgressCallback,
+  onProgress?: PortProgressCallback,
 ): Promise<Blob[]> {
   const pool = getPool();
   const blobs = new Array<Blob>(jobs.length);
@@ -65,7 +67,7 @@ async function renderWithWorkers(
       }
       blobs[index] = response.blob;
       done++;
-      onProgress?.(done, jobs.length);
+      onProgress?.({ done, total: jobs.length });
     }),
   );
 
@@ -75,32 +77,31 @@ async function renderWithWorkers(
 async function renderOnMainThread(
   plan: RenderPlan,
   jobs: SheetRenderJob<ImageBitmap>[],
-  onProgress?: ProgressCallback,
+  onProgress?: PortProgressCallback,
 ): Promise<Blob[]> {
   const blobs: Blob[] = [];
-  for (const job of jobs) {
-    const canvas = document.createElement("canvas");
-    canvas.width = plan.canvas.width;
-    canvas.height = plan.canvas.height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Canvas 2D context unavailable");
-
-    paintSheetFromPlan(ctx, plan, job.sheet, job.images);
-    const blob = await canvasToJpegBlob(canvas, plan.jpegQuality);
-    closeImages(job.images);
-
-    blobs.push(blob);
-    onProgress?.(blobs.length, jobs.length);
+  for (const [index, job] of jobs.entries()) {
+    try {
+      blobs.push(await renderSheet(plan, job));
+      onProgress?.({ done: blobs.length, total: jobs.length });
+    } catch (err) {
+      for (const unrendered of jobs.slice(index + 1)) closeImages(unrendered.images);
+      throw err;
+    }
   }
   return blobs;
 }
 
-function presentImages(images: (ImageBitmap | undefined)[]): ImageBitmap[] {
-  return images.filter((image): image is ImageBitmap => image !== undefined);
+async function renderSheet(plan: RenderPlan, job: SheetRenderJob<ImageBitmap>): Promise<Blob> {
+  try {
+    const { canvas, ctx } = create2dCanvas(plan.canvas.width, plan.canvas.height);
+    paintSheetFromPlan(ctx, plan, job.sheet, job.images);
+    return await canvasToJpegBlob(canvas, plan.jpegQuality);
+  } finally {
+    closeImages(job.images);
+  }
 }
 
-function closeImages(images: (ImageBitmap | undefined)[]): void {
-  for (const image of presentImages(images)) {
-    if (typeof image.close === "function") image.close();
-  }
+function presentImages(images: (ImageBitmap | undefined)[]): ImageBitmap[] {
+  return images.filter((image): image is ImageBitmap => image !== undefined);
 }

@@ -1,13 +1,9 @@
-import type { ProbeOptions, VideoInfo } from "@vid2grid/core";
-import { waitForEvent } from "../capture/extractor";
+import type { VideoInfo } from "@vid2grid/core";
 import { supportsWebCodecs } from "../capture/isoBmff";
+import { createVideoElement, waitForEvent } from "../capture/video";
 
-export async function probeVideo(
-  file: File,
-  { keyframeTimestamps }: ProbeOptions,
-): Promise<VideoInfo> {
-  const video = document.createElement("video");
-  video.preload = "metadata";
+export async function probeVideo(file: File): Promise<VideoInfo> {
+  const video = createVideoElement("metadata");
   const url = URL.createObjectURL(file);
   video.src = url;
   let durationSeconds: number;
@@ -22,29 +18,17 @@ export async function probeVideo(
     URL.revokeObjectURL(url);
   }
 
-  if (!keyframeTimestamps) return { durationSeconds, width, height };
-
-  const keyframeTimestampsSeconds = await readKeyframeTimestampsIfAvailable(file);
-  return {
-    durationSeconds,
-    width,
-    height,
-    ...(keyframeTimestampsSeconds ? { keyframeTimestampsSeconds } : {}),
-  };
+  return { durationSeconds, width, height };
 }
 
-async function readKeyframeTimestampsIfAvailable(file: File): Promise<number[] | null> {
-  if (!supportsWebCodecs(file)) return null;
-  try {
-    const { readKeyframeTimestamps } = await import("../capture/webcodecsExtractor");
-    return await readKeyframeTimestamps(file);
-  } catch {
-    // Losing the demuxer chunk costs keyframe mode, which falls back to sampling, not the probe.
-    return null;
-  }
+export async function readKeyframeTimes(file: File): Promise<number[] | undefined> {
+  if (!supportsWebCodecs(file)) return undefined;
+  const { readKeyframeTimestamps } = await import("../capture/webcodecsExtractor");
+  return (await readKeyframeTimestamps(file)) ?? undefined;
 }
 
-/** `null` when the file isn't demuxable. The import is lazy so mp4box stays out of the main bundle. */
+/** `null` when the file is declined by design; a demux failure rejects. Lazy import keeps mp4box
+ * out of the main bundle. */
 export async function countKeyframesInRange(
   file: File,
   startTime: number,

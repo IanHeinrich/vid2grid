@@ -53,4 +53,29 @@ describe("extractFramesAuto", () => {
     expect(await extractFramesAuto(videoFile("clip.webm", "video/webm"), PLAN)).toBe(seekImages);
     expect(extractFramesWebCodecs).not.toHaveBeenCalled();
   });
+
+  it("reports both failures when the fallback fails after WebCodecs did", async () => {
+    const webCodecsFailure = new Error("undecodable");
+    const seekFailure = new Error("Video seek failed");
+    extractFramesWebCodecs.mockRejectedValue(webCodecsFailure);
+    extractFrames.mockRejectedValue(seekFailure);
+
+    const failure = await extractFramesAuto(videoFile("clip.mp4", "video/mp4"), PLAN).catch(
+      (err: unknown) => err,
+    );
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors).toEqual([webCodecsFailure, seekFailure]);
+    expect((failure as AggregateError).cause).toBe(seekFailure);
+    expect((failure as AggregateError).message).toMatch(/Video seek failed.*undecodable/);
+  });
+
+  it("rethrows the seek failure untouched when WebCodecs was never involved", async () => {
+    const seekFailure = new Error("Video seek failed");
+    extractFrames.mockRejectedValue(seekFailure);
+
+    await expect(extractFramesAuto(videoFile("clip.webm", "video/webm"), PLAN)).rejects.toBe(
+      seekFailure,
+    );
+  });
 });

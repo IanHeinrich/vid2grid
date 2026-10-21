@@ -7,6 +7,8 @@ import {
   type WhisperTokenizer,
 } from "@huggingface/transformers";
 import type { TranscribeStage } from "@vid2grid/core";
+import { errorMessage } from "../shared/errors";
+import { getWorkerScope } from "../shared/workerScope";
 
 const MODEL_ID = "Xenova/whisper-tiny.en";
 const CHUNK_LENGTH_S = 30;
@@ -27,14 +29,7 @@ export type TranscribeWorkerMessage =
   | { type: "result"; chunks: TranscriptionChunk[] }
   | { type: "error"; message: string };
 
-// The DOM lib types `self` as a Window, so cast to just the surface used here rather
-// than pull in the conflicting WebWorker lib (see renderWorker.ts).
-interface TranscriptionWorkerScope {
-  onmessage: ((event: MessageEvent<TranscribeRequest>) => void | Promise<void>) | null;
-  postMessage(message: TranscribeWorkerMessage): void;
-}
-
-const scope = self as unknown as TranscriptionWorkerScope;
+const scope = getWorkerScope<TranscribeRequest, TranscribeWorkerMessage>();
 
 let transcriberPromise: Promise<AutomaticSpeechRecognitionPipeline> | null = null;
 
@@ -107,6 +102,6 @@ scope.onmessage = async (event) => {
     }));
     scope.postMessage({ type: "result", chunks });
   } catch (err) {
-    scope.postMessage({ type: "error", message: (err as Error).message });
+    scope.postMessage({ type: "error", message: errorMessage(err) });
   }
 };

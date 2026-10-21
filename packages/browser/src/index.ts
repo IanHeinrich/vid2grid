@@ -1,5 +1,5 @@
-import type { CollagePorts, TranscribeProgressCallback, TranscriptCue } from "@vid2grid/core";
-import { probeVideo } from "./probe/probe";
+import type { CollagePorts, PortProgressCallback, TranscriptCue } from "@vid2grid/core";
+import { readKeyframeTimes, probeVideo } from "./probe/probe";
 import { extractFramesAuto } from "./capture/frameExtraction";
 import { decodeAudioForTranscription } from "./capture/audioExtraction";
 import { renderSheetsToBlobs } from "./render/sheetRenderer";
@@ -9,7 +9,7 @@ async function transcribeVideoAudio(
   file: File,
   startSeconds: number,
   endSeconds: number,
-  onProgress?: TranscribeProgressCallback,
+  onProgress?: PortProgressCallback,
 ): Promise<TranscriptCue[]> {
   const samples = await decodeAudioForTranscription(file, startSeconds, endSeconds);
   return transcribeAudio(samples, startSeconds, onProgress);
@@ -17,9 +17,9 @@ async function transcribeVideoAudio(
 
 export function createBrowserPorts(): CollagePorts<File, ImageBitmap, Blob> {
   return {
-    probe: { probe: probeVideo },
+    probe: { probe: probeVideo, readKeyframeTimes },
     frames: { capture: extractFramesAuto },
-    sheets: { encodeSheets: renderSheetsToBlobs },
+    sheets: { encode: renderSheetsToBlobs },
     text: { encodeText: (text, mimeType) => new Blob([text], { type: mimeType }) },
     transcript: { transcribe: transcribeVideoAudio },
     clock: { now: () => performance.now() },

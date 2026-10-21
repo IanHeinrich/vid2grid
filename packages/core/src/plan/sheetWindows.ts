@@ -1,9 +1,12 @@
+import { Vid2GridError } from "../errors";
 import { gridTranscriptFileName } from "./gridFileName";
 import { roundToMicroseconds } from "./framePlanning";
 import type { TranscriptWindow } from "./renderPlan";
 
 function requireTimestamp(timestamp: number | undefined): number {
-  if (timestamp === undefined) throw new Error("a sheet has no frame timestamps");
+  if (timestamp === undefined) {
+    throw new Vid2GridError("internal", "a sheet has no frame timestamps");
+  }
   return timestamp;
 }
 
