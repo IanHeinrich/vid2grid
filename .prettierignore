@@ -2,6 +2,8 @@ node_modules/
 dist/
 apps/web/public/
 fixtures/
-python/
+apps/python-library/
+apps/python-cli/
+apps/mcp-server/
 package-lock.json
 **/*.tsbuildinfo

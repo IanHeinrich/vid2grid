@@ -3,7 +3,16 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["**/dist/", "**/node_modules/", "**/coverage/", "fixtures/", "python/", ".claude/"],
+    ignores: [
+      "**/dist/",
+      "**/node_modules/",
+      "**/coverage/",
+      "fixtures/",
+      "apps/python-library/",
+      "apps/python-cli/",
+      "apps/mcp-server/",
+      ".claude/",
+    ],
   },
   {
     files: [
@@ -11,6 +20,10 @@ export default tseslint.config(
       "packages/*/tests/**/*.ts",
       "apps/web/src/**/*.ts",
       "apps/web/tests/**/*.ts",
+      "apps/node-library/src/**/*.ts",
+      "apps/node-library/tests/**/*.ts",
+      "apps/node-cli/src/**/*.ts",
+      "apps/node-cli/tests/**/*.ts",
       "scripts/**/*.ts",
     ],
     extends: [eslint.configs.recommended, ...tseslint.configs.recommendedTypeChecked],

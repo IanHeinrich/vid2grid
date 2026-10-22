@@ -7,9 +7,15 @@ coverage/
 # are tracked on purpose.
 .claude/settings.local.json
 
-python/.venv/
-python/dist/
-python/uv.lock
+apps/python-library/.venv/
+apps/python-library/dist/
+apps/python-library/uv.lock
+apps/python-cli/.venv/
+apps/python-cli/dist/
+apps/python-cli/uv.lock
+apps/mcp-server/.venv/
+apps/mcp-server/dist/
+apps/mcp-server/uv.lock
 **/__pycache__/
 .pytest_cache/
 .ruff_cache/

@@ -4,7 +4,9 @@
   "type": "module",
   "workspaces": [
     "packages/*",
-    "apps/web"
+    "apps/web",
+    "apps/node-library",
+    "apps/node-cli"
   ],
   "scripts": {
     "dev": "npm run dev --workspace apps/web",

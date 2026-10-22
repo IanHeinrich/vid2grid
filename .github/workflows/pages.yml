@@ -3,9 +3,8 @@ on:
   push:
     branches: [main]
     paths:
-      - "apps/web/**"
+      - "apps/**"
       - "packages/**"
-      - "python/**"
       - "fixtures/**"
       - "scripts/**"
       - "package.json"
@@ -47,9 +46,9 @@ jobs:
           git add --intent-to-add fixtures/
           git diff --exit-code fixtures/
       - run: npm run bundle
-      - run: git diff --exit-code python/src/vid2grid/_core.js
+      - run: git diff --exit-code apps/python-library/src/vid2grid/_core.js
 
-  python:
+  python-library:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -59,7 +58,32 @@ jobs:
         python: ["3.11", "3.12", "3.13"]
     defaults:
       run:
-        working-directory: python
+        working-directory: apps/python-library
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - uses: astral-sh/setup-uv@v5
+
+      - run: uv sync --all-groups
+      - run: uv run pytest
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+
+  python-apps:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        app: [python-cli, mcp-server]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.11", "3.12", "3.13"]
+    defaults:
+      run:
+        working-directory: apps/${{ matrix.app }}
     steps:
       - uses: actions/checkout@v4
 
@@ -79,7 +103,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        # The test job's root npm test already runs packages/node on Linux.
+        # The test job's root npm test already runs the Node apps on Linux.
         os: [windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
@@ -91,12 +115,12 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - run: npm ci
-      - run: npm test --workspace packages/node
-      - run: npm run build --workspace packages/node
-      - run: node packages/node/dist/cli.js fixtures/videos/tiny.mp4 -o sheets --fps 4 --frames-per-grid 4 --resolution 512
+      - run: npm test --workspace apps/node-library --workspace apps/node-cli
+      - run: npm run build --workspace apps/node-library --workspace apps/node-cli
+      - run: node apps/node-cli/dist/cli.js fixtures/videos/tiny.mp4 -o sheets --fps 4 --frames-per-grid 4 --resolution 512
 
   check-version:
-    needs: [test, python, node]
+    needs: [test, python-library, python-apps, node]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:

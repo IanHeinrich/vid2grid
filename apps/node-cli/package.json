@@ -1,0 +1,26 @@
+{
+  "name": "@vid2grid/node-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "vid2grid-node": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b && tsc -p tests/tsconfig.json",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@vid2grid/node": "*"
+  },
+  "devDependencies": {
+    "@vid2grid/core": "*"
+  }
+}

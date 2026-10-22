@@ -1,0 +1,53 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vid2grid-mcp"
+version = "0.1.0"
+description = "An MCP server that turns a local video into vid2grid collage sheets"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.30,<2",
+    "vid2grid @ git+https://github.com/IanHeinrich/vid2grid#subdirectory=apps/python-library",
+]
+
+[project.optional-dependencies]
+transcribe = [
+    "vid2grid[transcribe] @ git+https://github.com/IanHeinrich/vid2grid#subdirectory=apps/python-library",
+]
+
+[project.scripts]
+vid2grid-mcp = "vid2grid_mcp.mcp_server:main"
+
+[dependency-groups]
+dev = ["mypy>=1.10", "pytest>=8.2", "ruff>=0.5"]
+
+[tool.uv.sources]
+vid2grid = { path = "../python-library", editable = true }
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vid2grid_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.mypy]
+strict = true
+files = ["src", "tests"]
+python_version = "3.11"
+mypy_path = "src"
+# PyAV leaves VideoFrame.to_image and from_image unannotated.
+untyped_calls_exclude = ["av.video.frame"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RET", "PTH", "C4", "RUF", "TC", "PLE", "PLW"]
