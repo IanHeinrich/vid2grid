@@ -130,7 +130,7 @@ describe("chatToMarkdown", () => {
         "[image: poster.png]",
         "## Assistant",
         "_Looked at 1:00 to 1:30, 0:42 frames, 1 note_",
-        "Noted.",
+        "_Before looking:_ Noted.",
         "At [1:10] she leaves.",
         "## Scene log\n- [0:12] door opens\n- [1:10] she leaves",
       ].join("\n\n") + "\n",
@@ -165,7 +165,7 @@ describe("chatToMarkdown captions", () => {
       },
     ]);
     expect(markdown).toBe(
-      "# Chat c\n\n- Model: qwen\n\n## Sam\n\nLook\n\n[image: grid_0001 from look(60, 90), 1:00 to 1:30]\n\n## Mara\n\n_Looked at the video_\n\nHi.\n",
+      "# Chat c\n\n- Model: qwen\n\n## Sam\n\nLook\n\n[image: grid_0001 from look(60, 90), 1:00 to 1:30]\n\n## Mara\n\n_Looked at the video_\n\n_Before looking:_ Hi.\n",
     );
   });
 });

@@ -482,7 +482,8 @@ describe("the video's cast", () => {
   });
 
   it("counts a large cast toward the automatic summary", async () => {
-    setModels(state, [smallModel()]);
+    // The default prompt with a short cast is about 260 tokens; 500 puts the threshold at 300.
+    setModels(state, [{ ...smallModel(), contextTokens: 500 }]);
     await store.putCast(castOf("Short."));
     await seed([U1], { video: VIDEO });
     await turns().run(() => Promise.resolve({}));

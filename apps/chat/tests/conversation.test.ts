@@ -282,7 +282,7 @@ describe("activity row", () => {
     expect(answers[0]?.querySelector(".message-text")?.textContent).toBe("She waves at [0:40].");
   });
 
-  it("expands into a timeline of calls, thumbnails, interim text and reasoning", () => {
+  it("expands into a timeline of calls, thumbnails and reasoning", () => {
     const conversation = initConversation(els, deps());
     conversation.reset(investigation());
     const details = openActivity();
@@ -293,10 +293,68 @@ describe("activity row", () => {
       "note 0:40 · x",
     ]);
     expect(details.querySelectorAll(".activity-thumbs .thumb-button")).toHaveLength(2);
-    expect(details.querySelector(".activity-text")?.textContent).toBe("Let me look.");
+    expect(details.textContent).not.toContain("Let me look.");
     const thinking = [...details.querySelectorAll(".activity-thinking")];
     expect(thinking.map((block) => block.textContent)).toEqual(["Scan first.", "Done."]);
     expect(details.querySelectorAll("details details")).toHaveLength(0);
+  });
+});
+
+describe("before looking", () => {
+  it("shows text written before tool calls above the answer, labelled and seekable", () => {
+    const conversation = initConversation(els, deps());
+    const messages = investigation();
+    messages[1] = assistant("a1", "Checking [0:36] first.", {
+      toolCalls: [look("c1", 36, 39), { id: "c2", name: "frames", arguments: '{"times":[40,41]}' }],
+    });
+    conversation.reset(messages);
+    const reply = list().querySelector<HTMLElement>(".message.assistant:not([hidden])");
+    const prefaces = [...(reply?.querySelectorAll(".reply-preface") ?? [])];
+    expect(prefaces).toHaveLength(1);
+    expect(prefaces[0]?.querySelector(".reply-preface-label")?.textContent).toBe("Before looking");
+    expect(prefaces[0]?.querySelector(".reply-preface-text")?.textContent).toBe(
+      "Checking [0:36] first.",
+    );
+    expect(reply?.querySelector(".message-text")?.textContent).toBe("She waves at [0:40].");
+    prefaces[0]?.querySelector<HTMLButtonElement>("button.timestamp")?.click();
+    expect(spies.onSeek).toHaveBeenCalledWith(36, beach);
+  });
+
+  it("copies and checks the answer alone", () => {
+    const conversation = initConversation(els, deps());
+    const messages = investigation();
+    messages[1] = assistant("a1", "Maybe at [0:10].", { toolCalls: [look("c1", 36, 39)] });
+    conversation.reset(messages.filter((message) => message.id !== "t2"));
+    buttonsLabelled("Copy message")[1]?.click();
+    expect(spies.onCopy).toHaveBeenCalledWith(expect.objectContaining({ id: "a3" }));
+    const verify = vi.fn(() => Promise.resolve(undefined));
+    verifying = verify;
+    buttonsLabelled("Check timestamps")[0]?.click();
+    expect(verify).toHaveBeenCalledWith(expect.objectContaining({ id: "a3" }), expect.anything());
+  });
+
+  it("turns the streamed round into a preface in place when its tool calls arrive", () => {
+    const conversation = initConversation(els, deps());
+    conversation.show(user("u1", "Go"));
+    conversation.apply({ type: "assistantStart", message: assistant("a1", "") });
+    conversation.apply({ type: "assistantDelta", message: assistant("a1", "Let me look.") });
+    const reply = list().querySelector<HTMLElement>(".message.assistant");
+    expect(reply?.querySelector(".message-text")?.textContent).toBe("Let me look.");
+    expect(reply?.querySelector(".reply-preface")).toBeNull();
+    const withCall = assistant("a1", "Let me look.", { toolCalls: [look("c1", 36, 39)] });
+    conversation.apply({ type: "assistantDone", message: withCall });
+    conversation.apply({ type: "toolStart", call: look("c1", 36, 39) });
+    expect(reply?.hidden).toBe(false);
+    expect(reply?.querySelector(".message-text")?.textContent).toBe("");
+    expect(reply?.querySelector(".reply-preface-text")?.textContent).toBe("Let me look.");
+    expect(reply?.querySelector(".message-actions")?.childElementCount).toBe(0);
+    conversation.apply({ type: "toolDone", message: tool("t1", "c1", []) });
+    conversation.apply({ type: "assistantStart", message: assistant("a2", "") });
+    conversation.apply({ type: "assistantDelta", message: assistant("a2", "She waves.") });
+    const preface = reply?.querySelector(".reply-preface");
+    conversation.apply({ type: "assistantDelta", message: assistant("a2", "She waves twice.") });
+    expect(reply?.querySelector(".reply-preface")).toBe(preface);
+    expect(reply?.querySelector(".message-text")?.textContent).toBe("She waves twice.");
   });
 });
 

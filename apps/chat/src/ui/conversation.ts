@@ -20,6 +20,7 @@ import {
   answerOf,
   describeCall,
   hasActivity,
+  prefacesOf,
   renderActivityBody,
   streamingBodyKey,
   updateStreamingReasoning,
@@ -42,6 +43,7 @@ import type { VideoView } from "./videoPanel";
 
 const STICK_THRESHOLD_PX = 48;
 const THINKING = "Thinking…";
+const PREFACE_LABEL = "Before looking";
 const EMPTY_REPLY_HINT = "A reply needs some text. Cancel keeps the old one.";
 const READY_NOTE_KEY = "vid2grid-chat-ready-note-seen";
 const CUT_SHORT_NOTICE =
@@ -121,6 +123,9 @@ interface ActivityView {
 
 interface AnswerView {
   el: HTMLLIElement;
+  prefaces: HTMLElement;
+  // What the prefaces were last built from, so a streamed token below them leaves them alone.
+  prefacesKey: string | undefined;
   text: HTMLElement;
   notice: HTMLElement;
   checks: HTMLElement;
@@ -647,6 +652,8 @@ function answerView(): AnswerView {
   const el = document.createElement("li");
   el.className = "message assistant";
   el.hidden = true;
+  const prefaces = document.createElement("div");
+  prefaces.className = "reply-prefaces";
   const text = document.createElement("div");
   text.className = "message-text";
   const notice = document.createElement("p");
@@ -659,8 +666,8 @@ function answerView(): AnswerView {
   actions.className = "message-actions";
   const receipt = document.createElement("div");
   receipt.className = "reply-footer";
-  el.append(text, notice, checks, actions, receipt);
-  return { el, text, notice, checks, actions, receipt };
+  el.append(prefaces, text, notice, checks, actions, receipt);
+  return { el, prefaces, prefacesKey: undefined, text, notice, checks, actions, receipt };
 }
 
 function renderTurn(ctx: ConversationContext, turn: TurnView, streamed?: AssistantMessage): void {
@@ -717,27 +724,67 @@ function rerunMode(ctx: ConversationContext, turn: TurnView): "replay" | "retry"
   return turn.steps.length > 0 ? "replay" : "retry";
 }
 
+function underway(ctx: ConversationContext, turn: TurnView): boolean {
+  return (
+    turn.live !== null || turn.streamingId !== null || (isLatest(ctx, turn) && ctx.deps.isRunning())
+  );
+}
+
+function prefaceBlock(text: string, options: MarkdownOptions): HTMLElement {
+  const block = document.createElement("div");
+  block.className = "reply-preface";
+  const label = document.createElement("span");
+  label.className = "reply-preface-label";
+  label.textContent = PREFACE_LABEL;
+  const body = document.createElement("div");
+  body.className = "reply-preface-text";
+  renderMarkdownInto(body, text, options);
+  block.append(label, body);
+  return block;
+}
+
+function renderPrefaces(
+  ctx: ConversationContext,
+  turn: TurnView,
+  prefaces: readonly AssistantMessage[],
+): void {
+  const view = turn.answer;
+  const options = turnTextOptions(ctx, turn);
+  const key = JSON.stringify([
+    options.maxSeconds ?? null,
+    prefaces.map((step) => [step.id, step.text]),
+  ]);
+  if (key === view.prefacesKey) return;
+  view.prefacesKey = key;
+  view.prefaces.replaceChildren(...prefaces.map((step) => prefaceBlock(step.text, options)));
+}
+
+// A round streams as the answer; once it calls tools its text becomes a preface in the same spot.
 function renderAnswer(ctx: ConversationContext, turn: TurnView): void {
   const answer = answerOf(turn.steps);
+  const prefaces = prefacesOf(turn.steps);
   const view = turn.answer;
   const streaming = answer !== undefined && turn.streamingId === answer.id;
   const rerun = rerunMode(ctx, turn);
-  view.el.hidden = rerun === null && (!answer || (answer.text === "" && !streaming));
+  view.el.hidden =
+    rerun === null && prefaces.length === 0 && (!answer || (answer.text === "" && !streaming));
   view.el.classList.toggle("is-streaming", streaming);
   view.el.classList.toggle("is-retry", rerun === "retry");
+  renderPrefaces(ctx, turn, prefaces);
   if (answer && ctx.editor?.id === answer.id) return;
   renderMarkdownInto(view.text, answer?.text ?? "", turnTextOptions(ctx, turn));
   view.notice.hidden = answer?.reasoningCutShort !== true;
-  if (streaming || !answer || answer.text === "") {
+  const unanswered = !answer || answer.text === "";
+  if (streaming || unanswered) {
     view.checks.replaceChildren();
     view.receipt.replaceChildren();
   }
-  if (streaming) {
+  if (streaming || (unanswered && underway(ctx, turn))) {
     view.actions.replaceChildren();
     return;
   }
   const lead = replyLead(ctx, turn);
-  if (!answer || answer.text === "") {
+  if (unanswered) {
     view.actions.replaceChildren(
       ...lead,
       ...(rerun === "retry" ? [replayButton(ctx, "Retry")] : rerun ? [replayButton(ctx)] : []),
@@ -1033,11 +1080,11 @@ function needsRebuild(turn: TurnView): boolean {
   return view.dirty || view.renderedLive !== (turn.live !== null);
 }
 
-// A streamed token that only grows reasoning, or the answer below the row, leaves the body as is.
+// A streamed token that only grows reasoning, or the text below the row, leaves the body as is.
 function grewInPlace(turn: TurnView, streamed: AssistantMessage): boolean {
   const view = turn.activity;
   if (view.renderedLive !== (turn.live !== null)) return false;
-  if (view.streamKey !== streamingBodyKey(turn.steps, streamed)) return false;
+  if (view.streamKey !== streamingBodyKey(streamed)) return false;
   const grown = (streamed.reasoning ?? "") === "" || updateStreamingReasoning(view.body, streamed);
   if (grown) view.dirty = false;
   return grown;
@@ -1056,15 +1103,13 @@ function renderActivityContent(ctx: ConversationContext, turn: TurnView): void {
   const seek = turnSeekHandler(ctx, turn);
   renderActivityBody(view.body, turn.steps, {
     live: turn.live !== null,
-    renderText: (container, text) =>
-      renderMarkdownInto(container, text, turnTextOptions(ctx, turn)),
     thumbnail: (ref, messageId, index) => thumbnail(ctx, images, ref, messageId, index),
     seek,
   });
   view.dirty = false;
   view.renderedLive = turn.live !== null;
   const streaming = streamingStep(turn);
-  view.streamKey = streaming && streamingBodyKey(turn.steps, streaming);
+  view.streamKey = streaming && streamingBodyKey(streaming);
 }
 
 function renderUser(ctx: ConversationContext, turn: TurnView): void {

@@ -26,7 +26,6 @@ export type TurnStep = AssistantMessage | ToolMessage;
 export interface ActivityRender {
   // False once the turn has ended, so calls that never got a reply read as stopped.
   live: boolean;
-  renderText(container: HTMLElement, text: string): void;
   thumbnail(ref: ImageRef, messageId: string, index: number): HTMLElement;
   seek(seconds: number): void;
 }
@@ -41,14 +40,15 @@ function assistants(steps: readonly TurnStep[]): AssistantMessage[] {
   return steps.filter((step): step is AssistantMessage => step.role === "assistant");
 }
 
-export function hasActivity(steps: readonly TurnStep[]): boolean {
+// Text the model wrote on its way to the answer, shown above it as written before looking.
+export function prefacesOf(steps: readonly TurnStep[]): AssistantMessage[] {
   const answer = answerOf(steps);
+  return assistants(steps).filter((step) => step !== answer && step.text !== "");
+}
+
+export function hasActivity(steps: readonly TurnStep[]): boolean {
   return steps.some(
-    (step) =>
-      step.role === "tool" ||
-      (step.reasoning ?? "") !== "" ||
-      step.toolCalls.length > 0 ||
-      (step !== answer && step.text !== ""),
+    (step) => step.role === "tool" || (step.reasoning ?? "") !== "" || step.toolCalls.length > 0,
   );
 }
 
@@ -235,7 +235,6 @@ export function renderActivityBody(
   steps: readonly TurnStep[],
   render: ActivityRender,
 ): void {
-  const answer = answerOf(steps);
   const replies = new Map(
     steps.flatMap((step) => (step.role === "tool" ? [[step.toolCallId, step] as const] : [])),
   );
@@ -247,22 +246,15 @@ export function renderActivityBody(
       continue;
     }
     if ((step.reasoning ?? "") !== "") nodes.push(thinkingBlock(step.id, step.reasoning ?? ""));
-    if (step !== answer && step.text !== "") {
-      const text = document.createElement("div");
-      text.className = "activity-text";
-      render.renderText(text, step.text);
-      nodes.push(text);
-    }
     for (const call of step.toolCalls) nodes.push(callLine(call, replies.get(call.id), render));
   }
   container.replaceChildren(...nodes);
 }
 
 // What a streaming step shows in the body apart from its reasoning, which grows in place.
-export function streamingBodyKey(steps: readonly TurnStep[], step: AssistantMessage): string {
+export function streamingBodyKey(step: AssistantMessage): string {
   const calls = step.toolCalls.map((call) => [call.id, call.name, call.arguments]);
-  const text = answerOf(steps)?.id === step.id ? "" : step.text;
-  return JSON.stringify([(step.reasoning ?? "") !== "", calls, text]);
+  return JSON.stringify([(step.reasoning ?? "") !== "", calls]);
 }
 
 function orphanCall(reply: ToolMessage): ToolCall {

@@ -1,5 +1,5 @@
 .message-text.markdown,
-.activity-text.markdown {
+.reply-preface-text.markdown {
   white-space: normal;
 }
 
@@ -42,10 +42,16 @@
   font-style: italic;
 }
 
+/* Warm rather than the blue accent, so quoted speech never reads as a timestamp link. */
 .md-dialogue {
-  color: var(--text);
+  color: var(--dialogue);
+  font-weight: 500;
 }
 
 .md-action .md-dialogue {
   font-style: normal;
+}
+
+.reply-preface .md-dialogue {
+  color: inherit;
 }

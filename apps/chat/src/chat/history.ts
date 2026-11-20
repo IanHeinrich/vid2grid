@@ -211,6 +211,9 @@ export function answerStyle(
     .join(" ");
 }
 
+const BEFORE_LOOKING_GUIDANCE =
+  "If you write to the user before looking, keep it to one short line and claim nothing you have not seen yet.";
+
 const CHAR_PLACEHOLDER = /\{\{char\}\}/gi;
 const USER_PLACEHOLDER = /\{\{user\}\}/gi;
 
@@ -260,8 +263,9 @@ export function buildSystemPrompt(chat: Chat, toolGuidance: string): string {
   const { settings, video } = chat;
   const sections = [applyPersonaNames(settings.systemPrompt, settings).trim()];
   if (video) {
+    const tools = toolGuidance.trim();
     sections.push(
-      toolGuidance.trim(),
+      tools === "" ? "" : `${tools}\n${BEFORE_LOOKING_GUIDANCE}`,
       answerStyle(settings.voice, effectiveVideoReferences(settings)),
     );
     sections.push(

@@ -9,6 +9,7 @@
   --border: #e2e2e8;
   --accent: #3b5bdb;
   --accent-text: #ffffff;
+  --dialogue: #a14d00;
   --danger: #c92a2a;
   --private: #2b8a3e;
   --anonymized: #b26a00;
@@ -41,6 +42,7 @@
     --muted: #9a9aa6;
     --border: #2e2e36;
     --accent: #5c7cfa;
+    --dialogue: #f5c27a;
     --danger: #ff6b6b;
     --private: #51cf66;
     --anonymized: #fcc419;
@@ -1531,12 +1533,6 @@ kbd {
   overflow-wrap: anywhere;
 }
 
-.activity-text {
-  color: var(--text);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
 .activity-call.is-pending .activity-call-label {
   font-style: italic;
 }
@@ -1555,6 +1551,30 @@ kbd {
 
 .message-text {
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.reply-prefaces {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.reply-prefaces:not(:empty) {
+  margin-bottom: 0.6rem;
+}
+
+.reply-preface {
+  color: var(--muted);
+}
+
+.reply-preface-label {
+  display: block;
+  font-size: 0.75rem;
+  font-style: italic;
+}
+
+.reply-preface-text {
   overflow-wrap: anywhere;
 }
 
