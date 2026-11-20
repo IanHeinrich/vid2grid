@@ -31,5 +31,6 @@ export function createBrowserPorts(): CollagePorts<File, ImageBitmap, Blob> {
   };
 }
 
-export { probeVideo, countKeyframesInRange } from "./probe/probe";
+export { probeVideo, readFrameTimes, countKeyframesInRange } from "./probe/probe";
 export { supportsWebCodecs } from "./capture/isoBmff";
+export { analyseVideoAudio, createBrowserAudioPorts } from "./audio/browserAudio";

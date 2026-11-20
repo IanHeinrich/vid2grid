@@ -1,4 +1,4 @@
-name: Test, release & deploy web app to GitHub Pages
+name: Test, release & deploy the website and chat app to GitHub Pages
 on:
   push:
     branches: [main]
@@ -21,7 +21,11 @@ permissions:
 
 concurrency:
   group: pages-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # onnxruntime-node's install fetches CUDA binaries CI never uses, and that release asset now 404s.
+  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
 
 jobs:
   test:
@@ -38,6 +42,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run typecheck
+      - run: npm run build --workspace apps/web --workspace apps/chat
       - run: npm run lint
       - run: npm run coverage --workspace packages/core
       - run: npm run fixtures
@@ -124,28 +129,34 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.get-version.outputs.version }}
-      should_release: ${{ steps.check-tag.outputs.should_release }}
+      web_version: ${{ steps.versions.outputs.web_version }}
+      web_release: ${{ steps.versions.outputs.web_release }}
+      chat_version: ${{ steps.versions.outputs.chat_version }}
+      chat_release: ${{ steps.versions.outputs.chat_release }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - id: get-version
-        working-directory: apps/web
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
-
-      - id: check-tag
+      - id: versions
         run: |
-          if git rev-parse "v${{ steps.get-version.outputs.version }}" >/dev/null 2>&1; then
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "should_release=true" >> "$GITHUB_OUTPUT"
-          fi
+          tag_missing() { ! git rev-parse --verify --quiet "refs/tags/$1" >/dev/null; }
+          web_version=$(node -p "require('./apps/web/package.json').version")
+          chat_version=$(node -p "require('./apps/chat/package.json').version")
+          web_release=false
+          if tag_missing "v$web_version"; then web_release=true; fi
+          chat_release=false
+          if [[ $chat_version != 0.0.0 ]] && tag_missing "chat-v$chat_version"; then chat_release=true; fi
+          {
+            echo "web_version=$web_version"
+            echo "web_release=$web_release"
+            echo "chat_version=$chat_version"
+            echo "chat_release=$chat_release"
+          } >> "$GITHUB_OUTPUT"
 
   release:
     needs: check-version
-    if: needs.check-version.outputs.should_release == 'true'
+    if: needs.check-version.outputs.web_release == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -154,16 +165,34 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ needs.check-version.outputs.version }}
+          tag_name: v${{ needs.check-version.outputs.web_version }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
 
+  release-chat:
+    needs: check-version
+    if: needs.check-version.outputs.chat_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: chat-v${{ needs.check-version.outputs.chat_version }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          make_latest: false
+
   build:
     needs: check-version
-    if: needs.check-version.outputs.should_release == 'true'
+    if: needs.check-version.outputs.web_release == 'true' || needs.check-version.outputs.chat_release == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -171,15 +200,22 @@ jobs:
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      # The web build needs no install script; skipping them skips ffmpeg-static's download.
-      - run: npm ci --ignore-scripts
-      - run: npm run build --workspace apps/web
+      # A deploy replaces the whole site, so the app not releasing now is rebuilt from its latest tag.
+      - env:
+          WEB_RELEASE: ${{ needs.check-version.outputs.web_release }}
+          CHAT_RELEASE: ${{ needs.check-version.outputs.chat_release }}
+        run: |
+          latest_tag() { git -c versionsort.suffix=- tag --list "$1" --sort=-v:refname | head -n 1; }
+          if [[ $WEB_RELEASE == true ]]; then web_ref=.; else web_ref=$(latest_tag 'v*'); fi
+          if [[ $CHAT_RELEASE == true ]]; then chat_ref=.; else chat_ref=$(latest_tag 'chat-v*'); fi
+          echo "Website from ${web_ref}, chat app from ${chat_ref:-nowhere}"
+          bash scripts/buildPagesSite.sh "$web_ref" "$chat_ref" _site
 
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: apps/web/dist
+          path: _site
 
   deploy:
     needs: build

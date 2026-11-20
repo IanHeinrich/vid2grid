@@ -3,9 +3,10 @@
 What a subagent working beside others must know that `CLAUDE.md` states for a
 single pair of hands. Each line names where the full rule lives.
 
-- **Singletons.** `npm run dev` is one Vite dev server per machine (port 5173).
-  The orchestrator owns it; a worker that needs to see the app in a browser asks
-  for the running URL rather than starting a second one.
+- **Singletons.** `npm run dev` is one Vite dev server per machine (port 5173),
+  and `npm run dev:chat` is another (port 5174). The orchestrator owns both; a
+  worker that needs to see an app in a browser asks for the running URL rather
+  than starting a second one.
 - **Steps that run once, after the workers return.** `npm ci` and
   `npm run format` are root singletons. Two workers running either at once
   fight over root `node_modules/` and root `package-lock.json`, and a
@@ -15,9 +16,11 @@ single pair of hands. Each line names where the full rule lives.
 - **Chunk boundaries that do not collide.** A worker can own one
   `apps/web/src/ui/` directory plus the `apps/web/tests/*.test.ts` files
   covering it, `packages/core/src/` plus its `packages/core/tests/*.test.ts`
-  files, or one `packages/browser/src/<area>/` directory (`capture/`,
-  `probe/`, `render/` or `transcribe/`) plus the
-  `packages/browser/tests/*.test.ts` files covering it, or
+  files, or one `packages/browser/src/<area>/` directory (`audio/`,
+  `capture/`, `probe/`, `render/`, `shared/` or `transcribe/`) plus the
+  `packages/browser/tests/*.test.ts` files covering it, or one
+  `apps/chat/src/<area>/` directory (`api/`, `video/`, `attachments/`, `chat/`
+  or `ui/`) plus the `apps/chat/tests/*.test.ts` files covering it, or
   `apps/node-library/src/` plus `apps/node-library/tests/`, or
   `apps/node-cli/src/` plus `apps/node-cli/tests/`, or
   `apps/python-library/src/vid2grid/` (except `_core.js`) plus the
@@ -28,7 +31,10 @@ single pair of hands. Each line names where the full rule lives.
   shapes reaches it too. Shared files no two workers may touch at once:
   `apps/web/index.html` (all UI markup), `apps/web/src/main.ts` (the
   wiring), `apps/web/src/style.css`, `apps/web/src/state.ts`,
-  `apps/web/package.json`, root `package.json`, root `package-lock.json`,
+  `apps/web/package.json`, `apps/chat/index.html`, `apps/chat/src/main.ts`,
+  `apps/chat/src/style.css`, `apps/chat/src/state.ts`,
+  `apps/chat/src/types.ts`, `apps/chat/package.json`, root `package.json`,
+  root `package-lock.json`,
   `.prettierignore`, `.prettierrc.json`, `packages/core/package.json`,
   `packages/core/src/index.ts`, `packages/core/src/pipeline/ports.ts`,
   `packages/browser/package.json`, `packages/browser/src/index.ts`,
@@ -47,7 +53,7 @@ single pair of hands. Each line names where the full rule lives.
 - **Checks a worker runs, and checks it must not.** A worker runs only its own
   targeted tests: `npx vitest run tests/<module>.test.ts` from the owning
   package directory (`packages/core`, `packages/browser`, `apps/web`,
-  `apps/node-library` or `apps/node-cli`), or
+  `apps/chat`, `apps/node-library` or `apps/node-cli`), or
   `uv run pytest tests/test_<module>.py` from the owning Python app
   (`apps/python-library`, `apps/python-cli` or `apps/mcp-server`). The
   whole-project runs belong to one verifier at the end:

@@ -1,34 +1,61 @@
-import { Vid2GridError } from "@vid2grid/core";
+import type { AbortSignalLike, DecodedAudio } from "@vid2grid/core";
+import { abortError } from "../shared/workerRequest";
+import { noDecodableAudioError } from "./audioErrors";
+import { decodeMp4AudioRange } from "./mp4AudioDecoder";
 
 // `decodeAudioData` resamples to its `AudioContext`'s rate, so constructing the context at
 // Whisper's rate gets the resample for free.
-const WHISPER_SAMPLE_RATE = 16000;
+export const DECODED_SAMPLE_RATE = 16000;
+
+function throwIfAborted(signal: AbortSignalLike | undefined): void {
+  if (signal?.aborted) throw abortError(signal);
+}
+
+// MP4 and MOV decode just the range; anything else, such as WebM, is decoded whole and sliced.
+export async function decodeAudioRange(
+  file: File,
+  startTime: number,
+  endTime: number,
+  signal?: AbortSignalLike,
+): Promise<DecodedAudio> {
+  const ranged = await decodeMp4AudioRange(file, startTime, endTime, DECODED_SAMPLE_RATE, signal);
+  return ranged ?? decodeWholeFile(file, startTime, endTime, signal);
+}
+
+export async function decodeWholeFile(
+  file: File,
+  startTime: number,
+  endTime: number,
+  signal?: AbortSignalLike,
+): Promise<DecodedAudio> {
+  throwIfAborted(signal);
+  const arrayBuffer = await file.arrayBuffer();
+  throwIfAborted(signal);
+  const audioCtx = new AudioContext({ sampleRate: DECODED_SAMPLE_RATE });
+
+  let audioBuffer: AudioBuffer;
+  try {
+    audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+  } catch (err) {
+    throw noDecodableAudioError(err);
+  } finally {
+    void audioCtx.close();
+  }
+  throwIfAborted(signal);
+
+  const mono = downmixToMono(audioBuffer);
+  return {
+    samples: sliceSamples(mono, audioBuffer.sampleRate, startTime, endTime),
+    sampleRate: audioBuffer.sampleRate,
+  };
+}
 
 export async function decodeAudioForTranscription(
   file: File,
   startTime: number,
   endTime: number,
 ): Promise<Float32Array> {
-  const arrayBuffer = await file.arrayBuffer();
-  const audioCtx = new AudioContext({ sampleRate: WHISPER_SAMPLE_RATE });
-
-  let audioBuffer: AudioBuffer;
-  try {
-    audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-  } catch (err) {
-    throw noAudioError(err);
-  } finally {
-    void audioCtx.close();
-  }
-
-  const mono = downmixToMono(audioBuffer);
-  return sliceSamples(mono, audioBuffer.sampleRate, startTime, endTime);
-}
-
-function noAudioError(decodeFailure: unknown): Vid2GridError {
-  return new Vid2GridError("no_audio", "This video has no decodable audio track.", {
-    cause: decodeFailure,
-  });
+  return (await decodeWholeFile(file, startTime, endTime)).samples;
 }
 
 function downmixToMono(buffer: AudioBuffer): Float32Array {
@@ -44,6 +71,7 @@ function downmixToMono(buffer: AudioBuffer): Float32Array {
   return mixed;
 }
 
+// The decoded track is not kept, so a range covering all of it is handed over without a copy.
 function sliceSamples(
   samples: Float32Array,
   sampleRate: number,
@@ -52,5 +80,6 @@ function sliceSamples(
 ): Float32Array {
   const startIndex = Math.max(0, Math.floor(startTime * sampleRate));
   const endIndex = Math.min(samples.length, Math.ceil(endTime * sampleRate));
+  if (startIndex === 0 && endIndex === samples.length) return samples;
   return samples.slice(startIndex, endIndex);
 }

@@ -73,7 +73,9 @@ Evaluate it once; it defines a global `vid2gridCore` whose one function,
 `call(name, argsJson)`, takes a function name and a JSON array of positional
 arguments and returns a JSON envelope: `{"ok": true, "value": ...}` or
 `{"ok": false, "code": ..., "message": ...}`, with `code` one of
-`invalid_request`, `no_audio`, `no_frames` and `internal`. The functions and
+`invalid_request`, `no_audio`, `undecodable_audio`, `no_frames` and `internal`.
+(`undecodable_audio`, an audio track the host cannot decode, comes from the
+executor rather than the bundle.) The functions and
 their argument shapes are listed in
 [render-plan.md](render-plan.md#hosts-without-javascript). Leave an unset
 optional field out of the JSON rather than sending `null`.

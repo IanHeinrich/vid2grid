@@ -5,6 +5,7 @@ import {
   MP4BoxBuffer,
   DataStream,
   Endianness,
+  type Entry,
   type ISOFile,
   type Movie,
   type Sample,
@@ -130,6 +131,42 @@ export async function readKeyframeTimestamps(file: File): Promise<number[] | nul
   const demuxed = await demuxCached(file);
   if (!demuxed) return null;
   return keyframeTimestampsFromSamples(demuxed.samples);
+}
+
+interface PresentationStart {
+  mediaTime: number;
+  emptySeconds: number;
+}
+
+// Browsers apply the edit list, so currentTime 0 is the first edit's media time after any empty
+// edits, not cts 0. B-frame encodes typically start the media two frames in.
+function presentationStart(edits: Entry[] | undefined, movieTimescale: number): PresentationStart {
+  let emptySeconds = 0;
+  for (const edit of edits ?? []) {
+    if (edit.media_time >= 0) return { mediaTime: edit.media_time, emptySeconds };
+    emptySeconds += edit.segment_duration / movieTimescale;
+  }
+  return { mediaTime: 0, emptySeconds: 0 };
+}
+
+export function frameTimestampsFromSamples(
+  samples: Sample[],
+  track: Pick<Track, "edits" | "movie_timescale">,
+): number[] {
+  const { mediaTime, emptySeconds } = presentationStart(track.edits, track.movie_timescale);
+  return samples
+    .map((sample) =>
+      roundToMicroseconds((sample.cts - mediaTime) / sample.timescale + emptySeconds),
+    )
+    .filter((time) => time >= 0)
+    .sort((a, b) => a - b);
+}
+
+export async function readFrameTimestamps(file: File): Promise<number[] | null> {
+  if (!supportsWebCodecs(file)) return null;
+  const demuxed = await demuxCached(file);
+  if (!demuxed) return null;
+  return frameTimestampsFromSamples(demuxed.samples, demuxed.videoTrack);
 }
 
 export async function countKeyframesInRange(

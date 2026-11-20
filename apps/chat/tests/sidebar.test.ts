@@ -1,0 +1,381 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import indexHtml from "../index.html?raw";
+import { createMemoryStore } from "../src/chat/store";
+import { queryElements, type AppElements } from "../src/dom";
+import { DEFAULT_SETTINGS } from "../src/settings";
+import {
+  blankChat,
+  createAppState,
+  replaceChat,
+  setChats,
+  setCurrentChat,
+  type AppState,
+} from "../src/state";
+import type { Chat, ChatStore, VideoAttachment } from "../src/types";
+import { groupChats, initSidebar, matchesSearch, type SidebarDeps } from "../src/ui/sidebar";
+import { initToast } from "../src/ui/toast";
+
+let els: AppElements;
+let state: AppState;
+let store: ChatStore;
+let deps: SidebarDeps;
+let spies: ReturnType<typeof makeSpies>;
+let timers: (() => void)[];
+
+function makeSpies() {
+  return {
+    onOpen: vi.fn(),
+    onDeletingCurrent: vi.fn(),
+    onCurrentDeleted: vi.fn(),
+    onDeleted: vi.fn(),
+    onDeleteFinal: vi.fn(),
+    onRenamed: vi.fn(),
+    onOpenSettings: vi.fn(),
+    onFocusComposer: vi.fn(),
+  };
+}
+
+function titles(): string[] {
+  return [...els.sidebar.chatList.querySelectorAll(".chat-open")].map((el) => el.textContent ?? "");
+}
+
+function itemFor(chatId: string): HTMLElement {
+  const item = els.sidebar.chatList.querySelector<HTMLElement>(`[data-chat-id="${chatId}"]`);
+  if (!item) throw new Error(`No list item for ${chatId}`);
+  return item;
+}
+
+function click(root: HTMLElement, selector: string): void {
+  root.querySelector<HTMLElement>(selector)?.click();
+}
+
+const NOW = new Date(2026, 10, 19, 15, 0).getTime();
+const DAY = 24 * 60 * 60 * 1000;
+
+const BEACH: VideoAttachment = {
+  name: "beach-trip.mp4",
+  fileKey: "beach",
+  durationSeconds: 60,
+  width: 640,
+  height: 360,
+};
+
+function groupTitles(): string[] {
+  return [...els.sidebar.chatList.querySelectorAll(".chat-group-title")].map(
+    (el) => el.textContent ?? "",
+  );
+}
+
+// jsdom's Blob has no text().
+function readText(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+    reader.readAsText(blob);
+  });
+}
+
+function chatAt(id: string, updatedAt: number, extra: Partial<Chat> = {}): Chat {
+  return { ...blankChat(DEFAULT_SETTINGS.defaultModelId, id, updatedAt), ...extra };
+}
+
+async function seed(
+  id: string,
+  updatedAt: number,
+  title: string,
+  extra: Partial<Chat> = {},
+): Promise<void> {
+  const chat = { ...blankChat(DEFAULT_SETTINGS.defaultModelId, id, updatedAt), title, ...extra };
+  await store.putChat(chat);
+  setChats(state, await store.listChats());
+}
+
+beforeEach(() => {
+  document.body.innerHTML = indexHtml;
+  els = queryElements();
+  state = createAppState(DEFAULT_SETTINGS);
+  store = createMemoryStore();
+  let next = 0;
+  spies = makeSpies();
+  timers = [];
+  deps = {
+    store,
+    status: { show: vi.fn(), clear: vi.fn() },
+    toast: initToast(els, { set: (run) => timers.push(run), clear: vi.fn() }),
+    ...spies,
+    newId: () => `chat-${++next}`,
+    now: () => 100 + next,
+  };
+});
+
+describe("initSidebar", () => {
+  it("creates a new chat at the top of the list and opens it", async () => {
+    await seed("old", 1, "Old chat");
+    await store.putMessage("old", { id: "m", createdAt: 1, role: "user", text: "hi", images: [] });
+    initSidebar(els, state, deps);
+    els.sidebar.newChatButton.click();
+    await vi.waitFor(() => expect(spies.onOpen).toHaveBeenCalledWith("chat-1"));
+    expect(titles()).toEqual(["New chat", "Old chat"]);
+    expect((await store.getChat("chat-1"))?.settings.modelId).toBe("qwen3-6-27b");
+  });
+
+  it("renames a chat inline and saves the new title", async () => {
+    await seed("a", 1, "Chat A");
+    initSidebar(els, state, deps);
+    click(itemFor("a"), ".chat-rename");
+    const input = itemFor("a").querySelector<HTMLInputElement>(".chat-rename-input");
+    if (!input) throw new Error("No rename input");
+    input.value = "Beach day";
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await vi.waitFor(() => expect(titles()).toEqual(["Beach day"]));
+    expect((await store.getChat("a"))?.title).toBe("Beach day");
+    expect(spies.onRenamed).toHaveBeenCalled();
+  });
+
+  it("keeps the title when renaming is cancelled", async () => {
+    await seed("a", 1, "Chat A");
+    initSidebar(els, state, deps);
+    click(itemFor("a"), ".chat-rename");
+    const input = itemFor("a").querySelector<HTMLInputElement>(".chat-rename-input");
+    if (!input) throw new Error("No rename input");
+    input.value = "Other";
+    const escape = new KeyboardEvent("keydown", { key: "Escape", cancelable: true });
+    input.dispatchEvent(escape);
+    expect(escape.defaultPrevented).toBe(true);
+    expect(titles()).toEqual(["Chat A"]);
+  });
+});
+
+describe("deleting from the sidebar", () => {
+  it("deletes a chat at once and reports deleting the open one", async () => {
+    await seed("a", 2, "Chat A");
+    await seed("b", 1, "Chat B");
+    const current = state.chats.find((chat) => chat.id === "a") ?? null;
+    setCurrentChat(state, current, []);
+    initSidebar(els, state, deps);
+    let chatWhenStopped: unknown = null;
+    spies.onDeletingCurrent.mockImplementation(() => {
+      chatWhenStopped = state.chats.find((chat) => chat.id === "a");
+    });
+    click(itemFor("a"), ".chat-delete");
+    await vi.waitFor(() => expect(spies.onCurrentDeleted).toHaveBeenCalled());
+    expect(titles()).toEqual(["Chat B"]);
+    expect(chatWhenStopped).toBeDefined();
+    expect(await store.getChat("a")).toBeUndefined();
+  });
+
+  it("keeps a background re-render from wiping a rename in progress", async () => {
+    await seed("a", 1, "Chat A");
+    const sidebar = initSidebar(els, state, deps);
+    click(itemFor("a"), ".chat-rename");
+    const input = itemFor("a").querySelector<HTMLInputElement>(".chat-rename-input");
+    if (!input) throw new Error("No rename input");
+    input.value = "Half typed";
+    sidebar.render();
+    expect(itemFor("a").querySelector(".chat-rename-input")).toBe(input);
+  });
+});
+
+describe("undoing a deleted chat", () => {
+  it("restores a deleted chat with its messages and video handle from the undo toast", async () => {
+    await seed("a", 2, "Chat A");
+    await seed("b", 1, "Chat B");
+    const hello = { id: "m", createdAt: 1, role: "user" as const, text: "hi", images: [] };
+    await store.putMessage("a", hello);
+    const handle = { kind: "file", name: "beach.mp4" } as unknown as FileSystemFileHandle;
+    await store.putVideoHandle("a", handle);
+    setCurrentChat(state, state.chats.find((chat) => chat.id === "a") ?? null, [hello]);
+    initSidebar(els, state, deps);
+    click(itemFor("a"), ".chat-delete");
+    await vi.waitFor(() => expect(els.toast.text.textContent).toBe('Deleted "Chat A"'));
+    expect(spies.onDeleted).toHaveBeenCalled();
+    els.toast.action.click();
+    await vi.waitFor(() => expect(spies.onOpen).toHaveBeenCalledWith("a"));
+    expect(titles()).toEqual(["Chat A", "Chat B"]);
+    expect(await store.listMessages("a")).toEqual([hello]);
+    expect(await store.getVideoHandle("a")).toBe(handle);
+    expect(spies.onDeleteFinal).not.toHaveBeenCalled();
+  });
+
+  it("restores the chat as it was when deleted, not as the list last drew it", async () => {
+    await seed("a", 1, "Chat A");
+    initSidebar(els, state, deps);
+    const chat = state.chats.find((entry) => entry.id === "a");
+    if (!chat) throw new Error("No chat");
+    replaceChat(state, { ...chat, sceneLog: [{ timeSeconds: 3, text: "added later" }] });
+    click(itemFor("a"), ".chat-delete");
+    await vi.waitFor(() => expect(els.toast.el.hidden).toBe(false));
+    els.toast.action.click();
+    await vi.waitFor(async () =>
+      expect((await store.getChat("a"))?.sceneLog).toEqual([
+        { timeSeconds: 3, text: "added later" },
+      ]),
+    );
+  });
+
+  it("lets go of the chat once the undo toast expires", async () => {
+    await seed("a", 1, "Chat A");
+    initSidebar(els, state, deps);
+    click(itemFor("a"), ".chat-delete");
+    await vi.waitFor(() => expect(els.toast.el.hidden).toBe(false));
+    timers.forEach((run) => run());
+    expect(spies.onDeleteFinal).toHaveBeenCalledWith(expect.objectContaining({ id: "a" }));
+  });
+
+  it("puts the chat back and says so when deleting fails", async () => {
+    await seed("a", 1, "Chat A");
+    setCurrentChat(state, state.chats[0] ?? null, []);
+    store.deleteChat = () => Promise.reject(new Error("Disk full"));
+    initSidebar(els, state, deps);
+    click(itemFor("a"), ".chat-delete");
+    await vi.waitFor(() =>
+      expect(els.toast.text.textContent).toBe("Could not delete the chat: Disk full"),
+    );
+    expect(titles()).toEqual(["Chat A"]);
+    expect(spies.onOpen).toHaveBeenCalledWith("a");
+    expect(spies.onDeleted).not.toHaveBeenCalled();
+  });
+});
+
+describe("new chat reuse", () => {
+  it("focuses the message box instead of creating a chat when the open one is empty", async () => {
+    await seed("a", 1, "New chat");
+    setCurrentChat(state, state.chats[0] ?? null, []);
+    initSidebar(els, state, deps);
+    els.sidebar.newChatButton.click();
+    await vi.waitFor(() => expect(spies.onFocusComposer).toHaveBeenCalled());
+    expect(state.chats).toHaveLength(1);
+    expect(spies.onOpen).not.toHaveBeenCalled();
+  });
+
+  it("switches to another empty chat instead of creating a duplicate", async () => {
+    await seed("empty", 1, "New chat");
+    await seed("busy", 2, "Busy");
+    const hello = { id: "m", createdAt: 1, role: "user" as const, text: "hi", images: [] };
+    await store.putMessage("busy", hello);
+    const busy = state.chats.find((chat) => chat.id === "busy") ?? null;
+    setCurrentChat(state, busy, [hello]);
+    initSidebar(els, state, deps);
+    els.sidebar.newChatButton.click();
+    await vi.waitFor(() => expect(spies.onOpen).toHaveBeenCalledWith("empty"));
+    expect(state.chats).toHaveLength(2);
+  });
+
+  it("opens settings from the sidebar", () => {
+    initSidebar(els, state, deps);
+    els.sidebar.openSettingsButton.click();
+    expect(spies.onOpenSettings).toHaveBeenCalled();
+  });
+});
+
+describe("grouping chats by date", () => {
+  it("puts chats under Today, Yesterday, the previous 7 and 30 days, and Older", () => {
+    const chats = [
+      chatAt("today", NOW - 60 * 60 * 1000),
+      chatAt("yesterday", NOW - DAY),
+      chatAt("week", NOW - 5 * DAY),
+      chatAt("month", NOW - 20 * DAY),
+      chatAt("older", NOW - 90 * DAY),
+    ];
+    expect(
+      groupChats(chats, NOW).map((group) => [group.label, group.chats.map((chat) => chat.id)]),
+    ).toEqual([
+      ["Today", ["today"]],
+      ["Yesterday", ["yesterday"]],
+      ["Previous 7 days", ["week"]],
+      ["Previous 30 days", ["month"]],
+      ["Older", ["older"]],
+    ]);
+  });
+
+  it("counts calendar days, so late last night is yesterday", () => {
+    const lastNight = new Date(2026, 10, 18, 23, 30).getTime();
+    expect(groupChats([chatAt("a", lastNight)], NOW)[0]?.label).toBe("Yesterday");
+  });
+
+  it("shows a heading for each group that has chats, in the injected clock's terms", async () => {
+    deps.now = () => NOW;
+    await seed("a", NOW - 10 * DAY, "Old trip");
+    await seed("b", NOW - 1000, "Fresh");
+    initSidebar(els, state, deps);
+    expect(groupTitles()).toEqual(["Today", "Previous 30 days"]);
+    expect(titles()).toEqual(["Fresh", "Old trip"]);
+  });
+});
+
+describe("searching chats", () => {
+  it("matches the title or the video name, ignoring case", () => {
+    const chat = chatAt("a", 1, { title: "Holiday", video: BEACH });
+    expect(matchesSearch(chat, "holi")).toBe(true);
+    expect(matchesSearch(chat, "BEACH")).toBe(true);
+    expect(matchesSearch(chat, "  ")).toBe(true);
+    expect(matchesSearch(chat, "mountain")).toBe(false);
+  });
+
+  it("filters the list as you type and says when nothing matches", async () => {
+    await seed("a", 2, "Holiday", { video: BEACH });
+    await seed("b", 1, "Cooking");
+    initSidebar(els, state, deps);
+    const search = els.sidebar.searchInput;
+    search.value = "beach";
+    search.dispatchEvent(new Event("input"));
+    expect(titles()).toEqual(["Holiday"]);
+    search.value = "nothing like this";
+    search.dispatchEvent(new Event("input"));
+    expect(titles()).toEqual([]);
+    expect(els.sidebar.chatList.textContent).toContain("No chats match.");
+    const escape = new KeyboardEvent("keydown", { key: "Escape", cancelable: true });
+    search.dispatchEvent(escape);
+    expect(escape.defaultPrevented).toBe(true);
+    expect(search.value).toBe("");
+    expect(titles()).toEqual(["Holiday", "Cooking"]);
+  });
+
+  it("marks chats that have a video attached", async () => {
+    await seed("a", 2, "Holiday", { video: BEACH });
+    await seed("b", 1, "Cooking");
+    initSidebar(els, state, deps);
+    expect(itemFor("a").querySelector(".chat-video-icon")).not.toBeNull();
+    expect(itemFor("b").querySelector(".chat-video-icon")).toBeNull();
+    expect(itemFor("a").querySelector(".chat-open")?.getAttribute("title")).toContain(
+      "beach-trip.mp4",
+    );
+  });
+});
+
+describe("exporting a chat as Markdown", () => {
+  it("downloads the chat as a .md file named after its title", async () => {
+    await seed("a", 1, "Beach: day 1?");
+    await store.putMessage("a", { id: "m", createdAt: 1, role: "user", text: "hi", images: [] });
+    const createObjectURL = vi.fn<(blob: Blob) => string>(() => "blob:chat");
+    URL.createObjectURL = createObjectURL;
+    URL.revokeObjectURL = vi.fn();
+    const anchorClick = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    initSidebar(els, state, deps);
+    click(itemFor("a"), ".chat-export");
+    await vi.waitFor(() => expect(anchorClick).toHaveBeenCalled());
+    const anchor = anchorClick.mock.contexts[0];
+    if (!(anchor instanceof HTMLAnchorElement)) throw new Error("No link was clicked");
+    expect(anchor.download).toBe("Beach day 1.md");
+    expect(anchor.href).toBe("blob:chat");
+    const blob = createObjectURL.mock.calls[0]?.[0];
+    if (!blob) throw new Error("No blob was downloaded");
+    const markdown = await readText(blob);
+    expect(markdown).toContain("# Beach: day 1?");
+    expect(markdown).toContain("hi");
+    anchorClick.mockRestore();
+  });
+
+  it("says so in the toast when the export fails", async () => {
+    await seed("a", 1, "Chat A");
+    store.listMessages = () => Promise.reject(new Error("Disk gone"));
+    initSidebar(els, state, deps);
+    click(itemFor("a"), ".chat-export");
+    await vi.waitFor(() =>
+      expect(els.toast.text.textContent).toBe("Could not export the chat: Disk gone"),
+    );
+  });
+});

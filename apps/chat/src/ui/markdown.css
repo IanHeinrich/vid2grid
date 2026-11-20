@@ -1,0 +1,51 @@
+.message-text.markdown,
+.activity-text.markdown {
+  white-space: normal;
+}
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown p,
+.markdown ul,
+.markdown ol {
+  margin: 0 0 0.6em;
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: 1.4em;
+}
+
+.markdown blockquote {
+  margin: 0 0 0.6em;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--border);
+  color: var(--muted);
+}
+
+.markdown code {
+  padding: 0.05em 0.3em;
+  border-radius: 4px;
+  background: var(--bg-raised);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.md-action {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.md-dialogue {
+  color: var(--text);
+}
+
+.md-action .md-dialogue {
+  font-style: normal;
+}

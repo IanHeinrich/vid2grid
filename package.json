@@ -5,14 +5,16 @@
   "workspaces": [
     "packages/*",
     "apps/web",
+    "apps/chat",
     "apps/node-library",
     "apps/node-cli"
   ],
   "scripts": {
     "dev": "npm run dev --workspace apps/web",
+    "dev:chat": "npm run dev --workspace apps/chat",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tsconfig.scripts.json",
-    "build": "npm run typecheck && npm run build --workspace apps/web",
+    "build": "npm run typecheck && npm run build --workspace apps/web && npm run build --workspace apps/chat",
     "format": "prettier --write .",
     "fixtures": "vite-node scripts/generateRenderPlanFixtures.ts",
     "bundle": "vite-node scripts/buildCoreBundle.ts",

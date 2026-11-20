@@ -1,0 +1,1284 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>vid2grid chat</title>
+  </head>
+  <body>
+    <div id="app" class="app">
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <span class="brand">vid2grid chat</span>
+          <button id="newChatButton" type="button" class="button primary">New chat</button>
+          <input
+            id="chatSearchInput"
+            type="search"
+            class="chat-search"
+            placeholder="Search chats"
+            aria-label="Search chats"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </div>
+        <nav class="chat-list-wrap" aria-label="Chats">
+          <ul id="chatList" class="chat-list"></ul>
+        </nav>
+        <div id="balance" class="balance" hidden>
+          <span id="balanceText" class="balance-text"></span>
+          <span id="balanceSource" class="balance-source"></span>
+        </div>
+        <div class="sidebar-footer">
+          <button id="openSettingsButton" type="button" class="button ghost">Settings</button>
+          <button
+            id="shortcutsToggle"
+            type="button"
+            class="button ghost shortcuts-toggle"
+            aria-expanded="false"
+            aria-controls="shortcutsPopover"
+            aria-label="Keyboard shortcuts"
+            title="Keyboard shortcuts"
+          >
+            ?
+          </button>
+          <div
+            id="shortcutsPopover"
+            class="shortcuts-popover"
+            role="dialog"
+            aria-label="Keyboard shortcuts"
+            hidden
+          >
+            <p class="shortcuts-title">Keyboard shortcuts</p>
+            <dl class="shortcuts-list">
+              <dt><kbd>Enter</kbd></dt>
+              <dd>Send (<kbd>Shift</kbd> <kbd>Enter</kbd> for a new line)</dd>
+              <dt><kbd>Esc</kbd></dt>
+              <dd>Stop the running reply</dd>
+              <dt><kbd>&uarr;</kbd></dt>
+              <dd>Edit your last message, from an empty message box</dd>
+              <dt><kbd>Ctrl</kbd> <kbd>Alt</kbd> <kbd>N</kbd></dt>
+              <dd>New chat</dd>
+              <dt><kbd>Ctrl</kbd> <kbd>,</kbd></dt>
+              <dd>Chat settings</dd>
+              <dt><kbd>Ctrl</kbd> <kbd>Alt</kbd> <kbd>K</kbd></dt>
+              <dd>Knowledge</dd>
+              <dt><kbd>F</kbd></dt>
+              <dd>Star or unstar the highlighted model in a model list</dd>
+              <dt><kbd>,</kbd> <kbd>.</kbd></dt>
+              <dd>Step the player a frame back or forward, over or in the player</dd>
+            </dl>
+          </div>
+        </div>
+      </aside>
+
+      <main id="mainColumn" class="main">
+        <header class="chat-header">
+          <div class="chat-heading">
+            <h1 id="chatTitle" class="chat-title">New chat</h1>
+            <p class="chat-model">
+              <span id="chatModelName"></span>
+              <span id="chatModelBadge" class="badge" hidden></span>
+            </p>
+            <p id="usageLine" class="usage-line" hidden>
+              <span id="usageContext" class="usage-context"></span>
+              <span id="usageTotals"></span>
+            </p>
+          </div>
+          <button id="videoChip" type="button" class="video-chip" hidden>
+            <span class="video-chip-icon" aria-hidden="true">&#9654;</span>
+            <span id="videoChipName" class="video-chip-name"></span>
+            <span id="videoChipMeta" class="video-chip-meta"></span>
+          </button>
+          <div class="study-control" hidden>
+            <button
+              id="studyButton"
+              type="button"
+              class="button ghost study-button header-button"
+              title="Reads the whole video once and saves a timeline every chat with this video can use"
+            >
+              Study video
+            </button>
+            <button
+              type="button"
+              class="button ghost study-menu-button"
+              aria-haspopup="menu"
+              aria-expanded="false"
+              aria-label="More study actions"
+              title="More study actions"
+            >
+              &#9662;
+            </button>
+            <div class="study-menu" role="menu" hidden>
+              <button type="button" class="study-menu-item study-restart" role="menuitem">
+                New study…
+              </button>
+              <button type="button" class="study-menu-item study-zoom" role="menuitem" hidden>
+                Zoom into unclear moments
+              </button>
+              <button
+                id="clearTimelineButton"
+                type="button"
+                class="study-menu-item"
+                role="menuitem"
+              >
+                Clear timeline
+              </button>
+            </div>
+          </div>
+          <input id="reattachInput" type="file" accept="video/*" hidden />
+          <button
+            id="knowledgeToggle"
+            type="button"
+            class="button ghost header-button"
+            aria-expanded="false"
+            aria-controls="knowledgePanel"
+            title="What the model knows: the chat summary, scene log, timelines and people"
+          >
+            Knowledge
+          </button>
+          <button
+            id="chatSettingsToggle"
+            type="button"
+            class="button ghost header-button"
+            aria-expanded="false"
+            aria-controls="chatSettingsPanel"
+            title="Chat settings"
+          >
+            Chat settings
+          </button>
+        </header>
+
+        <section id="welcome" class="welcome" aria-labelledby="welcomeTitle" hidden>
+          <div class="welcome-head">
+            <h2 id="welcomeTitle" class="welcome-title">Get started</h2>
+            <button
+              id="welcomeDismiss"
+              type="button"
+              class="welcome-dismiss"
+              aria-label="Hide the checklist"
+              title="Hide"
+            >
+              &times;
+            </button>
+          </div>
+          <ol id="welcomeSteps" class="welcome-steps">
+            <li class="welcome-step" data-step="key">
+              <span class="welcome-check" aria-hidden="true"></span>
+              <span class="welcome-label">Add your API key</span>
+              <button type="button" class="button ghost welcome-action">Open settings</button>
+            </li>
+            <li class="welcome-step" data-step="test">
+              <span class="welcome-check" aria-hidden="true"></span>
+              <span class="welcome-label">Test the connection</span>
+              <button type="button" class="button ghost welcome-action">Test</button>
+            </li>
+            <li class="welcome-step" data-step="model">
+              <span class="welcome-check" aria-hidden="true"></span>
+              <span class="welcome-label">Choose a default model</span>
+              <button type="button" class="button ghost welcome-action">Choose</button>
+            </li>
+            <li class="welcome-step" data-step="media">
+              <span class="welcome-check" aria-hidden="true"></span>
+              <span class="welcome-label">Drop a video or images into a chat</span>
+            </li>
+          </ol>
+        </section>
+
+        <div class="conversation-area">
+          <section id="conversation" class="conversation" aria-label="Conversation">
+            <div id="emptyConversation" class="empty-conversation">
+              <p>Drop a video here to watch it with the model, or drop images to ask about them.</p>
+            </div>
+            <ol id="messageList" class="messages"></ol>
+            <div id="readyCard" class="ready-card" hidden>
+              <div class="ready-suggestions">
+                <p class="ready-lead">Ask anything about it, or try:</p>
+                <div id="readyStarters" class="ready-starters">
+                  <button type="button" class="starter">
+                    Summarise what happens, step by step
+                  </button>
+                  <button type="button" class="starter">Who is in this?</button>
+                  <button type="button" class="starter">What is the key moment?</button>
+                </div>
+              </div>
+              <p class="ready-note muted small">
+                Study video reads the whole video once and saves a timeline every chat with this
+                video can use. Thorough and Exhaustive, next to the message box, let the next answer
+                take many more looks.
+              </p>
+            </div>
+            <p id="turnAnnouncer" class="turn-announcer visually-hidden" role="status"></p>
+          </section>
+
+          <aside id="miniPlayer" class="mini-player" aria-label="Video player" hidden>
+            <button
+              id="miniPlayerResize"
+              type="button"
+              class="mini-player-resize"
+              aria-label="Resize the player"
+              title="Drag to resize, or use the arrow keys"
+            ></button>
+            <div id="miniPlayerBar" class="mini-player-bar" title="Drag to move">
+              <span id="miniPlayerTitle" class="mini-player-title"></span>
+              <button
+                id="miniPlayerDock"
+                type="button"
+                class="mini-player-button"
+                aria-pressed="false"
+                aria-label="Dock the player above the conversation"
+                title="Dock above the conversation"
+              >
+                Dock
+              </button>
+              <button
+                id="miniPlayerClose"
+                type="button"
+                class="mini-player-close"
+                aria-label="Close the player"
+                title="Close"
+              >
+                &times;
+              </button>
+            </div>
+            <video id="miniPlayerVideo" class="mini-player-video" controls playsinline></video>
+            <div id="miniPlayerLoopTrack" class="mini-player-loop-track" hidden>
+              <span id="miniPlayerLoopBand" class="mini-player-loop-band"></span>
+            </div>
+            <div class="mini-player-controls" role="group" aria-label="Playback controls">
+              <button
+                id="miniPlayerStepBack"
+                type="button"
+                class="mini-player-button"
+                aria-label="Back one frame"
+                title="Back one frame (,)"
+              >
+                &lsaquo;
+              </button>
+              <button
+                id="miniPlayerStepForward"
+                type="button"
+                class="mini-player-button"
+                aria-label="Forward one frame"
+                title="Forward one frame (.)"
+              >
+                &rsaquo;
+              </button>
+              <select
+                id="miniPlayerSpeed"
+                class="mini-player-speed"
+                aria-label="Playback speed"
+                title="Playback speed"
+              >
+                <option value="0.25">0.25&times;</option>
+                <option value="0.5">0.5&times;</option>
+                <option value="0.75">0.75&times;</option>
+                <option value="1" selected>1&times;</option>
+                <option value="1.25">1.25&times;</option>
+                <option value="1.5">1.5&times;</option>
+                <option value="1.75">1.75&times;</option>
+                <option value="2">2&times;</option>
+              </select>
+              <button
+                id="miniPlayerLoopIn"
+                type="button"
+                class="mini-player-button"
+                aria-label="Start the loop here"
+                title="Start the loop at the current time"
+              >
+                In
+              </button>
+              <button
+                id="miniPlayerLoopOut"
+                type="button"
+                class="mini-player-button"
+                aria-label="End the loop here"
+                title="End the loop at the current time"
+              >
+                Out
+              </button>
+              <button
+                id="miniPlayerLoopAround"
+                type="button"
+                class="mini-player-button"
+                aria-pressed="false"
+                hidden
+              >
+                Loop &plusmn;2 s
+              </button>
+              <span id="miniPlayerLoopRange" class="mini-player-loop-range" hidden></span>
+              <button
+                id="miniPlayerLoopClear"
+                type="button"
+                class="mini-player-close"
+                aria-label="Stop looping"
+                title="Stop looping"
+                hidden
+              >
+                &times;
+              </button>
+            </div>
+          </aside>
+
+          <div id="toast" class="toast" role="status" aria-live="polite" hidden>
+            <span id="toastText" class="toast-text"></span>
+            <button id="toastAction" type="button" class="toast-action"></button>
+            <button
+              id="toastClose"
+              type="button"
+              class="toast-close"
+              aria-label="Dismiss"
+              title="Dismiss"
+            >
+              &times;
+            </button>
+          </div>
+        </div>
+
+        <p id="status" class="status" role="status"></p>
+
+        <section id="studyProgress" class="study-progress" aria-label="Video study" hidden>
+          <div class="study-progress-text">
+            <p id="studyProgressTitle" class="study-progress-title" role="status"></p>
+            <p id="studyProgressDetail" class="study-progress-detail"></p>
+            <p id="studyProgressAudio" class="study-progress-detail" hidden></p>
+          </div>
+          <div class="study-progress-actions">
+            <button id="studyProgressPause" type="button" class="button ghost">Pause</button>
+            <button id="studyProgressStop" type="button" class="button ghost">Stop</button>
+            <button id="studyProgressZoom" type="button" class="button ghost" hidden>
+              Zoom into unclear moments
+            </button>
+            <button id="studyProgressOpen" type="button" class="button ghost">Open timeline</button>
+            <button
+              id="studyProgressClose"
+              type="button"
+              class="toast-close"
+              aria-label="Dismiss"
+              title="Dismiss"
+            >
+              &times;
+            </button>
+          </div>
+          <progress id="studyProgressBar" class="study-progress-bar" max="1" value="0"></progress>
+        </section>
+
+        <form id="composer" class="composer">
+          <ul id="pendingList" class="pending-list" aria-label="Attachments"></ul>
+          <div class="composer-row">
+            <button
+              id="attachButton"
+              type="button"
+              class="icon-button"
+              title="Attach a video or images"
+              aria-label="Attach a video or images"
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                <path
+                  d="M21 11.5 12.6 19.9a5.5 5.5 0 0 1-7.8-7.8l8.5-8.5a3.7 3.7 0 0 1 5.2 5.2l-8.5 8.5a1.8 1.8 0 0 1-2.6-2.6l7.8-7.8"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+            <input id="attachInput" type="file" accept="video/*,image/*" multiple hidden />
+            <div id="thoroughnessControl" class="composer-menu">
+              <button
+                id="thoroughnessButton"
+                type="button"
+                class="deep-toggle"
+                aria-haspopup="menu"
+                aria-expanded="false"
+                aria-controls="thoroughnessMenu"
+                title="How many looks at the video the model may take before answering, kept for this chat"
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                  <circle
+                    cx="10.5"
+                    cy="10.5"
+                    r="6"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  />
+                  <path
+                    d="m15 15 5 5"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                  />
+                </svg>
+                <span id="thoroughnessLabel">Normal</span>
+              </button>
+              <div
+                id="thoroughnessMenu"
+                class="composer-menu-list"
+                role="menu"
+                aria-label="Thoroughness for this chat"
+                hidden
+              >
+                <button
+                  type="button"
+                  class="composer-menu-item"
+                  role="menuitemradio"
+                  tabindex="-1"
+                  aria-checked="true"
+                  data-value="normal"
+                >
+                  <span class="composer-menu-name">Normal</span>
+                  <span class="composer-menu-hint"></span>
+                </button>
+                <button
+                  type="button"
+                  class="composer-menu-item"
+                  role="menuitemradio"
+                  tabindex="-1"
+                  aria-checked="false"
+                  data-value="thorough"
+                >
+                  <span class="composer-menu-name">Thorough</span>
+                  <span class="composer-menu-hint"></span>
+                </button>
+                <button
+                  type="button"
+                  class="composer-menu-item"
+                  role="menuitemradio"
+                  tabindex="-1"
+                  aria-checked="false"
+                  data-value="exhaustive"
+                >
+                  <span class="composer-menu-name">Exhaustive</span>
+                  <span class="composer-menu-hint"></span>
+                </button>
+              </div>
+            </div>
+            <div id="reasoningControl" class="composer-menu" hidden>
+              <button
+                id="reasoningButton"
+                type="button"
+                class="deep-toggle"
+                aria-haspopup="menu"
+                aria-expanded="false"
+                aria-controls="reasoningMenu"
+                title="How much the model reasons before answering, kept for this chat"
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                  <path
+                    d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9V16h7v-2.1A6 6 0 0 0 12 3Z"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <span id="reasoningLabel">Reasoning</span>
+              </button>
+              <div
+                id="reasoningMenu"
+                class="composer-menu-list"
+                role="menu"
+                aria-label="Reasoning effort for this chat"
+                hidden
+              ></div>
+            </div>
+            <button
+              id="audioToggle"
+              type="button"
+              class="deep-toggle audio-toggle"
+              aria-pressed="false"
+              title="Lets the model read what is heard in the video (speech and sounds), analysed on this computer"
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                <path
+                  d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                />
+              </svg>
+              Audio
+            </button>
+            <textarea
+              id="messageInput"
+              class="message-input"
+              rows="1"
+              placeholder="Message"
+              aria-label="Message"
+            ></textarea>
+            <button
+              id="answerNowButton"
+              type="button"
+              class="button answer-now-button"
+              title="Stop thinking and answer from what the model has seen so far"
+              hidden
+            >
+              Answer now
+            </button>
+            <button id="sendButton" type="submit" class="button primary send-button">Send</button>
+          </div>
+          <p id="composerHint" class="composer-hint" hidden></p>
+        </form>
+
+        <div class="drop-overlay" aria-hidden="true">
+          <p>Drop a video or images</p>
+        </div>
+      </main>
+
+      <div id="chatDrawerBackdrop" class="drawer-backdrop" hidden></div>
+      <aside id="chatSettingsPanel" class="chat-drawer" aria-labelledby="chatDrawerTitle" hidden>
+        <div class="drawer-head">
+          <h2 id="chatDrawerTitle" class="drawer-title">Chat settings</h2>
+          <button
+            id="chatDrawerClose"
+            type="button"
+            class="drawer-close"
+            aria-label="Close chat settings"
+            title="Close"
+          >
+            &times;
+          </button>
+        </div>
+        <div id="chatDrawerTabs" class="drawer-tabs" role="tablist" aria-label="Chat settings">
+          <button
+            id="personaTab"
+            type="button"
+            class="drawer-tab"
+            role="tab"
+            data-tab="persona"
+            aria-controls="personaPanel"
+          >
+            Instructions
+          </button>
+          <button
+            id="modelTab"
+            type="button"
+            class="drawer-tab"
+            role="tab"
+            data-tab="model"
+            aria-controls="modelPanel"
+          >
+            Model
+          </button>
+        </div>
+        <div id="chatDrawerBody" class="drawer-body">
+          <section
+            id="personaPanel"
+            class="drawer-panel"
+            role="tabpanel"
+            aria-labelledby="personaTab"
+          >
+            <div class="persona-presets">
+              <label class="field">
+                <span>Saved presets</span>
+                <select id="personaSelect"></select>
+              </label>
+              <div class="drawer-actions">
+                <button id="savePersonaButton" type="button" class="button ghost">
+                  Save as preset
+                </button>
+                <button id="updatePersonaButton" type="button" class="button ghost">Update</button>
+                <button id="deletePersonaButton" type="button" class="button ghost">Delete</button>
+              </div>
+            </div>
+            <label class="field">
+              <span>System prompt</span>
+              <textarea
+                id="systemPromptInput"
+                rows="6"
+                placeholder="How should the model respond? Its role, tone, what to focus on."
+              ></textarea>
+            </label>
+            <div class="field-row">
+              <label class="field">
+                <span>Voice</span>
+                <select id="voiceSelect">
+                  <option value="analyst">Analyst</option>
+                  <option value="character">In character</option>
+                  <option value="narrator">Narrator</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Refer to the video</span>
+                <select id="videoReferencesSelect">
+                  <option value="free">Cite moments freely</option>
+                  <option value="few">A few links to help find moments</option>
+                  <option value="none">Never mention the video</option>
+                </select>
+              </label>
+            </div>
+            <p id="voiceHint" class="muted small"></p>
+            <details id="roleplayNames" class="roleplay-names">
+              <summary>Roleplay names</summary>
+              <p class="muted small">{{char}} and {{user}} in the prompt stand for these names.</p>
+              <div class="field-row">
+                <label class="field">
+                  <span>Character name</span>
+                  <input
+                    id="characterNameInput"
+                    type="text"
+                    autocomplete="off"
+                    placeholder="{{char}}"
+                  />
+                </label>
+                <label class="field">
+                  <span>Your name</span>
+                  <input id="userNameInput" type="text" autocomplete="off" placeholder="{{user}}" />
+                </label>
+              </div>
+            </details>
+            <div class="field">
+              <span>Prompt with names filled in</span>
+              <p id="promptPreview" class="prompt-preview"></p>
+            </div>
+          </section>
+          <section
+            id="modelPanel"
+            class="drawer-panel"
+            role="tabpanel"
+            aria-labelledby="modelTab"
+            hidden
+          >
+            <div class="field">
+              <span id="modelPickerLabel">Model</span>
+              <div id="modelPicker" role="group" aria-labelledby="modelPickerLabel"></div>
+            </div>
+            <label class="field">
+              <span>Temperature</span>
+              <input
+                id="temperatureInput"
+                type="number"
+                min="0"
+                max="2"
+                step="0.1"
+                placeholder="Model default"
+              />
+            </label>
+            <label id="reasoningEffortField" class="field" hidden>
+              <span>Reasoning effort</span>
+              <select id="reasoningEffortSelect"></select>
+            </label>
+            <label class="field">
+              <span>Earlier images</span>
+              <select id="earlierImagesSelect">
+                <option value="describe">Describe them; the model re-opens one when needed</option>
+                <option value="send">Keep sending them, up to the image limit</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Sheet resolution</span>
+              <select id="sheetResolutionSelect">
+                <option id="sheetResolutionAuto" value="auto">Auto</option>
+                <option value="1024">1024 px</option>
+                <option value="1536">1536 px</option>
+                <option value="2048">2048 px</option>
+                <option value="2560">2560 px</option>
+                <option value="3072">3072 px</option>
+              </select>
+              <span id="sheetResolutionHint" class="muted small"></span>
+            </label>
+            <label class="field">
+              <span>Max rounds</span>
+              <input
+                id="maxRoundsInput"
+                type="number"
+                min="1"
+                max="30"
+                step="1"
+                placeholder="Default (8)"
+              />
+            </label>
+          </section>
+        </div>
+      </aside>
+      <div id="knowledgeBackdrop" class="drawer-backdrop" hidden></div>
+      <aside
+        id="knowledgePanel"
+        class="chat-drawer knowledge-drawer"
+        aria-labelledby="knowledgeTitle"
+        hidden
+      >
+        <div class="drawer-head">
+          <h2 id="knowledgeTitle" class="drawer-title">Knowledge</h2>
+          <button
+            id="knowledgeClose"
+            type="button"
+            class="drawer-close"
+            aria-label="Close knowledge"
+            title="Close"
+          >
+            &times;
+          </button>
+        </div>
+        <div
+          id="knowledgeTabs"
+          class="drawer-tabs knowledge-tabs"
+          role="tablist"
+          aria-label="Knowledge"
+        >
+          <span class="knowledge-tab-group" aria-hidden="true">This chat</span>
+          <button
+            id="summaryTab"
+            type="button"
+            class="drawer-tab"
+            role="tab"
+            data-tab="summary"
+            aria-controls="summaryPanel"
+          >
+            Chat summary
+          </button>
+          <button
+            id="sceneTab"
+            type="button"
+            class="drawer-tab"
+            role="tab"
+            data-tab="scene"
+            aria-controls="scenePanel"
+          >
+            Scene log
+          </button>
+          <span class="knowledge-tab-group" aria-hidden="true">Videos</span>
+          <button
+            id="timelineTab"
+            type="button"
+            class="drawer-tab"
+            role="tab"
+            data-tab="timeline"
+            aria-controls="knowledgeVideo timelineSection"
+          >
+            Timeline
+          </button>
+          <button
+            id="peopleTab"
+            type="button"
+            class="drawer-tab"
+            role="tab"
+            data-tab="people"
+            aria-controls="knowledgeVideo peoplePanel"
+          >
+            People
+          </button>
+        </div>
+        <div id="knowledgeBody" class="drawer-body">
+          <div id="knowledgeVideo" class="knowledge-video" hidden>
+            <label id="knowledgeVideoField" class="field">
+              <span>Video</span>
+              <select id="knowledgeVideoSelect"></select>
+            </label>
+            <p id="knowledgeVideoNote" class="muted small" hidden>
+              This is not the attached video, so what was saved for it is read only. Attach it again
+              to study it or change its people.
+            </p>
+          </div>
+          <section
+            id="summaryPanel"
+            class="drawer-panel"
+            role="tabpanel"
+            aria-labelledby="summaryTab"
+            hidden
+          >
+            <p class="muted small">
+              The chat summary stands in for older messages, so a long chat keeps its thread after
+              they are dropped from the request.
+            </p>
+            <label class="field">
+              <span>Chat summary</span>
+              <textarea id="storyInput" rows="10"></textarea>
+              <span id="storyMeta" class="muted small"></span>
+            </label>
+            <div class="drawer-actions">
+              <button id="summarizeButton" type="button" class="button">Summarize now</button>
+              <button id="clearStoryButton" type="button" class="button ghost">Clear</button>
+            </div>
+            <p class="task-status">
+              <span id="storyStatus" role="status"></span>
+              <button id="storyStop" type="button" class="button ghost" hidden>Stop</button>
+            </p>
+          </section>
+          <section
+            id="scenePanel"
+            class="drawer-panel"
+            role="tabpanel"
+            aria-labelledby="sceneTab"
+            hidden
+          >
+            <h3 id="sceneLogTitle" class="drawer-subhead">Scene log</h3>
+            <p class="muted small">
+              Notes the model takes about the current video. The log starts over when a new video is
+              attached.
+            </p>
+            <p id="sceneLogCount" class="muted small"></p>
+            <p id="sceneLogEmpty" class="muted small">No notes yet.</p>
+            <ol id="sceneLogList" class="scene-log-list"></ol>
+            <div class="drawer-actions">
+              <button id="addNoteButton" type="button" class="button">Add note</button>
+              <button id="condenseButton" type="button" class="button ghost">Condense</button>
+            </div>
+            <p class="task-status">
+              <span id="sceneLogStatus" role="status"></span>
+              <button id="sceneLogStop" type="button" class="button ghost" hidden>Stop</button>
+            </p>
+            <div id="condensePreview" class="condense-preview" hidden>
+              <p class="small">The condensed log, not saved yet:</p>
+              <ol id="condenseList" class="scene-log-list"></ol>
+              <div class="drawer-actions">
+                <button id="acceptCondenseButton" type="button" class="button primary">
+                  Use this
+                </button>
+                <button id="discardCondenseButton" type="button" class="button ghost">
+                  Discard
+                </button>
+              </div>
+            </div>
+          </section>
+          <section
+            id="timelineSection"
+            class="drawer-panel"
+            role="tabpanel"
+            aria-labelledby="timelineTab"
+            hidden
+          >
+            <h3 id="timelineSummary" class="drawer-subhead">Timeline</h3>
+            <p id="timelineEmpty" class="muted small">
+              Study the video to build a timeline the model can use.
+            </p>
+            <button id="timelineZoomButton" type="button" class="button ghost timeline-zoom" hidden>
+              Zoom into unclear moments
+            </button>
+            <ol id="timelineList" class="scene-log-list timeline-list"></ol>
+            <section id="timelineAudio" class="timeline-audio" aria-labelledby="timelineAudioTitle">
+              <h3 id="timelineAudioTitle" class="drawer-subhead">Audio</h3>
+              <p id="timelineAudioCoverage" class="muted small"></p>
+              <ol id="timelineAudioList" class="scene-log-list timeline-list"></ol>
+              <button id="timelineAudioMore" type="button" class="button ghost" hidden>
+                Show all
+              </button>
+            </section>
+          </section>
+          <section
+            id="peoplePanel"
+            class="drawer-panel"
+            role="tabpanel"
+            aria-labelledby="peopleTab"
+            hidden
+          >
+            <h3 id="castTitle" class="drawer-subhead">People</h3>
+            <p class="muted small">
+              Who appears in the video, kept per video. The people in the attached video are sent to
+              the model with every reply.
+            </p>
+            <p id="castNotice" class="muted small" hidden>
+              Attach a video to keep a list of the people in it.
+            </p>
+            <p id="castEmpty" class="muted small">
+              No one yet. Add someone or suggest from the video.
+            </p>
+            <ul id="castList" class="cast-list"></ul>
+            <div class="drawer-actions">
+              <button id="addCastButton" type="button" class="button">Add</button>
+              <button id="suggestCastButton" type="button" class="button ghost">
+                Suggest from video
+              </button>
+            </div>
+            <p class="task-status">
+              <span id="castStatus" role="status"></span>
+              <button id="castStop" type="button" class="button ghost" hidden>Stop</button>
+            </p>
+          </section>
+        </div>
+      </aside>
+    </div>
+
+    <dialog id="settingsDialog" class="settings-dialog app-settings">
+      <form id="settingsForm" method="dialog" class="settings-form">
+        <h2>Settings</h2>
+        <div class="settings-sections">
+          <div class="settings-column">
+            <section class="settings-section" aria-labelledby="connectionTitle">
+              <h3 id="connectionTitle">Connection</h3>
+              <label class="field">
+                <span>API key</span>
+                <input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" />
+              </label>
+              <label class="field">
+                <span>Base URL</span>
+                <input id="baseUrlInput" type="url" spellcheck="false" />
+              </label>
+              <p class="muted small">
+                The key is kept in this browser's localStorage and sent only to the base URL.
+              </p>
+              <div class="models-row">
+                <button id="testConnectionButton" type="button" class="button ghost">
+                  Test connection
+                </button>
+              </div>
+              <ul id="connectionReport" class="connection-report" aria-live="polite" hidden></ul>
+            </section>
+            <section class="settings-section" aria-labelledby="modelsTitle">
+              <h3 id="modelsTitle">Models</h3>
+              <div class="field">
+                <span id="defaultModelPickerLabel">Default model for new chats</span>
+                <div
+                  id="defaultModelPicker"
+                  role="group"
+                  aria-labelledby="defaultModelPickerLabel"
+                ></div>
+              </div>
+              <label class="checkbox-field">
+                <input id="privateOnlyInput" type="checkbox" />
+                <span>Only show private models</span>
+              </label>
+              <div class="models-row">
+                <button id="refreshModelsButton" type="button" class="button ghost">
+                  Refresh models
+                </button>
+                <span id="modelsStatus" class="muted"></span>
+              </div>
+              <label class="field">
+                <span>Image limit for models that do not report one</span>
+                <input id="fallbackMaxImagesInput" type="number" min="1" max="100" step="1" />
+              </label>
+            </section>
+          </div>
+          <div class="settings-column">
+            <section class="settings-section" aria-labelledby="displayTitle">
+              <h3 id="displayTitle">Display</h3>
+              <label class="checkbox-field">
+                <input id="showThinkingInput" type="checkbox" aria-describedby="showThinkingHint" />
+                <span>Show thinking</span>
+              </label>
+              <p id="showThinkingHint" class="muted small">
+                Opens the activity row with the model's reasoning by default.
+              </p>
+            </section>
+            <section class="settings-section" aria-labelledby="storageTitle">
+              <h3 id="storageTitle">Storage</h3>
+              <label class="checkbox-field">
+                <input id="keepCopiesInput" type="checkbox" />
+                <span>Keep a copy of attached videos in this browser</span>
+              </label>
+              <label class="field">
+                <span>Ask first for videos larger than (GB)</span>
+                <input id="askAboveInput" type="number" min="0.1" step="0.5" />
+              </label>
+              <section class="stored-videos" aria-labelledby="storedVideosTitle">
+                <h4 id="storedVideosTitle">Stored videos</h4>
+                <p id="storageUsage" class="muted small"></p>
+                <ul id="storedVideoList" class="stored-video-list"></ul>
+              </section>
+              <section class="backup" aria-labelledby="backupTitle">
+                <h4 id="backupTitle">Backup</h4>
+                <label class="checkbox-field">
+                  <input id="backupImagesInput" type="checkbox" checked />
+                  <span>Include images</span>
+                </label>
+                <div class="models-row">
+                  <button id="downloadBackupButton" type="button" class="button ghost">
+                    Download backup
+                  </button>
+                  <button id="restoreBackupButton" type="button" class="button ghost">
+                    Restore from backup…
+                  </button>
+                  <input
+                    id="restoreBackupInput"
+                    type="file"
+                    accept="application/json,.json"
+                    hidden
+                  />
+                </div>
+                <p id="backupStatus" class="muted small" aria-live="polite"></p>
+              </section>
+            </section>
+          </div>
+          <section class="settings-section sound-labels" aria-labelledby="soundLabelsTitle">
+            <h3 id="soundLabelsTitle">Audio labels</h3>
+            <div class="sound-label-fields">
+              <label class="field">
+                <span>Sounds to listen for</span>
+                <textarea
+                  id="soundLabelsInput"
+                  rows="10"
+                  spellcheck="false"
+                  aria-describedby="soundLabelsHelp"
+                  placeholder="applause&#10;footsteps: someone walking on a wooden floor; shoes tapping on tiles"
+                ></textarea>
+              </label>
+              <label class="field">
+                <span>Background sounds</span>
+                <textarea
+                  id="backgroundSoundLabelsInput"
+                  rows="10"
+                  spellcheck="false"
+                  aria-describedby="soundLabelsHelp"
+                  placeholder="silence"
+                ></textarea>
+              </label>
+            </div>
+            <div id="soundLabelsHelp" class="sound-labels-help muted small">
+              <p>
+                One label per line, either <code>name</code> or <code>name: wording; wording</code>.
+                The wordings describe the same sound in different ways and results show the name, as
+                in <code>music: a band playing; someone singing</code>.
+              </p>
+              <p>
+                Descriptive phrases such as <code>a crowd laughing</code> work better than single
+                words. Similar labels compete with each other, so keep them distinct.
+              </p>
+              <p>
+                Background sounds soak up quiet or ambient stretches and are never reported. Labels
+                stay in this browser; changing them re-checks sounds the next time audio is
+                analysed.
+              </p>
+            </div>
+            <div class="models-row">
+              <button id="resetSoundLabelsButton" type="button" class="button ghost">
+                Reset to defaults
+              </button>
+            </div>
+          </section>
+        </div>
+        <menu class="dialog-actions">
+          <button type="submit" value="cancel" class="button ghost" formnovalidate>Cancel</button>
+          <button type="submit" value="save" class="button primary">Save</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="studyDialog" class="settings-dialog">
+      <form id="studyForm" method="dialog" class="settings-form">
+        <h2>Study this video</h2>
+        <p class="muted small">
+          Reads the whole video once and saves a timeline every chat with this video can use.
+        </p>
+        <div class="field-row">
+          <label class="field">
+            <span>
+              Window length
+              <output id="studyWindowValue" class="study-window-value" for="studyWindowInput">
+                45 s
+              </output>
+            </span>
+            <input id="studyWindowInput" type="range" min="20" max="120" step="5" value="45" />
+          </label>
+          <label class="field">
+            Density
+            <select id="studyDensityInput">
+              <option value="light">Light</option>
+              <option value="normal" selected>Normal</option>
+              <option value="dense">Dense</option>
+            </select>
+          </label>
+        </div>
+        <fieldset class="study-range">
+          <legend>Range</legend>
+          <div class="field-row">
+            <label class="field">
+              From
+              <input id="studyFromInput" type="text" placeholder="0:00" autocomplete="off" />
+            </label>
+            <label class="field">
+              To
+              <input id="studyToInput" type="text" placeholder="End" autocomplete="off" />
+            </label>
+          </div>
+          <div class="study-range-actions">
+            <button id="studyFromCurrentButton" type="button" class="button ghost">
+              From playback time
+            </button>
+            <button id="studyWholeVideoButton" type="button" class="button ghost">
+              Whole video
+            </button>
+          </div>
+        </fieldset>
+        <div class="field">
+          <span id="studyModelPickerLabel">Model for the study</span>
+          <div id="studyModelPicker" role="group" aria-labelledby="studyModelPickerLabel"></div>
+        </div>
+        <label class="checkbox-field">
+          <input id="studyAudioInput" type="checkbox" checked />
+          <span>Include audio (analysed on this computer, no API cost)</span>
+        </label>
+        <p id="studyPlanSummary" class="muted small study-estimate"></p>
+        <p id="studyEstimate" class="study-estimate" aria-live="polite"></p>
+        <menu class="dialog-actions">
+          <button type="submit" value="cancel" class="button ghost" formnovalidate>Cancel</button>
+          <button id="studyStartButton" type="submit" value="start" class="button primary">
+            Start
+          </button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="lightbox" class="lightbox" aria-label="Image viewer">
+      <button
+        id="lightboxClose"
+        type="button"
+        class="lightbox-close"
+        aria-label="Close"
+        title="Close"
+      >
+        &times;
+      </button>
+      <button
+        id="lightboxPrev"
+        type="button"
+        class="lightbox-nav lightbox-prev"
+        aria-label="Previous image"
+        title="Previous"
+      >
+        &#8249;
+      </button>
+      <figure class="lightbox-figure">
+        <div id="lightboxStage" class="lightbox-stage">
+          <img id="lightboxImage" class="lightbox-image" alt="" draggable="false" />
+        </div>
+        <figcaption class="lightbox-caption">
+          <span id="lightboxLabel"></span>
+          <span id="lightboxCounter" class="lightbox-counter"></span>
+          <button
+            id="lightboxPin"
+            type="button"
+            class="pin-toggle"
+            aria-pressed="false"
+            hidden
+          ></button>
+          <span class="lightbox-zoom" role="group" aria-label="Zoom">
+            <button
+              id="lightboxZoomOut"
+              type="button"
+              class="lightbox-zoom-out"
+              aria-label="Zoom out"
+              title="Zoom out"
+            >
+              &minus;
+            </button>
+            <button
+              id="lightboxZoomIn"
+              type="button"
+              class="lightbox-zoom-in"
+              aria-label="Zoom in"
+              title="Zoom in"
+            >
+              +
+            </button>
+          </span>
+          <button id="lightboxAsk" type="button" class="button primary lightbox-ask" hidden>
+            Ask about this
+          </button>
+          <span id="lightboxHint" class="lightbox-hint" aria-live="polite"></span>
+        </figcaption>
+      </figure>
+      <button
+        id="lightboxNext"
+        type="button"
+        class="lightbox-nav lightbox-next"
+        aria-label="Next image"
+        title="Next"
+      >
+        &#8250;
+      </button>
+    </dialog>
+
+    <template id="modelPickerTemplate">
+      <div class="model-picker">
+        <button type="button" class="model-trigger" aria-haspopup="listbox" aria-expanded="false">
+          <span class="model-monogram" aria-hidden="true"></span>
+          <span class="model-trigger-name"></span>
+          <span class="model-pill model-trigger-privacy" hidden></span>
+          <span class="model-trigger-chevron"></span>
+        </button>
+        <div class="model-panel" hidden>
+          <div class="model-panel-top">
+            <label class="model-search">
+              <span class="model-search-icon"></span>
+              <input
+                type="search"
+                class="model-search-input"
+                placeholder="Search models…"
+                aria-label="Search models"
+                autocomplete="off"
+                spellcheck="false"
+              />
+            </label>
+            <button
+              type="button"
+              class="model-tool model-favourites-toggle"
+              aria-pressed="false"
+              aria-label="Favourites only"
+              title="Favourites only"
+            ></button>
+            <button
+              type="button"
+              class="model-tool model-filter-toggle"
+              aria-expanded="false"
+              aria-label="Filters"
+              title="Filters"
+            ></button>
+            <button
+              type="button"
+              class="model-tool model-sort-toggle"
+              aria-expanded="false"
+              aria-label="Sort"
+              title="Sort"
+            ></button>
+          </div>
+          <div class="model-chips model-filter-chips" role="group" aria-label="Filters" hidden>
+            <button type="button" class="model-chip" data-filter="private">Private</button>
+            <button type="button" class="model-chip" data-filter="uncensored">Uncensored</button>
+            <button type="button" class="model-chip" data-filter="recommended">Recommended</button>
+            <button type="button" class="model-chip" data-filter="reasoning">Reasoning</button>
+            <button type="button" class="model-chip" data-filter="audio">Audio</button>
+            <button type="button" class="model-chip" data-filter="beta">Beta</button>
+          </div>
+          <div class="model-chips model-sort-chips" role="radiogroup" aria-label="Sort by" hidden>
+            <button type="button" class="model-chip" role="radio" data-sort="recommended">
+              Recommended
+            </button>
+            <button type="button" class="model-chip" role="radio" data-sort="price">Price</button>
+            <button type="button" class="model-chip" role="radio" data-sort="context">
+              Context
+            </button>
+            <button type="button" class="model-chip" role="radio" data-sort="name">Name</button>
+          </div>
+          <div class="model-body">
+            <div class="model-list-column">
+              <ul class="model-list" role="listbox" aria-label="Models"></ul>
+              <p class="model-empty" hidden>No models match.</p>
+              <p class="model-hint">
+                <kbd>&uarr;</kbd> <kbd>&darr;</kbd> to move, <kbd>Enter</kbd> to choose,
+                <kbd>F</kbd> to star
+              </p>
+            </div>
+            <aside class="model-pane" aria-label="Model details">
+              <div class="model-pane-head">
+                <span class="model-monogram" aria-hidden="true"></span>
+                <div class="model-pane-title">
+                  <h3 class="model-pane-name"></h3>
+                  <p class="model-pane-id"></p>
+                </div>
+              </div>
+              <div class="model-pane-tags"></div>
+              <p class="model-pane-description"></p>
+              <dl class="model-pane-facts"></dl>
+            </aside>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <template id="modelRowTemplate">
+      <li class="model-row" role="option" tabindex="-1" aria-selected="false">
+        <span class="model-monogram" aria-hidden="true"></span>
+        <span class="model-row-main">
+          <span class="model-row-name"></span>
+          <span class="model-badges"></span>
+          <span class="model-row-meta"></span>
+        </span>
+        <button type="button" class="model-star" tabindex="-1" aria-pressed="false"></button>
+      </li>
+    </template>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
