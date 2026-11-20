@@ -7,8 +7,8 @@ Contributions are welcome: bug reports, feature ideas, and PRs.
 [packages/](packages) holds the internal building blocks:
 [packages/core](packages/core), the DOM-free `RenderPlan` planner, and
 [packages/browser](packages/browser), the browser executor. [apps/](apps)
-holds every way to use vid2grid: the website, the Node.js library and CLI,
-and the Python library, CLI and MCP server.
+holds every way to use vid2grid: the website, the chat app, the Node.js
+library and CLI, and the Python library, CLI and MCP server.
 [docs/architecture.md](docs/architecture.md) is the map of how they fit
 together.
 
@@ -36,9 +36,10 @@ Python apps are uv projects, each checked from its own folder.
    Python apps need no matching edit. See
    [docs/render-plan.md](docs/render-plan.md).
 5. Open a PR against `main`.
-6. **Don't bump `apps/web/package.json`'s `version`** in your PR. That's reserved
-   for maintainers, since a version bump landing on `main` triggers an
-   automatic tagged release + Pages deploy.
+6. **Don't bump `apps/web/package.json`'s or `apps/chat/package.json`'s
+   `version`** in your PR. That's reserved for maintainers, since a version
+   bump landing on `main` triggers an automatic tagged release + Pages deploy:
+   `vX.Y.Z` for the website, `chat-vX.Y.Z` for the chat app at `/chat/`.
 
 For larger changes, consider opening an issue first to discuss the approach.
 

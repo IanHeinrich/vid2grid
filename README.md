@@ -9,6 +9,10 @@ many timestamped frames into one JPEG. They are sized for AI vision models
 hundreds of separate frames. Every cell carries its timestamp and frame index,
 and the grid layout makes each frame as large as the sheet allows.
 
+Try it in the browser: the [website](https://ianheinrich.github.io/vid2grid/)
+makes sheets from a video, and the [chat app](https://ianheinrich.github.io/vid2grid/chat/)
+lets a vision model watch a video with you and look closer as it goes.
+
 <p align="center">
   <img src="docs/images/example-grid.png" alt="A collage sheet of eight frames, each with its timestamp and frame index" width="560">
 </p>
@@ -23,6 +27,7 @@ and the grid layout makes each frame as large as the sheet allows.
 | [MCP server](#mcp-server)                   | AI agents such as Claude Code           | `claude mcp add vid2grid -- uvx --from "git+https://github.com/IanHeinrich/vid2grid#subdirectory=apps/mcp-server" vid2grid-mcp` | [apps/mcp-server](apps/mcp-server/)         |
 | [Node library](#node-library)               | Node.js code, from a checkout           | `npm run build --workspace apps/node-library`                                                                                   | [apps/node-library](apps/node-library/)     |
 | [Node command line](#node-command-line)     | A shell without Python, from a checkout | `node apps/node-cli/dist/cli.js clip.mp4 -o sheets`                                                                             | [apps/node-cli](apps/node-cli/)             |
+| [Chat app](#chat-app)                       | Asking a vision model about a video     | Open [ianheinrich.github.io/vid2grid/chat](https://ianheinrich.github.io/vid2grid/chat/), or `npm run dev:chat`                 | [apps/chat](apps/chat/)                     |
 
 Every way runs the same planner, so the same video and options give the same
 sheets: same grid, same timestamps, same file names. The options come from one
@@ -145,6 +150,24 @@ node apps/node-cli/dist/cli.js clip.mp4 -o sheets
 ```
 
 More in [apps/node-cli/README.md](apps/node-cli/README.md).
+
+## Chat app
+
+A chat for talking to a vision model about a video. Drag a video in
+and the app renders an overview with vid2grid. The model can then look at any
+time range again, closer or wider, through its own tools. It talks straight
+from the page to Venice.ai or to any OpenAI-compatible server, including a
+local Ollama or LM Studio. The video never leaves your machine, and only the
+sheets the model is sent go to the API. Each release is served at
+[ianheinrich.github.io/vid2grid/chat/](https://ianheinrich.github.io/vid2grid/chat/);
+to run it from a clone, from the repo root:
+
+```bash
+npm ci
+npm run dev:chat
+```
+
+More in [apps/chat/README.md](apps/chat/README.md).
 
 ## How it works
 

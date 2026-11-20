@@ -1,0 +1,22 @@
+{
+  "name": "vid2grid-chat",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc -b && tsc -p tests/tsconfig.json"
+  },
+  "dependencies": {
+    "@vid2grid/browser": "*",
+    "@vid2grid/core": "*"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "^6.0.0",
+    "jsdom": "^25.0.1",
+    "vitest-canvas-mock": "^0.3.3"
+  }
+}

@@ -244,7 +244,9 @@ script, `apps/python-library/src/vid2grid/_core.js`, that defines a global
 a JSON array of positional arguments in the camelCase shapes above, and the
 result is a JSON envelope: `{"ok": true, "value": ...}`, or
 `{"ok": false, "code": ..., "message": ...}` where `code` is
-`invalid_request`, `no_audio`, `no_frames` or `internal`. The functions are
+`invalid_request`, `no_audio`, `undecodable_audio`, `no_frames` or `internal`.
+`undecodable_audio` means the video has an audio track the host cannot decode;
+the bundle itself never returns it. The functions are
 `buildRenderPlan`, `collagePlanRequestProblem`,
 `validateCollagePlanRequest`, `sheetDrawOps`, `resolveKeyframeSampling` (the
 sampled fallback and its warning, as `generateCollages` applies it),

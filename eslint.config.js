@@ -20,6 +20,8 @@ export default tseslint.config(
       "packages/*/tests/**/*.ts",
       "apps/web/src/**/*.ts",
       "apps/web/tests/**/*.ts",
+      "apps/chat/src/**/*.ts",
+      "apps/chat/tests/**/*.ts",
       "apps/node-library/src/**/*.ts",
       "apps/node-library/tests/**/*.ts",
       "apps/node-cli/src/**/*.ts",
