@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  frameTimestampsFromSamples,
   keyframeTimestampsFromSamples,
   selectKeyframeSampleIndices,
 } from "../src/capture/webcodecsExtractor";
@@ -31,6 +32,56 @@ describe("keyframeTimestampsFromSamples", () => {
   it("returns nothing when the track has no sync samples", () => {
     const samples = fakeSamples(5, 10).map((sample) => ({ ...sample, is_sync: false }));
     expect(keyframeTimestampsFromSamples(samples as unknown as Sample[])).toEqual([]);
+  });
+});
+
+describe("frameTimestampsFromSamples", () => {
+  const MOVIE_TIMESCALE = 1000;
+  const noEdits = { movie_timescale: MOVIE_TIMESCALE };
+  const edit = (media_time: number, segment_duration = 1000) => ({
+    media_time,
+    segment_duration,
+    media_rate_integer: 1,
+    media_rate_fraction: 0,
+  });
+
+  it("returns every sample's composition time, rounded and ascending", () => {
+    expect(frameTimestampsFromSamples(fakeSamples(4, 10), noEdits)).toEqual([
+      0, 0.033333, 0.066667, 0.1,
+    ]);
+  });
+
+  it("orders samples stored in decode order by presentation time", () => {
+    const [i, p, b] = fakeSamples(3, 10);
+    const reordered = [i, { ...p, cts: 2 }, { ...b, cts: 1 }] as unknown as Sample[];
+    expect(frameTimestampsFromSamples(reordered, noEdits)).toEqual([0, 0.033333, 0.066667]);
+  });
+
+  it("keeps the uneven gaps of a variable frame rate track", () => {
+    const samples = [0, 1, 7, 8].map((cts) => ({ cts, timescale: TIMESCALE }));
+    expect(frameTimestampsFromSamples(samples as unknown as Sample[], noEdits)).toEqual([
+      0, 0.033333, 0.233333, 0.266667,
+    ]);
+  });
+
+  it("starts the clock at the edit list's media time, as the browser does", () => {
+    const samples = fakeSamples(5, 10).map((sample) => ({ ...sample, cts: sample.cts + 2 }));
+    const track = { ...noEdits, edits: [edit(2)] };
+    expect(frameTimestampsFromSamples(samples as unknown as Sample[], track)).toEqual([
+      0, 0.033333, 0.066667, 0.1, 0.133333,
+    ]);
+  });
+
+  it("leaves out pre-roll samples the browser never shows", () => {
+    const track = { ...noEdits, edits: [edit(2)] };
+    expect(frameTimestampsFromSamples(fakeSamples(5, 10), track)).toEqual([0, 0.033333, 0.066667]);
+  });
+
+  it("delays the frames by a leading empty edit", () => {
+    const track = { ...noEdits, edits: [edit(-1, 500), edit(0)] };
+    expect(frameTimestampsFromSamples(fakeSamples(3, 10), track)).toEqual([
+      0.5, 0.533333, 0.566667,
+    ]);
   });
 });
 

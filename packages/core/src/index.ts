@@ -16,7 +16,7 @@ export {
   type SampleAspectRatio,
 } from "./probe/displaySize";
 
-export { GUTTER_PX, type GridParams } from "./grid/gridMaths";
+export { computeOptimalGrid, GUTTER_PX, type GridLayout, type GridParams } from "./grid/gridMaths";
 export {
   countGridPackingBlanks,
   estimateExtractedFrameCount,
@@ -29,6 +29,11 @@ export {
   type SuggestFramesPerGridInput,
 } from "./plan/frameSuggestions";
 export { CUSTOM_OPTION, MODEL_RESOLUTION_PRESETS } from "./grid/modelProfiles";
+export {
+  modelVisionProfile,
+  type ModelVisionProfile,
+  type VisionConfidence,
+} from "./grid/modelVision";
 
 export type { SheetContext2D } from "./render/sheetContext";
 export { paintSheetFromPlan } from "./render/paintSheetFromPlan";
@@ -48,6 +53,22 @@ export {
   transcriptionFailedWarning,
   type TranscriptFile,
 } from "./transcript/transcriptFiles";
+
+export {
+  analyseAudio,
+  SOUND_EVENT_MIN_SCORE,
+  type AbortSignalLike,
+  type AudioAnalysisOptions,
+  type AudioAnalysisPorts,
+  type AudioAnalysisProgress,
+  type AudioAnalysisRequest,
+  type AudioAnalysisStage,
+  type DecodedAudio,
+  type PortCallOptions,
+} from "./audio/audioAnalysis";
+export { audioTrackLines, type AudioTrack, type AudioTrackRange } from "./audio/audioTrack";
+export { parseSoundLabel, type LabelWordings, type SoundLabel } from "./audio/soundLabels";
+export type { SoundEvent } from "./audio/soundEvents";
 
 export { buildRenderPlan } from "./plan/buildRenderPlan";
 export {

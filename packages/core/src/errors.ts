@@ -1,4 +1,5 @@
-export type Vid2GridErrorCode = "invalid_request" | "no_audio" | "no_frames" | "internal";
+export type Vid2GridErrorCode =
+  "invalid_request" | "no_audio" | "undecodable_audio" | "no_frames" | "internal";
 
 export class Vid2GridError extends Error {
   readonly code: Vid2GridErrorCode;

@@ -1,12 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { probeVideo, readKeyframeTimes } from "../src/probe/probe";
+import { probeVideo, readFrameTimes, readKeyframeTimes } from "../src/probe/probe";
 
 // The demuxing half of the probe is the extractor's; what matters here is whether
 // probeVideo reaches for it at all.
-const { readKeyframeTimestamps } = vi.hoisted(() => ({
+const { readKeyframeTimestamps, readFrameTimestamps } = vi.hoisted(() => ({
   readKeyframeTimestamps: vi.fn<(file: File) => Promise<number[] | null>>(),
+  readFrameTimestamps: vi.fn<(file: File) => Promise<number[] | null>>(),
 }));
-vi.mock("../src/capture/webcodecsExtractor", () => ({ readKeyframeTimestamps }));
+vi.mock("../src/capture/webcodecsExtractor", () => ({
+  readKeyframeTimestamps,
+  readFrameTimestamps,
+}));
 
 // jsdom's <video> never loads media, so the element is stubbed: what is under
 // test is which values probeVideo reads and when it skips the demuxer.
@@ -40,6 +44,8 @@ beforeEach(() => {
   Object.assign(URL, objectUrls);
   readKeyframeTimestamps.mockReset();
   readKeyframeTimestamps.mockResolvedValue([0, 1, 2]);
+  readFrameTimestamps.mockReset();
+  readFrameTimestamps.mockResolvedValue([0, 0.04, 0.08]);
   // jsdom has no VideoDecoder, and without one the probe skips the demuxer whatever the flag says.
   vi.stubGlobal("VideoDecoder", class {});
 });
@@ -113,5 +119,22 @@ describe("readKeyframeTimes", () => {
     readKeyframeTimestamps.mockRejectedValue(demuxFailure);
 
     await expect(readKeyframeTimes(videoFile("clip.mp4", "video/mp4"))).rejects.toBe(demuxFailure);
+  });
+});
+
+describe("readFrameTimes", () => {
+  it("reports every demuxed frame's timestamp", async () => {
+    expect(await readFrameTimes(videoFile("clip.mp4", "video/mp4"))).toEqual([0, 0.04, 0.08]);
+  });
+
+  it("is undefined when the file isn't demuxable here", async () => {
+    expect(await readFrameTimes(videoFile("clip.webm", "video/webm"))).toBeUndefined();
+    expect(readFrameTimestamps).not.toHaveBeenCalled();
+  });
+
+  it("is undefined when the demuxer declines the file", async () => {
+    readFrameTimestamps.mockResolvedValue(null);
+
+    expect(await readFrameTimes(videoFile("clip.mp4", "video/mp4"))).toBeUndefined();
   });
 });

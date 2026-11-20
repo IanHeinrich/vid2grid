@@ -27,6 +27,12 @@ export async function readKeyframeTimes(file: File): Promise<number[] | undefine
   return (await readKeyframeTimestamps(file)) ?? undefined;
 }
 
+export async function readFrameTimes(file: File): Promise<number[] | undefined> {
+  if (!supportsWebCodecs(file)) return undefined;
+  const { readFrameTimestamps } = await import("../capture/webcodecsExtractor");
+  return (await readFrameTimestamps(file)) ?? undefined;
+}
+
 /** `null` when the file is declined by design; a demux failure rejects. Lazy import keeps mp4box
  * out of the main bundle. */
 export async function countKeyframesInRange(
