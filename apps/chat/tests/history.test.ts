@@ -341,11 +341,15 @@ describe("buildSystemPrompt", () => {
     expect(buildSystemPrompt(videoChat, "Use look.")).toBe(
       [
         "Be brief.",
-        "Use look.",
+        "Use look.\nIf you write to the user before looking, keep it to one short line and claim nothing you have not seen yet.",
         answerStyle("analyst", "free"),
         "Attached video: beach.mp4, 2:05 long, 1920x1080.",
       ].join("\n\n"),
     );
+  });
+
+  it("leaves out the before looking line when there are no tools", () => {
+    expect(buildSystemPrompt(videoChat, "")).not.toContain("before looking");
   });
 
   it("swaps the answer style for the chat's voice and keeps the tool guidance", () => {

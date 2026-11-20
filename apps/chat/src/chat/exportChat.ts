@@ -63,7 +63,11 @@ function imageCaption({ source }: ImageRef): string {
 
 function assistantSection(replies: readonly AssistantMessage[], name: string): string | undefined {
   const tools = toolSummary(replies.flatMap((reply) => reply.toolCalls));
-  const texts = replies.map((reply) => reply.text.trim()).filter((text) => text !== "");
+  const texts = replies.flatMap((reply) => {
+    const text = reply.text.trim();
+    if (text === "") return [];
+    return [reply.toolCalls.length > 0 ? `_Before looking:_ ${text}` : text];
+  });
   if (tools === undefined && texts.length === 0) return undefined;
   return [`## ${name}`, ...(tools === undefined ? [] : [`_${tools}_`]), ...texts].join("\n\n");
 }

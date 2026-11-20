@@ -154,10 +154,12 @@ and seeking the player work on the current video.
 - A timestamp such as [1:42] in any message, note or receipt is a link. It
   opens the player at that moment.
 - Each reply has an activity row above it. It reads like "Thought · 2 looks ·
-  3 frames · 1 note" and expands to the thinking, each tool call with
-  thumbnails and linked times, and any text written between calls. While the
-  model works it shows what was sent and how long it has waited, and warns
-  after 90 seconds.
+  3 frames · 1 note" and expands to the thinking and each tool call with
+  thumbnails and linked times. While the model works it shows what was sent
+  and how long it has waited, and warns after 90 seconds.
+- Text the model writes before calling tools stays in the reply, muted and
+  labelled "Before looking", above the answer. Copy, the receipt and Check
+  timestamps use the answer alone.
 - Under each reply is a receipt: rounds, images sent, tokens in and out with the
   cached share, an estimated cost where the model has a price, and the time
   taken. If the reply cites a moment that no sheet in the chat shows, it adds

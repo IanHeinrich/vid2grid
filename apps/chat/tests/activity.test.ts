@@ -4,6 +4,7 @@ import {
   activitySummary,
   answerOf,
   hasActivity,
+  prefacesOf,
   renderActivityBody,
   STALL_SECONDS,
   toolSummary,
@@ -51,6 +52,14 @@ describe("answerOf and hasActivity", () => {
     expect(hasActivity([final])).toBe(false);
     expect(hasActivity([{ ...final, reasoning: "Why" }])).toBe(true);
   });
+
+  it("counts every other assistant text as a preface, and none of it as activity", () => {
+    const looking = assistant("a1", [call("1", "look", {})], { text: "Let me look." });
+    const final = assistant("a2", [], { text: "Done" });
+    expect(prefacesOf([looking, final])).toEqual([looking]);
+    expect(prefacesOf([{ ...looking, text: "" }, final])).toEqual([]);
+    expect(hasActivity([{ ...looking, toolCalls: [] }, final])).toBe(false);
+  });
 });
 
 describe("toolSummary", () => {
@@ -96,9 +105,6 @@ describe("waitingStatus", () => {
 describe("recall in the activity row", () => {
   const render = {
     live: true,
-    renderText: (container: HTMLElement, text: string) => {
-      container.textContent = text;
-    },
     thumbnail: () => document.createElement("span"),
     seek: () => undefined,
   };
@@ -145,9 +151,6 @@ describe("recall in the activity row", () => {
 describe("renderActivityBody", () => {
   const render = {
     live: true,
-    renderText: (container: HTMLElement, text: string) => {
-      container.textContent = text;
-    },
     thumbnail: () => document.createElement("span"),
     seek: () => undefined,
   };
@@ -162,6 +165,15 @@ describe("renderActivityBody", () => {
     expect(block?.tagName).toBe("DIV");
     expect(block?.textContent).toBe("Hmm.");
     expect(body.querySelector("details")).toBeNull();
+  });
+
+  it("leaves text out of the row, since the reply shows it", () => {
+    const body = document.createElement("div");
+    const steps = [
+      assistant("a1", [call("c1", "look", { start: 0, end: 5 })], { text: "Looking." }),
+    ];
+    renderActivityBody(body, steps, render);
+    expect(body.textContent).not.toContain("Looking.");
   });
 
   it("grows streaming reasoning in place, and says so only when its block exists", () => {
