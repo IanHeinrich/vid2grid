@@ -23,6 +23,10 @@ concurrency:
   group: pages-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  # onnxruntime-node's install fetches CUDA binaries CI never uses, and that release asset now 404s.
+  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+
 jobs:
   test:
     runs-on: ubuntu-latest
