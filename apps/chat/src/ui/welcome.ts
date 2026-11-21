@@ -1,6 +1,7 @@
 import { isVenice } from "../api/venice";
+import { chatModelId, defaultModelId } from "../chat/models";
 import type { AppElements } from "../dom";
-import { chatModelId, defaultModelId, type AppState } from "../state";
+import type { AppState } from "../state";
 import type { ChatStore } from "../types";
 import { lastTestPassed } from "./connectionTest";
 import { icon } from "./icons";

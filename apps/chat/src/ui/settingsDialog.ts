@@ -1,5 +1,6 @@
 import { isVenice } from "../api/venice";
 import { DEEP_MAX_ROUNDS as MAX_ROUNDS_LIMIT } from "../chat/agentLoop";
+import { currentModel, effectiveDefaultModelId, resolveModel, visionModels } from "../chat/models";
 import { applyPersonaNames, effectiveVideoReferences } from "../chat/prompts";
 import {
   applyPersona,
@@ -22,15 +23,7 @@ import {
   withKey,
   type GlobalSettings,
 } from "../settings";
-import {
-  currentModel,
-  effectiveDefaultModelId,
-  resolveModel,
-  setSettings,
-  updateChat,
-  visionModels,
-  type AppState,
-} from "../state";
+import { setSettings, updateChat, type AppState } from "../state";
 import { errorText } from "../text";
 import type {
   ChatSettings,

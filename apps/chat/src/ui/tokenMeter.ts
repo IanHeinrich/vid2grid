@@ -1,10 +1,11 @@
 import { modelVisionProfile } from "@vid2grid/core";
 import { addUsage, usageCostUsd } from "../api/usage";
+import { currentModel } from "../chat/models";
 import { buildRequest } from "../chat/request";
 import { keptImages } from "../chat/story";
 import { estimateRequestTokens, sheetSidesByUrl } from "../chat/tokenEstimate";
 import type { AppElements } from "../dom";
-import { currentModel, currentPending, pendingImages, type AppState } from "../state";
+import { currentPending, pendingImages, type AppState } from "../state";
 import type {
   AudioCoverage,
   Chat,

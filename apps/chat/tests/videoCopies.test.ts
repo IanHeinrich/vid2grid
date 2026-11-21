@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { blankChat } from "../src/chat/chats";
 import { createMemoryStore } from "../src/chat/store";
 import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
-import { blankChat, createAppState, setPendingVideo, type AppState } from "../src/state";
+import { createAppState, setPendingVideo, type AppState } from "../src/state";
 import type { ChatStore } from "../src/types";
 import { formatBytes, initVideoCopies, type VideoStorage } from "../src/ui/videoCopies";
 import { mountPage } from "./support/page";

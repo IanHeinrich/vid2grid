@@ -1,14 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { blankChat } from "../src/chat/chats";
 import { createMemoryStore } from "../src/chat/store";
 import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
-import {
-  blankChat,
-  createAppState,
-  replaceChat,
-  setCurrentChat,
-  type AppState,
-} from "../src/state";
+import { createAppState, replaceChat, setCurrentChat, type AppState } from "../src/state";
 import type { Chat, ChatStore, SceneNote, StreamChat, VideoAttachment } from "../src/types";
 import { initSceneLog, sceneLogTokens } from "../src/ui/sceneLog";
 import { mountPage, stillToast } from "./support/page";

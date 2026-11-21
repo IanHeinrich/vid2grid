@@ -1,9 +1,9 @@
+import { blankChat } from "../chat/chats";
 import { chatToMarkdown } from "../chat/exportChat";
+import { defaultModelId } from "../chat/models";
 import type { AppElements } from "../dom";
 import {
-  blankChat,
   currentPending,
-  defaultModelId,
   pendingFor,
   removeChat,
   replaceChat,

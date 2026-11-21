@@ -37,7 +37,7 @@ export async function suggestCast(deps: CastDeps, input: CastInput): Promise<Cas
     { role: "user", content },
   ]);
   const reply = await streamReply(deps, request);
-  return parseCast(reply, input.durationSeconds, deps.newId ?? (() => crypto.randomUUID()));
+  return parseCast(reply.text, input.durationSeconds, deps.newId ?? (() => crypto.randomUUID()));
 }
 
 const BULLET = /^\s*(?:[-*•]|\d+[.)])\s*/;

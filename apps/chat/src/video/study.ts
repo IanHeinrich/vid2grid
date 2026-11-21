@@ -1,14 +1,14 @@
 import { modelVisionProfile, type PlanOptionInput } from "@vid2grid/core";
-import { textRequest } from "../api/modelCall";
+import { streamReply, textRequest } from "../api/modelCall";
 import { addUsage, usageCostUsd } from "../api/usage";
 import { FALLBACK_IMAGE_TOKENS } from "../chat/tokenEstimate";
 import { blobToDataUrl } from "../dataUrl";
+import { sheetLine } from "../imageRefs";
 import { clamp, mergeSpans } from "../spans";
 import { errorText } from "../text";
-import { CLOCK_TIME, clockSeconds, formatSpan } from "../time";
+import { BULLET, formatSpan, parseTimedLine, SPAN_AND_TEXT, timedLine, timedLineOf } from "../time";
 import type {
   ApiSettings,
-  ChatRequest,
   ContentPart,
   ImageRef,
   ModelInfo,
@@ -20,7 +20,7 @@ import type {
   VideoTimeline,
 } from "../types";
 import { MAX_FRAMES_PER_SHEET, choosePerSheet } from "./packing";
-import { roundForLabel, sheetLine, sheetRefs, type ToolContext } from "./tools";
+import { roundForLabel, sheetRefs, type ToolContext } from "./tools";
 
 export const DEFAULT_WINDOW_SECONDS = 45;
 const MAX_SHEETS_PER_WINDOW = 2;
@@ -355,10 +355,12 @@ function overlapSeconds(span: StudyWindow, range: StudyWindow): number {
 function coarseContext(timeline: VideoTimeline, zoom: StudyWindow): string {
   const entries = timeline.entries
     .filter((entry) => overlaps(entry, zoom))
-    .map((entry) => `[${formatSpan(entry.startSeconds, entry.endSeconds)}] ${entry.text}`);
+    .map((entry) => timedLine(formatSpan(entry.startSeconds, entry.endSeconds), entry.text));
   const unclear = (timeline.unclear ?? [])
     .filter((span) => span.zoomed !== true && overlaps(span, zoom))
-    .map((span) => `[${formatSpan(span.startSeconds, span.endSeconds)}] unclear: ${span.reason}`);
+    .map((span) =>
+      timedLine(formatSpan(span.startSeconds, span.endSeconds), `unclear: ${span.reason}`),
+    );
   const lines = [...entries, ...unclear];
   return lines.length === 0
     ? "The coarse timeline has nothing for this stretch."
@@ -497,21 +499,16 @@ async function studyRange(
   const parts = await sheetParts(ctx, refs);
   const caption = `Frames from ${formatSpan(range.startSeconds, range.endSeconds)} of the video.`;
   const texts = [caption, ...notes].map((text): ContentPart => ({ type: "text", text }));
-  const request: ChatRequest = {
-    ...textRequest({ modelId: deps.model.id, veniceParameters: deps.veniceParameters }, [
+  const request = textRequest(
+    { modelId: deps.model.id, veniceParameters: deps.veniceParameters },
+    [
       { role: "system", content: system },
       { role: "user", content: [...texts, ...parts] },
-    ]),
-    stream_options: { include_usage: true },
-  };
-  let reply = "";
-  let usage: TokenUsage | undefined;
-  for await (const event of deps.streamChat(deps.api, request, signal)) {
-    if (event.type === "text") reply += event.delta;
-    if (event.type === "usage") usage = event.usage;
-  }
-  if (signal.aborted) return undefined;
-  const parsed = parseStudyReply(reply, range);
+    ],
+    { usage: true },
+  );
+  const { text, usage } = await streamReply(deps, request);
+  const parsed = parseStudyReply(text, range);
   return usage === undefined ? parsed : { ...parsed, usage };
 }
 
@@ -529,9 +526,6 @@ async function sheetParts(ctx: ToolContext, refs: readonly ImageRef[]): Promise<
   return parts.flat();
 }
 
-const SPAN_AND_TEXT = String.raw`\[?\s*${CLOCK_TIME}(?:\s*(?:-|–|—|to)\s*${CLOCK_TIME})?\s*\]?\s*[:–—-]?\s*(.*)$`;
-const BULLET = String.raw`^\s*(?:[-*•]\s*)?`;
-const ENTRY_LINE = new RegExp(`${BULLET}${SPAN_AND_TEXT}`);
 const UNCLEAR_LINE = new RegExp(String.raw`${BULLET}UNCLEAR\b\s*:?\s*${SPAN_AND_TEXT}`, "i");
 
 export interface StudyReply {
@@ -548,15 +542,13 @@ export function parseStudyReply(reply: string, range: StudyWindow): StudyReply {
     const text = line.trim();
     if (text === "") continue;
     const flagged = UNCLEAR_LINE.exec(text);
-    const match = flagged ?? ENTRY_LINE.exec(text);
-    if (match === null) {
+    const timed = flagged === null ? parseTimedLine(text) : timedLineOf(flagged);
+    if (timed === undefined) {
       extend?.(text);
       continue;
     }
     flaggedAny ||= flagged !== null;
-    const start = clockSeconds(match.slice(1, 4));
-    const end = match[5] === undefined ? start : clockSeconds(match.slice(4, 7));
-    const body = (match[7] ?? "").trim();
+    const { startSeconds: start, endSeconds: end, text: body } = timed;
     if (flagged === null) {
       const entry: TimelineEntry = { startSeconds: start, endSeconds: end, text: body };
       entries.push(entry);

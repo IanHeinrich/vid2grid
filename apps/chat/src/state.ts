@@ -1,12 +1,6 @@
 import type { VideoInfo } from "@vid2grid/core";
-import { isVenice } from "./api/venice";
 import type { GlobalSettings } from "./settings";
-import { formatTimestamp } from "./time";
 import type { Chat, ChatMessage, ChatStore, ImageRef, ModelInfo, VideoAttachment } from "./types";
-
-export const NEW_CHAT_TITLE = "New chat";
-export const DEFAULT_SHEET_RESOLUTION = "auto";
-const TITLE_LENGTH = 40;
 
 export type PendingAttachment =
   | { kind: "image"; ref: ImageRef }
@@ -19,9 +13,6 @@ export type OverviewStatus =
   // Reused: the sheets came from the cache, so this video was seen before.
   | { kind: "ready"; fileKey: string; sheets: number; reused?: true }
   | { kind: "failed"; fileKey: string; error: string };
-
-export const NEEDS_MODEL_TEXT = "Choose a model to prepare the overview";
-export const REUSED_TEXT = "Seen before, overview reused";
 
 export interface LoadedVideo {
   chatId: string;
@@ -243,28 +234,6 @@ export function overviewFor(state: AppState, chatId: string): OverviewStatus | u
   return status && status.fileKey === shownVideo(state, chatId)?.fileKey ? status : undefined;
 }
 
-// A finished overview needs no label unless it was reused, which would otherwise look instant.
-export function overviewText(status: OverviewStatus | undefined): string {
-  switch (status?.kind) {
-    case undefined:
-      return "";
-    case "needsModel":
-      return NEEDS_MODEL_TEXT;
-    case "ready":
-      return status.reused ? REUSED_TEXT : "";
-    case "rendering":
-      return status.total > 0
-        ? `Overview ${Math.round((status.done / status.total) * 100)}%`
-        : "Rendering overview";
-    case "failed":
-      return "Overview failed";
-  }
-}
-
-export function videoSummary(video: VideoAttachment): string {
-  return `${video.name} · ${formatTimestamp(video.durationSeconds)}`;
-}
-
 export function setLoadedVideo(state: WritableAppState, video: LoadedVideo | null): void {
   state.video = video;
 }
@@ -297,95 +266,4 @@ export function pendingImages(pending: readonly PendingAttachment[]): ImageRef[]
         return [];
     }
   });
-}
-
-// Only Venice reports privacy, so elsewhere the private-only setting would hide every model.
-export function reportsPrivacy(models: readonly ModelInfo[]): boolean {
-  return models.some((model) => model.privacy !== "unknown");
-}
-
-export function visionModels(models: readonly ModelInfo[], privateOnly: boolean): ModelInfo[] {
-  const onlyPrivate = privateOnly && reportsPrivacy(models);
-  return models.filter((model) => model.vision && (!onlyPrivate || model.privacy === "private"));
-}
-
-export function effectiveDefaultModelId(
-  models: readonly ModelInfo[],
-  privateOnly: boolean,
-  defaultModelId: string,
-): string {
-  const visible = visionModels(models, privateOnly);
-  const first = visible[0];
-  if (first === undefined || visible.some((model) => model.id === defaultModelId)) {
-    return defaultModelId;
-  }
-  return first.id;
-}
-
-export function defaultModelId(state: AppState): string {
-  const { privateOnly, defaultModelId: stored } = state.settings;
-  return effectiveDefaultModelId(state.models, privateOnly, stored);
-}
-
-export function resolveModel(state: AppState, modelId: string): ModelInfo {
-  return (
-    state.models.find((model) => model.id === modelId) ?? {
-      id: modelId,
-      name: modelId,
-      vision: true,
-      tools: true,
-      reasoning: false,
-      reasoningEffortOptions: [],
-      maxImages: state.settings.fallbackMaxImages,
-      privacy: "unknown",
-      traits: [],
-      uncensored: false,
-      recommended: false,
-      beta: false,
-      videoInput: false,
-      audioInput: false,
-      e2ee: false,
-    }
-  );
-}
-
-// A chat made before the models loaded has no model of its own and follows the default.
-export function chatModelId(state: AppState, chat: Chat): string {
-  return chat.settings.modelId || defaultModelId(state);
-}
-
-export function currentModel(state: AppState): ModelInfo | null {
-  const modelId = state.currentChat ? chatModelId(state, state.currentChat) : "";
-  return modelId === "" ? null : resolveModel(state, modelId);
-}
-
-export function sendBlocker(state: AppState): string | null {
-  if (state.currentChat === null) return "Start a new chat from the sidebar.";
-  const { baseUrl, apiKey } = state.settings;
-  if (baseUrl.trim() === "") return "Choose an API in Settings to start chatting.";
-  if (isVenice(baseUrl) && apiKey.trim() === "") {
-    return "Add your API key in Settings to start chatting.";
-  }
-  if (currentModel(state) === null) return "Choose a model in Chat settings.";
-  return null;
-}
-
-export function blankChat(modelId: string, id: string, now: number): Chat {
-  return {
-    id,
-    title: NEW_CHAT_TITLE,
-    createdAt: now,
-    updatedAt: now,
-    settings: {
-      systemPrompt: "",
-      modelId,
-      sheetResolution: DEFAULT_SHEET_RESOLUTION,
-    },
-    sceneLog: [],
-  };
-}
-
-export function titleFromMessage(text: string): string {
-  const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length <= TITLE_LENGTH ? flat : `${flat.slice(0, TITLE_LENGTH).trimEnd()}…`;
 }

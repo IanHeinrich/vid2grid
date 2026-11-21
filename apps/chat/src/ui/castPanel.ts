@@ -1,8 +1,9 @@
 import { mergeCast, suggestCast } from "../chat/cast";
 import { latestOverview } from "../chat/imageSelection";
+import { chatModelId } from "../chat/models";
 import { blobToDataUrl } from "../dataUrl";
 import type { AppElements } from "../dom";
-import { chatModelId, currentPending, type AppState } from "../state";
+import { currentPending, type AppState } from "../state";
 import { errorText } from "../text";
 import { formatTimestamp, parseTimestamp } from "../time";
 import type {

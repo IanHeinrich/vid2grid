@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { blankChat } from "../src/chat/chats";
 import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
-import { blankChat, createAppState, setCurrentChat, type AppState } from "../src/state";
+import { createAppState, setCurrentChat, type AppState } from "../src/state";
 import type { ChatMessage, VideoAttachment } from "../src/types";
 import { chatVideos, initVideoPicker } from "../src/ui/knowledgeVideos";
 import { mountPage } from "./support/page";

@@ -1,6 +1,7 @@
 import type { AnalyseAudio } from "../../audio/videoAudio";
+import { resolveModel } from "../../chat/models";
 import type { AppElements } from "../../dom";
-import { resolveModel, type AppState } from "../../state";
+import type { AppState } from "../../state";
 import type {
   ChatStore,
   ModelInfo,

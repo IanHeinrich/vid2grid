@@ -8,17 +8,14 @@ import {
   type AnalyseAudio,
   type AudioDeps,
 } from "../audio/videoAudio";
+import { currentModel, resolveModel } from "../chat/models";
 import type { AppElements } from "../dom";
 import {
-  currentModel,
   isRunningIn,
-  NEEDS_MODEL_TEXT,
   overviewFor,
-  overviewText,
   pendingFor,
   pendingVideo,
   removePendingVideo,
-  resolveModel,
   setLoadedVideo,
   setOverviewStatus,
   setPendingVideo,
@@ -37,6 +34,7 @@ import { storedAudioOn } from "./composer";
 import { createCoverageStrip, type CoverageStrip } from "./coverageStrip";
 import { initMiniPlayer, playQuietly, videoAspect, type MiniPlayer } from "./miniPlayer";
 import type { StatusLine } from "./status";
+import { NEEDS_MODEL_TEXT, overviewText } from "./video/overviewText";
 
 const AGAIN_TEXT = "Click Reattach again to choose the file.";
 const VIDEO_PICKER_TYPES = [

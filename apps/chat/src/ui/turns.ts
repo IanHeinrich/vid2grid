@@ -1,6 +1,5 @@
 import { modelVisionProfile } from "@vid2grid/core";
 import { untilAborted } from "../abort";
-import { isVenice } from "../api/venice";
 import { turnAudio, type AudioStatus, type TurnAudio } from "../audio/turnAudio";
 import {
   runTurn,
@@ -10,16 +9,15 @@ import {
   type TurnOutcome,
 } from "../chat/agentLoop";
 import { archiveCurrentReply, compareWithModel } from "../chat/alternates";
+import { NEW_CHAT_TITLE, titleFromMessage } from "../chat/chats";
+import { currentModel } from "../chat/models";
 import { shouldSummarize, summarizeStory } from "../chat/summary";
 import { messageThoroughness, roundsFor } from "../chat/thoroughness";
 import { imagesOf } from "../imageRefs";
 import {
-  currentModel,
   isRunningIn,
-  NEW_CHAT_TITLE,
   removeMessages,
   setRunning,
-  titleFromMessage,
   updateChat,
   upsertMessage,
   type AppState,
@@ -338,7 +336,7 @@ async function runChatTurn(
   const setup = { chat: touched, model, thoroughness, audioCoverage, timeline, cast, allowTools };
   const chat = await withStorySoFar(ctx, setup, signal);
   if (signal.aborted) return;
-  const { baseUrl, apiKey } = state.settings;
+  const { api, veniceParameters } = modelCallDeps(state, deps.streamChat, model.id, signal);
   const resolution = resolveSheetResolution(chat.settings.sheetResolution, model).px;
   // Kept here rather than read from state, so recall still finds images if the user switches chats.
   const knownImages: ImageRef[] = state.messages.flatMap(imagesOf);
@@ -347,13 +345,13 @@ async function runChatTurn(
     chat,
     messages: [...state.messages],
     model,
-    api: { baseUrl, apiKey },
+    api,
     streamChat: deps.streamChat,
     runTool: modelToolRunner(toolCtx, model, resolution, listen, () => knownImages),
     store: deps.store,
     tools: heard.tools,
     toolGuidance: TOOL_GUIDANCE,
-    veniceParameters: isVenice(baseUrl),
+    veniceParameters,
     signal,
     answerNow,
     resolution,

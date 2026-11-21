@@ -1,6 +1,7 @@
+import { reportsPrivacy } from "../chat/models";
 import { part } from "../dom";
 import { saveSettings, type GlobalSettings } from "../settings";
-import { reportsPrivacy, setSettings, type AppState } from "../state";
+import { setSettings, type AppState } from "../state";
 import type { ModelInfo } from "../types";
 import { resolveSheetResolution } from "../video/resolution";
 import { icon } from "./icons";

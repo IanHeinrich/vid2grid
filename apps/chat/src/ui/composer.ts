@@ -1,4 +1,5 @@
 import { isAbortError, untilAborted } from "../abort";
+import { sendBlocker } from "../app/sendBlocker";
 import { downscaleImage } from "../attachments/images";
 import {
   cachedAudioCoverage,
@@ -7,27 +8,22 @@ import {
   settingsLabels,
 } from "../audio/videoAudio";
 import { pinsExceedCap } from "../chat/imageSelection";
+import { chatModelId, currentModel, resolveModel } from "../chat/models";
 import { effortFor, roundsFor } from "../chat/thoroughness";
 import type { AppElements } from "../dom";
 import {
   addPending,
-  chatModelId,
   clearPending,
-  currentModel,
   currentPending,
   overviewFor,
-  overviewText,
   pendingFor,
   pendingImages,
   pendingVideo,
   removePending,
   removePendingVideo,
-  resolveModel,
-  sendBlocker,
   setPendingPinned,
   shownVideo,
   updateChat,
-  videoSummary,
   type AppState,
   type PendingAttachment,
 } from "../state";
@@ -47,6 +43,7 @@ import { resolveSheetResolution } from "../video/resolution";
 import { iconButton, pinToggle } from "./buttons";
 import type { StatusLine } from "./status";
 import type { Turns } from "./turns";
+import { overviewText, videoSummary } from "./video/overviewText";
 import type { VideoPanel } from "./videoPanel";
 
 const MAX_INPUT_HEIGHT_PX = 240;

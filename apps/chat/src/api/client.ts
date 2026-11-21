@@ -109,28 +109,32 @@ function toReasoning(
   };
 }
 
+export function unknownModel(id: string, maxImages: number): ModelInfo {
+  return {
+    id,
+    name: id,
+    vision: true,
+    tools: true,
+    reasoning: false,
+    reasoningEffortOptions: [],
+    maxImages,
+    privacy: "unknown",
+    traits: [],
+    uncensored: false,
+    recommended: false,
+    beta: false,
+    videoInput: false,
+    audioInput: false,
+    e2ee: false,
+  };
+}
+
 function toModelInfo(entry: JsonRecord, fallbackMaxImages: number): ModelInfo | undefined {
   const id = entry["id"];
   if (typeof id !== "string") return undefined;
   const spec = entry["model_spec"];
   if (!isRecord(spec)) {
-    return {
-      id,
-      name: id,
-      vision: true,
-      tools: true,
-      reasoning: false,
-      reasoningEffortOptions: [],
-      maxImages: fallbackMaxImages,
-      privacy: "unknown",
-      traits: [],
-      uncensored: false,
-      recommended: false,
-      beta: false,
-      videoInput: false,
-      audioInput: false,
-      e2ee: false,
-    };
+    return unknownModel(id, fallbackMaxImages);
   }
   if (spec["offline"] === true) return undefined;
   const capabilities = asRecord(spec["capabilities"]);

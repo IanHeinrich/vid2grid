@@ -1,10 +1,10 @@
 import { switchReply } from "../chat/alternates";
+import { currentModel } from "../chat/models";
 import { storyForBranch } from "../chat/story";
 import { imagesOf } from "../imageRefs";
 import { extractTimedClaims, verifyClaims } from "../chat/verify";
 import { blobToDataUrl } from "../dataUrl";
 import {
-  currentModel,
   removeMessages,
   replaceChat,
   restoreMessages,

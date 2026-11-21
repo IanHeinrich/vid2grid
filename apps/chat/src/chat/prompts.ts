@@ -1,4 +1,4 @@
-import { formatSpan, formatTimestamp } from "../time";
+import { formatSpan, formatTimestamp, timedLine } from "../time";
 import type {
   AudioCoverage,
   Chat,
@@ -14,7 +14,7 @@ import type {
 export function sceneLogLines(notes: readonly SceneNote[]): string[] {
   return [...notes]
     .sort((a, b) => a.timeSeconds - b.timeSeconds)
-    .map((note) => `[${formatTimestamp(note.timeSeconds)}] ${note.text}`);
+    .map((note) => timedLine(formatTimestamp(note.timeSeconds), note.text));
 }
 
 export const THOROUGH_GUIDANCE =
@@ -109,7 +109,9 @@ function timelineSection(timeline: VideoTimeline): string {
     ...entries,
     ...unclear.map((span) => ({ ...span, text: `unclear: ${span.reason}` })),
   ].sort((a, b) => a.startSeconds - b.startSeconds);
-  const lines = rows.map((row) => `[${formatSpan(row.startSeconds, row.endSeconds)}] ${row.text}`);
+  const lines = rows.map((row) =>
+    timedLine(formatSpan(row.startSeconds, row.endSeconds), row.text),
+  );
   if (timeline.nextWindow < timeline.windowCount) {
     const coveredTo = Math.max(...entries.map((entry) => entry.endSeconds));
     lines.push(`The study stopped early, so this only covers up to ${formatTimestamp(coveredTo)}.`);

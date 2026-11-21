@@ -1,3 +1,4 @@
+import { veniceOptions } from "../api/venice";
 import { imageLabel, imagesOf, imageStub } from "../imageRefs";
 import type {
   AssistantMessage,
@@ -202,13 +203,7 @@ function requestOptions(input: BuildRequestInput): Omit<ChatRequest, "model" | "
     ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
     stream: true,
     stream_options: { include_usage: true },
-    ...(input.veniceParameters
-      ? {
-          venice_parameters: { include_venice_system_prompt: false },
-          // Venice routes requests with the same key to the same prompt cache.
-          prompt_cache_key: chat.id,
-        }
-      : {}),
+    ...veniceOptions(input.veniceParameters, chat.id),
   };
 }
 

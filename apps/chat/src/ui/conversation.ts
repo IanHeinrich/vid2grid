@@ -3,7 +3,6 @@ import { currentReplyIndex, replyCount } from "../chat/alternates";
 import { messageThoroughness } from "../chat/thoroughness";
 import { extractTimedClaims } from "../chat/verify";
 import type { AppElements } from "../dom";
-import { videoSummary } from "../state";
 import { formatTimestamp } from "../time";
 import type {
   AssistantMessage,
@@ -39,6 +38,7 @@ import { createModelPicker, type ModelPicker, type PickerSettings } from "./mode
 import { renderReceipt } from "./receipt";
 import { replyUsageText } from "./tokenMeter";
 import { renderCheckProgress, renderVerification } from "./verifyPanel";
+import { videoSummary } from "./video/overviewText";
 import type { VideoView } from "./videoPanel";
 
 const STICK_THRESHOLD_PX = 48;

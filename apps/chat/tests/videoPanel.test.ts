@@ -1,12 +1,12 @@
 import type { AudioAnalysisOptions, AudioAnalysisRequest, AudioTrack } from "@vid2grid/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnalyseAudio } from "../src/audio/videoAudio";
+import { blankChat } from "../src/chat/chats";
 import { createMemoryStore } from "../src/chat/store";
 import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import {
   addPending,
-  blankChat,
   clearPending,
   createAppState,
   currentPending,

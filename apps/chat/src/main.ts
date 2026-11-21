@@ -2,6 +2,7 @@ import "./styles/index.css";
 import { getBalance, listModels, streamChat } from "./api/client";
 import { isVenice } from "./api/venice";
 import { classifyFile } from "./attachments/images";
+import { currentModel, defaultModelId } from "./chat/models";
 import { openChatStore } from "./chat/store";
 import { queryElements, type AppElements } from "./dom";
 import { latestCalls } from "./latest";
@@ -9,8 +10,6 @@ import { loadSettings, type GlobalSettings } from "./settings";
 import {
   addPending,
   createAppState,
-  currentModel,
-  defaultModelId,
   setChats,
   setCurrentChat,
   setModels,

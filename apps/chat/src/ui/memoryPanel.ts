@@ -1,6 +1,7 @@
+import { chatModelId } from "../chat/models";
 import { summarizeStory } from "../chat/summary";
 import type { AppElements } from "../dom";
-import { chatModelId, updateChat, type AppState } from "../state";
+import { updateChat, type AppState } from "../state";
 import { errorText } from "../text";
 import type { Chat, ChatStore, StorySoFar, StreamChat } from "../types";
 import { createModelTask, modelCallDeps, type ModelTask } from "./modelTask";

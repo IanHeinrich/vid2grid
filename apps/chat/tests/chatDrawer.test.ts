@@ -1,13 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { blankChat } from "../src/chat/chats";
 import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
-import {
-  blankChat,
-  createAppState,
-  replaceChat,
-  setCurrentChat,
-  type AppState,
-} from "../src/state";
+import { createAppState, replaceChat, setCurrentChat, type AppState } from "../src/state";
 import {
   initChatDrawer,
   initKnowledgeDrawer,

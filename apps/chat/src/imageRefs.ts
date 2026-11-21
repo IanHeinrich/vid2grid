@@ -1,15 +1,19 @@
 import { plural } from "./text";
-import { formatSpan, formatTimestamp } from "./time";
-import type { ChatMessage, ImageRef } from "./types";
+import { formatSpan } from "./time";
+import type { ChatMessage, ImageRef, ImageSource } from "./types";
+
+type SheetSource = Extract<ImageSource, { kind: "sheet" }>;
 
 export function imagesOf(message: ChatMessage): readonly ImageRef[] {
   return message.role === "assistant" ? [] : message.images;
 }
 
-function sheetTime(startSeconds: number, endSeconds: number): string {
-  return endSeconds > startSeconds
-    ? formatSpan(startSeconds, endSeconds)
-    : formatTimestamp(startSeconds);
+function sheetContents(source: SheetSource): string {
+  return `${formatSpan(source.startSeconds, source.endSeconds)}, ${plural(source.frameCount, "frame")}`;
+}
+
+export function sheetLine({ source }: ImageRef): string | undefined {
+  return source.kind === "sheet" ? `${source.name}: ${sheetContents(source)}` : undefined;
 }
 
 // Sheet names repeat across renders, so a sheet is recalled by its name and the call that made it.
@@ -21,7 +25,7 @@ export function imageLabel(ref: ImageRef): string {
   const { source } = ref;
   switch (source.kind) {
     case "sheet":
-      return `${recallName(ref)}: ${sheetTime(source.startSeconds, source.endSeconds)}, ${plural(source.frameCount, "frame")}`;
+      return `${recallName(ref)}: ${sheetContents(source)}`;
     case "upload":
       return `image ${source.name}`;
   }

@@ -1,5 +1,5 @@
 import { usageCostUsd } from "../../api/usage";
-import { resolveModel } from "../../state";
+import { resolveModel } from "../../chat/models";
 import { formatSpan } from "../../time";
 import type { ModelInfo, VideoTimeline } from "../../types";
 import type { ZoomPlan } from "../../video/study";

@@ -9,7 +9,7 @@ import {
   type AudioLabels,
   type TimedAudioLine,
 } from "../audio/videoAudio";
-import { imageLabel, recallName } from "../imageRefs";
+import { imageLabel, recallName, sheetLine } from "../imageRefs";
 import { clamp } from "../spans";
 import { errorText, plural } from "../text";
 import { formatSpan, formatTimestamp } from "../time";
@@ -484,9 +484,8 @@ async function runRecall(ctx: ToolContext, args: Args): Promise<ToolResult> {
     );
   }
   if (images.length === 0) return failure(problems.join(" "));
-  const closing = images.length === 1 ? "1 image follows." : `${images.length} images follow.`;
   const lines = [...images.map(imageLabel), ...problems.map((problem) => `Error: ${problem}`)];
-  return { text: [...lines, closing].join("\n"), images };
+  return { text: [...lines, imagesFollow(images.length)].join("\n"), images };
 }
 
 async function runRender(
@@ -552,17 +551,13 @@ async function storeSheet(
   };
 }
 
-export function sheetLine(ref: ImageRef): string | undefined {
-  const { source } = ref;
-  return source.kind === "sheet"
-    ? `${source.name}: ${formatSpan(source.startSeconds, source.endSeconds)}, ${plural(source.frameCount, "frame")}`
-    : undefined;
+function imagesFollow(count: number): string {
+  return count === 1 ? "1 image follows." : `${count} images follow.`;
 }
 
 function describeSheets(images: ImageRef[]): string {
   const lines = images.flatMap((image) => sheetLine(image) ?? []);
-  const closing = images.length === 1 ? "1 image follows." : `${images.length} images follow.`;
-  return [...lines, closing].join("\n");
+  return [...lines, imagesFollow(images.length)].join("\n");
 }
 
 function parseArguments(call: ToolCall): Parsed<Args> {

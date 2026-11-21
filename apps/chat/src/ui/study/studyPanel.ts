@@ -1,5 +1,6 @@
+import { resolveModel } from "../../chat/models";
 import { part, type AppElements } from "../../dom";
-import { resolveModel, type AppState } from "../../state";
+import type { AppState } from "../../state";
 import { errorText } from "../../text";
 import type { Chat, ModelInfo, StudyPlanOptions, VideoTimeline } from "../../types";
 import { resolveSheetResolution } from "../../video/resolution";

@@ -1,15 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { blankChat } from "../src/chat/chats";
 import { createMemoryStore } from "../src/chat/store";
 import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
-import {
-  blankChat,
-  createAppState,
-  replaceChat,
-  setChats,
-  setCurrentChat,
-  type AppState,
-} from "../src/state";
+import { createAppState, replaceChat, setChats, setCurrentChat, type AppState } from "../src/state";
 import type { Chat, ChatStore, Folder, VideoAttachment } from "../src/types";
 import {
   groupChats,

@@ -1,8 +1,9 @@
+import { chatModelId } from "../chat/models";
 import { condenseSceneLog } from "../chat/summary";
 import type { AppElements } from "../dom";
-import { chatModelId, updateChat, type AppState } from "../state";
+import { updateChat, type AppState } from "../state";
 import { errorText } from "../text";
-import { formatTimestamp, parseTimestamp } from "../time";
+import { formatTimestamp, parseTimestamp, timedLine } from "../time";
 import type { ChatStore, SceneNote, StreamChat } from "../types";
 import { iconButton, seekButton, smallButton } from "./buttons";
 import { createModelTask, modelCallDeps, type ModelTask } from "./modelTask";
@@ -45,7 +46,7 @@ interface SceneLogContext {
 
 export function sceneLogTokens(notes: readonly SceneNote[]): number {
   const characters = notes.reduce(
-    (sum, note) => sum + `[${formatTimestamp(note.timeSeconds)}] ${note.text}\n`.length,
+    (sum, note) => sum + `${timedLine(formatTimestamp(note.timeSeconds), note.text)}\n`.length,
     0,
   );
   return Math.ceil(characters / 4);

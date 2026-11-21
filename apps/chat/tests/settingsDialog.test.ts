@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { blankChat } from "../src/chat/chats";
 import { effectiveVideoReferences } from "../src/chat/prompts";
 import { listPersonas, savePersona, type Persona } from "../src/chat/personas";
 import { createMemoryStore } from "../src/chat/store";
 import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS, loadSettings } from "../src/settings";
 import {
-  blankChat,
   createAppState,
   replaceChat,
   setCurrentChat,

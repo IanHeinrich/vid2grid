@@ -2,6 +2,7 @@ import { modelVisionProfile } from "@vid2grid/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type * as AgentLoop from "../src/chat/agentLoop";
 import { DEEP_MAX_ROUNDS, DEFAULT_MAX_ROUNDS, runTurn } from "../src/chat/agentLoop";
+import { blankChat } from "../src/chat/chats";
 import { THOROUGH_MAX_ROUNDS } from "../src/chat/thoroughness";
 import { ANSWER_NOW_NOTE } from "../src/chat/prompts";
 import { createMemoryStore } from "../src/chat/store";
@@ -10,7 +11,6 @@ import type { AppElements } from "../src/dom";
 import { VENICE_BASE_URL } from "../src/api/venice";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import {
-  blankChat,
   createAppState,
   isRunningIn,
   replaceChat,

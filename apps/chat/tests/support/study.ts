@@ -1,14 +1,14 @@
 import { expect, vi } from "vitest";
 import { VENICE_BASE_URL } from "../../src/api/venice";
 import type { AnalyseAudio } from "../../src/audio/videoAudio";
+import { blankChat } from "../../src/chat/chats";
+import { resolveModel } from "../../src/chat/models";
 import { createMemoryStore } from "../../src/chat/store";
 import type { AppElements } from "../../src/dom";
 import { DEFAULT_SETTINGS } from "../../src/settings";
 import {
-  blankChat,
   createAppState,
   replaceChat,
-  resolveModel,
   setCurrentChat,
   setModels,
   type AppState,

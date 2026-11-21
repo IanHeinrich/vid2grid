@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { blankChat } from "../src/chat/chats";
 import { exportBackup, type Backup } from "../src/chat/exportChat";
 import { createMemoryStore } from "../src/chat/store";
 import type { AppElements } from "../src/dom";
-import { blankChat } from "../src/state";
 import type { ChatStore } from "../src/types";
 import { initBackup } from "../src/ui/backup";
 import { mountPage } from "./support/page";
