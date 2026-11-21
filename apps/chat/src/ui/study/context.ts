@@ -23,6 +23,7 @@ import {
 } from "../../video/study";
 import type { ToolContext } from "../../video/tools";
 import type { ChatVideo } from "../knowledgeVideos";
+import type { MenuHandle } from "../menu";
 import type { ModelPicker } from "../modelPicker";
 import type { StatusLine } from "../status";
 import type { Toast, ToastHandle } from "../toast";
@@ -103,6 +104,7 @@ export type StudyState = "idle" | "running" | "busy" | "paused" | "done";
 export interface StudyContext {
   els: AppElements["study"];
   menu: StudyMenu;
+  menuHandle: MenuHandle;
   state: AppState;
   deps: StudyDeps;
   timelines: Map<string, VideoTimeline>;

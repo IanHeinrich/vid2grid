@@ -14,11 +14,11 @@ import type {
   VideoAttachment,
   VideoCast,
 } from "../types";
-import { iconButton, seekButton, smallButton } from "./buttons";
+import { editKeys, iconButton, seekButton, smallButton } from "./buttons";
 import type { ChatVideo } from "./knowledgeVideos";
 import { modelCallDeps } from "../app/modelCallDeps";
 import { createModelTask, type ModelTask } from "./modelTask";
-import type { Toast, ToastHandle } from "./toast";
+import { offerUndo, type Toast, type ToastHandle } from "./toast";
 
 export interface CastPanel {
   render(): void;
@@ -155,17 +155,16 @@ function removeCard(ctx: CastContext, card: CastCard): void {
   if (key === undefined) return;
   const index = cardsFor(ctx, key).indexOf(card);
   saveCast(ctx, key, (cards) => cards.filter((entry) => entry.id !== card.id));
-  const toast = ctx.deps.toast.show(`Removed ${card.name}`, {
-    label: "Undo",
-    run: () => {
+  const toast = offerUndo(ctx.deps.toast, `Removed ${card.name}`, {
+    undo: () => {
       ctx.pendingUndo = null;
-      if (editableKey(ctx) !== key) return;
       saveCast(ctx, key, (cards) =>
         cards.some((entry) => entry.id === card.id)
           ? cards
           : [...cards.slice(0, index), card, ...cards.slice(index)],
       );
     },
+    stillValid: () => editableKey(ctx) === key,
   });
   ctx.pendingUndo = { fileKey: key, toast };
 }
@@ -335,16 +334,7 @@ function editItem(ctx: CastContext, card: CastCard | null): HTMLLIElement {
     const saved = readCard(ctx, card, name, description, time);
     if (saved) finishEdit(ctx, saved);
   };
-  for (const input of [name, time]) {
-    input.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && !event.isComposing) save();
-    });
-  }
-  item.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape" || event.isComposing) return;
-    event.preventDefault();
-    finishEdit(ctx, null);
-  });
+  editKeys(item, { save, cancel: () => finishEdit(ctx, null) });
   const actions = document.createElement("div");
   actions.className = "drawer-actions";
   actions.append(

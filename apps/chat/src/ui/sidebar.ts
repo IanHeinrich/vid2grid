@@ -16,11 +16,13 @@ import { iconButton, inlineEdit } from "./buttons";
 import { byFolderName, sectionChats, type ChatGroup, type FolderSection } from "./chatSections";
 import { downloadBlob, safeFilename } from "./download";
 import { icon } from "./icons";
+import { attachMenu } from "./menu";
 import type { StatusLine } from "./status";
-import type { Toast } from "./toast";
+import { offerUndo, type Toast } from "./toast";
 
 const NEW_FOLDER_NAME = "New folder";
 const DRAG_TYPE = "application/x-vid2grid-chat";
+const MOVE_OPTION = ".chat-move-option";
 
 export interface Sidebar {
   render(): void;
@@ -346,70 +348,36 @@ function chatItem(ctx: SidebarContext, chat: Chat): HTMLLIElement {
 function moveControl(ctx: SidebarContext, chat: Chat): HTMLDivElement {
   const wrap = document.createElement("div");
   wrap.className = "chat-move";
-  let menu: HTMLDivElement | null = null;
-  let outside: AbortController | null = null;
-  const close = (refocus: boolean) => {
-    // Removing the focused menu fires focusout, which calls close again.
-    const open = menu;
-    menu = null;
-    if (open) ctx.closeMoveMenu = null;
-    outside?.abort();
-    outside = null;
-    open?.remove();
-    button.setAttribute("aria-expanded", "false");
-    if (refocus) button.focus();
-  };
-  const choose = (folderId: string | undefined) => {
-    close(true);
-    moveChat(ctx, chat.id, folderId)
-      .then(() => focusChat(ctx, chat.id))
-      .catch((error: unknown) =>
-        ctx.deps.toast.show(`Could not move the chat: ${errorText(error)}`),
-      );
-  };
-  const button = actionButton("chat-move-button", "Move to folder", icon("folder", 14), () => {
-    if (menu) {
-      close(false);
-      return;
-    }
-    menu = moveMenu(ctx, chat, choose);
-    wrap.append(menu);
-    outside = closeOnOutsidePress(wrap, () => close(false));
-    ctx.closeMoveMenu = () => close(false);
-    button.setAttribute("aria-expanded", "true");
-    menu.querySelector<HTMLButtonElement>("[aria-checked='true']")?.focus();
-  });
+  const button = actionButton(
+    "chat-move-button",
+    "Move to folder",
+    icon("folder", 14),
+    () => undefined,
+  );
   button.setAttribute("aria-haspopup", "menu");
   button.setAttribute("aria-expanded", "false");
-  // Safari and Firefox on macOS do not focus a clicked button, so a click blurs to nothing.
-  wrap.addEventListener("focusout", (event) => {
-    const next = event.relatedTarget;
-    if (next instanceof Node && !wrap.contains(next)) close(false);
-  });
-  wrap.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape" || !menu) return;
-    event.preventDefault();
-    event.stopPropagation();
-    close(true);
-  });
   wrap.append(button);
+  const menu = attachMenu({
+    control: wrap,
+    button,
+    list: () => moveMenu(ctx, chat),
+    items: MOVE_OPTION,
+    onPick: (option) => {
+      const folderId = option.dataset["folderId"];
+      moveChat(ctx, chat.id, folderId === "" ? undefined : folderId)
+        .then(() => focusChat(ctx, chat.id))
+        .catch((error: unknown) =>
+          ctx.deps.toast.show(`Could not move the chat: ${errorText(error)}`),
+        );
+    },
+    onToggle: (open) => {
+      ctx.closeMoveMenu = open ? () => menu.close() : null;
+    },
+  });
   return wrap;
 }
 
-function closeOnOutsidePress(wrap: HTMLElement, close: () => void): AbortController {
-  const listening = new AbortController();
-  const onPress = (event: Event) => {
-    if (!(event.target instanceof Node) || !wrap.contains(event.target)) close();
-  };
-  document.addEventListener("pointerdown", onPress, { capture: true, signal: listening.signal });
-  return listening;
-}
-
-function moveMenu(
-  ctx: SidebarContext,
-  chat: Chat,
-  choose: (folderId: string | undefined) => void,
-): HTMLDivElement {
+function moveMenu(ctx: SidebarContext, chat: Chat): HTMLDivElement {
   const menu = document.createElement("div");
   menu.className = "chat-move-menu";
   menu.setAttribute("role", "menu");
@@ -426,20 +394,12 @@ function moveMenu(
     const option = document.createElement("button");
     option.type = "button";
     option.className = "chat-move-option";
+    option.dataset["folderId"] = folderId ?? "";
     option.setAttribute("role", "menuitemradio");
     option.setAttribute("aria-checked", String(folderId === current));
     option.textContent = label;
-    option.addEventListener("click", () => choose(folderId));
     menu.append(option);
   }
-  menu.addEventListener("keydown", (event) => {
-    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-    event.preventDefault();
-    const options = [...menu.querySelectorAll<HTMLButtonElement>(".chat-move-option")];
-    const at = options.findIndex((option) => option === document.activeElement);
-    const step = event.key === "ArrowDown" ? 1 : -1;
-    options[(at + step + options.length) % options.length]?.focus();
-  });
   return menu;
 }
 
@@ -547,15 +507,13 @@ async function deleteChat(ctx: SidebarContext, chatId: string): Promise<void> {
   }
   deps.onDeleted(chat);
   if (wasCurrent) deps.onCurrentDeleted();
-  deps.toast.show(`Deleted "${chat.title}"`, {
-    label: "Undo",
-    run: () => {
-      restoreChat(ctx, deleted).catch((error: unknown) => {
-        deps.toast.show(`Could not restore the chat: ${errorText(error)}`);
-        deps.onDeleteFinal(chat);
-      });
-    },
+  offerUndo(deps.toast, `Deleted "${chat.title}"`, {
+    undo: () => restoreChat(ctx, deleted),
     expired: () => deps.onDeleteFinal(chat),
+    failed: (error) => {
+      deps.toast.show(`Could not restore the chat: ${errorText(error)}`);
+      deps.onDeleteFinal(chat);
+    },
   });
 }
 
@@ -643,13 +601,9 @@ async function deleteFolder(ctx: SidebarContext, folderId: string): Promise<void
     ctx.folders.filter((entry) => entry.id !== folderId),
   );
   renderList(ctx);
-  deps.toast.show(`Deleted folder "${folder.name}"`, {
-    label: "Undo",
-    run: () => {
-      restoreFolder(ctx, folder, filedIds).catch((error: unknown) =>
-        deps.toast.show(`Could not restore the folder: ${errorText(error)}`),
-      );
-    },
+  offerUndo(deps.toast, `Deleted folder "${folder.name}"`, {
+    undo: () => restoreFolder(ctx, folder, filedIds),
+    failed: (error) => deps.toast.show(`Could not restore the folder: ${errorText(error)}`),
   });
 }
 

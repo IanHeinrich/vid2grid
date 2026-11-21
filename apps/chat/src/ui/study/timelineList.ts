@@ -2,6 +2,7 @@ import { errorText } from "../../text";
 import { formatTimestamp } from "../../time";
 import type { TimelineEntry, UnclearSpan, VideoTimeline } from "../../types";
 import { iconButton, inlineEdit, seekButton, smallButton } from "../buttons";
+import { offerUndo } from "../toast";
 import {
   changed,
   currentTimeline,
@@ -168,7 +169,7 @@ function updateTimeline(
   if (!before) return;
   const after = { ...change(before), updatedAt: now(ctx) };
   saveTimeline(ctx, after);
-  offerUndo(ctx, done, before, after);
+  offerTimelineUndo(ctx, done, before, after);
 }
 
 function saveTimeline(ctx: StudyContext, timeline: VideoTimeline): void {
@@ -184,16 +185,15 @@ export function dropUndo(ctx: StudyContext): void {
   ctx.pendingUndo = null;
 }
 
-function offerUndo(
+function offerTimelineUndo(
   ctx: StudyContext,
   done: string,
   before: VideoTimeline,
   after: VideoTimeline,
 ): void {
   dropUndo(ctx);
-  ctx.pendingUndo = ctx.deps.toast.show(done, {
-    label: "Undo",
-    run: () => {
+  ctx.pendingUndo = offerUndo(ctx.deps.toast, done, {
+    undo: () => {
       ctx.pendingUndo = null;
       undo(ctx, before, after);
     },

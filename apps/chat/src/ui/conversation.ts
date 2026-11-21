@@ -28,7 +28,8 @@ import {
   type RequestStart,
   type TurnStep,
 } from "./activity";
-import { iconButton, pinToggle, smallButton } from "./buttons";
+import { editKeys, iconButton, pinToggle, smallButton } from "./buttons";
+import { dismissOnOutside } from "./menu";
 import { imageCaption } from "./captions";
 import { createCoverageStrip, type CoverageStrip } from "./coverageStrip";
 import { icon, type IconName } from "./icons";
@@ -168,7 +169,7 @@ type FocusTarget = { kind: "message"; id: string } | { kind: "position"; index: 
 interface ComparePopover {
   el: HTMLElement;
   picker: ModelPicker;
-  onOutside: (event: Event) => void;
+  stopOutside: () => void;
 }
 
 interface ConversationContext {
@@ -425,7 +426,8 @@ function applyEvent(ctx: ConversationContext, event: TurnEvent): void {
       turn.live = event.message.text === "" ? THINKING : null;
       upsertStep(ctx, turn, event.message);
       renderTurn(ctx, turn, event.message);
-      break;
+      afterStreamedChange(ctx);
+      return;
     }
     case "assistantDone": {
       const turn = ctx.turnOf.get(event.message.id) ?? lastTurn(ctx);
@@ -477,6 +479,12 @@ function renderReadyCard(ctx: ConversationContext): void {
 }
 
 function afterChange(ctx: ConversationContext): void {
+  renderCoverage(ctx);
+  afterStreamedChange(ctx);
+}
+
+// Coverage only moves when a step or the turn finishes, so streamed text leaves it alone.
+function afterStreamedChange(ctx: ConversationContext): void {
   const video = ctx.readyVideo;
   renderReadyCard(ctx);
   ctx.els.empty.hidden =
@@ -484,7 +492,6 @@ function afterChange(ctx: ConversationContext): void {
     video !== undefined ||
     ctx.deps.videoView().video !== undefined;
   if (ctx.stickToBottom) ctx.els.scroller.scrollTop = ctx.els.scroller.scrollHeight;
-  renderCoverage(ctx);
   applyPendingFocus(ctx);
   reportThinking(ctx);
 }
@@ -980,16 +987,18 @@ function openCompare(ctx: ConversationContext, turn: TurnView): void {
       settings: ctx.deps.pickerSettings,
     },
   );
-  const onOutside = (event: Event) => {
-    if (!(event.target instanceof Node && el.contains(event.target))) closeCompare(ctx);
-  };
   el.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     event.preventDefault();
+    event.stopPropagation();
     closeCompare(ctx);
+    turn.answer.actions.querySelector<HTMLButtonElement>(".compare-action")?.focus();
   });
-  document.addEventListener("pointerdown", onOutside, true);
-  ctx.compare = { el, picker, onOutside };
+  el.addEventListener("focusout", (event) => {
+    const next = event.relatedTarget;
+    if (next instanceof Node && !el.contains(next)) closeCompare(ctx);
+  });
+  ctx.compare = { el, picker, stopOutside: dismissOnOutside(el, () => closeCompare(ctx)) };
   mount.querySelector<HTMLButtonElement>(".model-trigger")?.click();
 }
 
@@ -1004,7 +1013,7 @@ function closeCompare(ctx: ConversationContext): void {
   if (!popover) return;
   ctx.compare = null;
   popover.picker.close();
-  document.removeEventListener("pointerdown", popover.onOutside, true);
+  popover.stopOutside();
   popover.el.remove();
 }
 
@@ -1239,11 +1248,7 @@ function startEdit(
   });
   save.disabled = ctx.deps.isRunning();
   const cancel = smallButton("button ghost", "Cancel", () => finish(null));
-  textarea.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape") return;
-    event.preventDefault();
-    finish(null);
-  });
+  editKeys(textarea, { cancel: () => finish(null) });
   const buttons = document.createElement("div");
   buttons.className = "message-editor-actions";
   buttons.append(cancel, save);

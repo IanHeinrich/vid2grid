@@ -142,7 +142,7 @@ describe("the shortcut list", () => {
     expect(popover.hidden).toBe(true);
     expect(deps.stop).not.toHaveBeenCalled();
     toggle.click();
-    document.body.click();
+    document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
     expect(popover.hidden).toBe(true);
   });
 });

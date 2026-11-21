@@ -1,5 +1,6 @@
 import type { AppElements } from "../dom";
 import type { ChatDrawer, KnowledgeDrawer } from "./chatDrawer";
+import { dismissOnOutside } from "./menu";
 
 export interface ShortcutDeps {
   isRunning(): boolean;
@@ -17,28 +18,38 @@ interface ShortcutContext {
   deps: ShortcutDeps;
   toggle: HTMLButtonElement;
   popover: HTMLElement;
+  stopOutside: (() => void) | null;
 }
 
 export function initShortcuts(els: ShortcutElements, deps: ShortcutDeps): () => void {
   const listening = new AbortController();
   const { signal } = listening;
-  const ctx: ShortcutContext = { els, deps, ...els.shortcuts };
+  const ctx: ShortcutContext = { els, deps, ...els.shortcuts, stopOutside: null };
   ctx.toggle.addEventListener("click", () => setPopover(ctx, ctx.popover.hidden), { signal });
-  const closeOutside = (event: MouseEvent) => {
-    const target = event.target;
-    if (ctx.popover.hidden || !(target instanceof Node)) return;
-    if (!ctx.popover.contains(target) && !ctx.toggle.contains(target)) setPopover(ctx, false);
-  };
-  document.addEventListener("click", closeOutside, { signal });
+  ctx.toggle.addEventListener(
+    "focusout",
+    (event) => {
+      const next = event.relatedTarget;
+      if (next instanceof Node && !ctx.popover.contains(next)) setPopover(ctx, false);
+    },
+    { signal },
+  );
   const input = els.composer.messageInput;
   input.addEventListener("keydown", (event) => onComposerKey(ctx, event), { signal });
   document.addEventListener("keydown", (event) => onKey(ctx, event), { signal });
-  return () => listening.abort();
+  return () => {
+    listening.abort();
+    ctx.stopOutside?.();
+  };
 }
 
 function setPopover(ctx: ShortcutContext, open: boolean): void {
   ctx.popover.hidden = !open;
   ctx.toggle.setAttribute("aria-expanded", String(open));
+  ctx.stopOutside?.();
+  ctx.stopOutside = open
+    ? dismissOnOutside([ctx.toggle, ctx.popover], () => setPopover(ctx, false))
+    : null;
 }
 
 function onComposerKey(ctx: ShortcutContext, event: KeyboardEvent): void {
@@ -62,6 +73,7 @@ function onKey(ctx: ShortcutContext, event: KeyboardEvent): void {
   const ctrl = event.ctrlKey || event.metaKey;
   if (event.key === "Escape") {
     if (!ctx.popover.hidden) {
+      event.preventDefault();
       setPopover(ctx, false);
       ctx.toggle.focus();
     } else if (ctx.deps.isRunning() && !somethingOpen()) {

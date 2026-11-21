@@ -61,7 +61,27 @@ export function pinToggle(pinned: boolean, onToggle: () => void): HTMLButtonElem
   return button;
 }
 
-// Enter and blur save, Escape cancels; the Escape is claimed so a drawer around it stays open.
+export interface EditKeys {
+  save?: () => void;
+  cancel(): void;
+}
+
+// Enter in a one-line input saves (a textarea needs it for new lines, a button for its own click);
+// Escape anywhere cancels and is claimed so a drawer around it stays open.
+export function editKeys(targets: HTMLElement | readonly HTMLElement[], keys: EditKeys): void {
+  const onKey = (event: KeyboardEvent) => {
+    if (event.isComposing) return;
+    if (event.key === "Enter" && event.target instanceof HTMLInputElement) keys.save?.();
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    keys.cancel();
+  };
+  for (const target of targets instanceof HTMLElement ? [targets] : targets) {
+    target.addEventListener("keydown", onKey);
+  }
+}
+
+// Enter and blur save, Escape cancels.
 export function inlineEdit(input: HTMLInputElement, finish: (save: boolean) => void): void {
   let settled = false;
   const settle = (save: boolean) => {
@@ -69,12 +89,6 @@ export function inlineEdit(input: HTMLInputElement, finish: (save: boolean) => v
     settled = true;
     finish(save);
   };
-  input.addEventListener("keydown", (event) => {
-    if (event.isComposing) return;
-    if (event.key === "Enter") settle(true);
-    if (event.key !== "Escape") return;
-    event.preventDefault();
-    settle(false);
-  });
+  editKeys(input, { save: () => settle(true), cancel: () => settle(false) });
   input.addEventListener("blur", () => settle(true));
 }

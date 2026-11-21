@@ -29,7 +29,7 @@ import {
 } from "./personaFields";
 import { storedPickerSettings } from "./pickerModel";
 import { initPresetManager, type PresetManager } from "./presetManager";
-import type { Toast } from "./toast";
+import { offerUndo, type Toast } from "./toast";
 
 export interface ChatSettingsPanel {
   render(): void;
@@ -169,12 +169,9 @@ function applyWithUndo(ctx: ChatSettingsContext, persona: Persona, message: stri
   if (!chat) return;
   const before = chat.settings;
   change(ctx, (settings) => applyPersona(settings, persona));
-  ctx.deps.toast.show(message, {
-    label: "Undo",
-    run: () => {
-      if (ctx.state.currentChat?.id !== chat.id) return;
-      change(ctx, (settings) => restorePresetFields(settings, before));
-    },
+  offerUndo(ctx.deps.toast, message, {
+    undo: () => change(ctx, (settings) => restorePresetFields(settings, before)),
+    stillValid: () => ctx.state.currentChat?.id === chat.id,
   });
 }
 

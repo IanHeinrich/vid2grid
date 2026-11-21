@@ -6,7 +6,7 @@ import { errorText } from "../text";
 import type { Chat, ChatStore, StorySoFar, StreamChat } from "../types";
 import { modelCallDeps } from "../app/modelCallDeps";
 import { createModelTask, type ModelTask } from "./modelTask";
-import type { Toast } from "./toast";
+import { offerUndo, type Toast } from "./toast";
 
 export interface MemoryPanel {
   render(): void;
@@ -102,9 +102,9 @@ function clearStory(ctx: MemoryContext): void {
   const before = chat?.storySoFar;
   if (!chat || !before) return;
   saveQuietly(ctx, chat.id, undefined);
-  ctx.deps.toast.show("Chat summary cleared", {
-    label: "Undo",
-    run: () => saveQuietly(ctx, chat.id, before),
+  offerUndo(ctx.deps.toast, "Chat summary cleared", {
+    undo: () => saveQuietly(ctx, chat.id, before),
+    stillValid: () => ctx.state.chats.some((entry) => entry.id === chat.id),
   });
 }
 

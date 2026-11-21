@@ -1453,4 +1453,16 @@ describe("coverage strip", () => {
     expect(segments[0]?.title).toBe("Seen 0:00 to 0:45, a frame every 11 s");
     expect(spies.onMessagesChanged).toHaveBeenCalled();
   });
+
+  it("recomputes coverage when a step finishes, not on each streamed token", () => {
+    const conversation = initConversation(els, deps());
+    conversation.show(user("u1", "Hi"));
+    conversation.apply({ type: "assistantStart", message: assistant("a1", "") });
+    spies.onMessagesChanged.mockClear();
+    conversation.apply({ type: "assistantDelta", message: assistant("a1", "Hel") });
+    conversation.apply({ type: "assistantDelta", message: assistant("a1", "Hello") });
+    expect(spies.onMessagesChanged).not.toHaveBeenCalled();
+    conversation.apply({ type: "assistantDone", message: assistant("a1", "Hello") });
+    expect(spies.onMessagesChanged).toHaveBeenCalledTimes(1);
+  });
 });

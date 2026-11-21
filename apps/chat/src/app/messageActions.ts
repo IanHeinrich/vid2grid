@@ -26,7 +26,7 @@ import type {
 } from "../types";
 import { createToolRunner, type ToolContext } from "../video/tools";
 import type { StatusLine } from "../ui/status";
-import type { Toast, ToastHandle } from "../ui/toast";
+import { offerUndo, type Toast, type ToastHandle } from "../ui/toast";
 import { modelCallDeps } from "./modelCallDeps";
 
 const REATTACH_TO_CHECK = "Reattach the video to check the timestamps.";
@@ -141,13 +141,11 @@ function invalidateUndo(ctx: MessageActionsContext): void {
 }
 
 function showUndo(ctx: MessageActionsContext, chatId: string, messages: ChatMessage[]): void {
-  ctx.pendingUndo = ctx.deps.toast.show("Message deleted", {
-    label: "Undo",
-    run: () => {
-      undo(ctx, chatId, messages).catch((error: unknown) => {
-        ctx.deps.status.show(`Could not undo: ${errorText(error)}`, "error");
-      });
-    },
+  const { state } = ctx;
+  ctx.pendingUndo = offerUndo(ctx.deps.toast, "Message deleted", {
+    undo: () => undo(ctx, chatId, messages),
+    stillValid: () => !state.running && state.currentChat?.id === chatId,
+    failed: (error) => ctx.deps.status.show(`Could not undo: ${errorText(error)}`, "error"),
   });
 }
 
@@ -158,7 +156,6 @@ async function undo(
 ): Promise<void> {
   ctx.pendingUndo = null;
   const { state } = ctx;
-  if (state.running || state.currentChat?.id !== chatId) return;
   for (const message of messages) await ctx.deps.store.putMessage(chatId, message);
   if (state.currentChat?.id !== chatId) return;
   restoreMessages(state, messages);

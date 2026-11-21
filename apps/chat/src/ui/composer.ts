@@ -42,6 +42,7 @@ import type {
 } from "../types";
 import { resolveSheetResolution } from "../video/resolution";
 import { iconButton, pinToggle } from "./buttons";
+import { attachMenu } from "./menu";
 import type { StatusLine } from "./status";
 import { overviewText, videoSummary } from "./video/overviewText";
 import type { VideoPanel } from "./videoPanel";
@@ -112,12 +113,6 @@ export interface ComposerDeps {
   now?: () => number;
   newId?: () => string;
   storage?: Storage;
-}
-
-interface Menu {
-  control: HTMLElement;
-  button: HTMLButtonElement;
-  list: HTMLElement;
 }
 
 interface ComposerContext {
@@ -254,23 +249,26 @@ function listen(ctx: ComposerContext): void {
   listenToMenus(ctx);
 }
 
-function thoroughnessMenu(ctx: ComposerContext): Menu {
-  const { thoroughnessControl, thoroughnessButton, thoroughnessMenu } = ctx.els;
-  return { control: thoroughnessControl, button: thoroughnessButton, list: thoroughnessMenu };
-}
-
-function reasoningMenu(ctx: ComposerContext): Menu {
-  const { reasoningControl, reasoningButton, reasoningMenu } = ctx.els;
-  return { control: reasoningControl, button: reasoningButton, list: reasoningMenu };
-}
-
 function listenToMenus(ctx: ComposerContext): void {
-  listenToMenu(thoroughnessMenu(ctx), (value) => {
-    const tier = THOROUGHNESS.find((known) => known === value) ?? "normal";
-    saveSettings(ctx, (settings) => withThoroughness(settings, tier));
+  const { thoroughnessControl, thoroughnessButton, thoroughnessMenu } = ctx.els;
+  const { reasoningControl, reasoningButton, reasoningMenu } = ctx.els;
+  attachMenu({
+    control: thoroughnessControl,
+    button: thoroughnessButton,
+    list: thoroughnessMenu,
+    items: MENU_ITEM,
+    onPick: (item) => {
+      const tier = THOROUGHNESS.find((known) => known === item.dataset["value"]) ?? "normal";
+      saveSettings(ctx, (settings) => withThoroughness(settings, tier));
+    },
   });
-  listenToMenu(reasoningMenu(ctx), (value) => {
-    saveSettings(ctx, (settings) => withEffort(settings, value));
+  attachMenu({
+    control: reasoningControl,
+    button: reasoningButton,
+    list: reasoningMenu,
+    items: MENU_ITEM,
+    onPick: (item) =>
+      saveSettings(ctx, (settings) => withEffort(settings, item.dataset["value"] ?? "")),
   });
 }
 
@@ -308,71 +306,6 @@ function chatEffort(ctx: ComposerContext): string {
   const efforts = currentModel(ctx.state)?.reasoningEffortOptions ?? [];
   const effort = ctx.state.currentChat?.settings.reasoningEffort ?? "";
   return efforts.includes(effort) ? effort : "";
-}
-
-function menuItems(menu: Menu): HTMLButtonElement[] {
-  return [...menu.list.querySelectorAll<HTMLButtonElement>(MENU_ITEM)];
-}
-
-function setMenuOpen(menu: Menu, open: boolean): void {
-  menu.list.hidden = !open;
-  menu.button.setAttribute("aria-expanded", String(open));
-  if (!open) return;
-  const items = menuItems(menu);
-  (items.find((item) => item.getAttribute("aria-checked") === "true") ?? items[0])?.focus();
-}
-
-function listenToMenu(menu: Menu, onPick: (value: string) => void): void {
-  menu.button.addEventListener("click", () => setMenuOpen(menu, menu.list.hidden));
-  menu.list.addEventListener("click", (event) => {
-    const item = event.target instanceof Element ? event.target.closest(MENU_ITEM) : null;
-    if (!(item instanceof HTMLElement)) return;
-    onPick(item.dataset["value"] ?? "");
-    setMenuOpen(menu, false);
-    menu.button.focus();
-  });
-  menu.control.addEventListener("keydown", (event) => onMenuKey(menu, event));
-  menu.control.addEventListener("focusout", (event) => {
-    const next = event.relatedTarget;
-    if (next instanceof Node && !menu.control.contains(next)) setMenuOpen(menu, false);
-  });
-  document.addEventListener("click", (event) => {
-    if (event.target instanceof Node && !menu.control.contains(event.target)) {
-      setMenuOpen(menu, false);
-    }
-  });
-}
-
-// The Escape is claimed so it closes only the menu, not the running turn.
-function onMenuKey(menu: Menu, event: KeyboardEvent): void {
-  if (menu.list.hidden) return;
-  if (event.key === "Escape") {
-    event.preventDefault();
-    setMenuOpen(menu, false);
-    menu.button.focus();
-    return;
-  }
-  const items = menuItems(menu);
-  const at = items.findIndex((item) => item === document.activeElement);
-  const target = menuTarget(event.key, at, items.length);
-  if (target === undefined) return;
-  event.preventDefault();
-  items[target]?.focus();
-}
-
-function menuTarget(key: string, at: number, count: number): number | undefined {
-  switch (key) {
-    case "ArrowDown":
-      return (at + 1) % count;
-    case "ArrowUp":
-      return at <= 0 ? count - 1 : at - 1;
-    case "Home":
-      return 0;
-    case "End":
-      return count - 1;
-    default:
-      return undefined;
-  }
 }
 
 // The picker hands back a file handle too, so the video can be reopened in a later session.

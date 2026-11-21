@@ -1,7 +1,7 @@
 import { deletePersona, listPersonas, savePersona, type Persona } from "../chat/personas";
 import type { AppElements } from "../dom";
 import { listenToPersonaFields, renderPersonaFields, setUnlessFocused } from "./personaFields";
-import type { Toast } from "./toast";
+import { offerUndo, type Toast } from "./toast";
 
 export interface PresetManager {
   open(options?: { presetId?: string | undefined; focusName?: boolean }): void;
@@ -90,9 +90,8 @@ function remove(ctx: PresetManagerContext): void {
   deletePersona(persona.id, ctx.deps.storage);
   ctx.selectedId = (all[index + 1] ?? all[index - 1])?.id ?? "";
   changed(ctx);
-  ctx.deps.toast.show(`Deleted preset ${persona.name}`, {
-    label: "Undo",
-    run: () => {
+  offerUndo(ctx.deps.toast, `Deleted preset ${persona.name}`, {
+    undo: () => {
       savePersona(persona, ctx.deps.storage);
       ctx.selectedId = persona.id;
       changed(ctx);

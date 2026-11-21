@@ -2,6 +2,7 @@ import { reportsPrivacy } from "../chat/models";
 import { part } from "../dom";
 import type { ModelInfo } from "../types";
 import { icon } from "./icons";
+import { dismissOnOutside } from "./menu";
 import {
   isFilterName,
   isSortOrder,
@@ -80,7 +81,7 @@ interface PickerContext {
   hovered: string | undefined;
   paneModelId: string | undefined;
   open: boolean;
-  onOutside: (event: Event) => void;
+  stopOutside: (() => void) | null;
   onReflow: () => void;
 }
 
@@ -135,10 +136,7 @@ export function createModelPicker(els: ModelPickerElements, deps: ModelPickerDep
     hovered: undefined,
     paneModelId: undefined,
     open: false,
-    onOutside: (event) => {
-      const inside = event.target instanceof Node && parts.root.contains(event.target);
-      if (!inside) closePanel(ctx, false);
-    },
+    stopOutside: null,
     onReflow: () => positionPanel(parts),
   };
   listen(ctx);
@@ -188,6 +186,10 @@ function listen(ctx: PickerContext): void {
     renderPane(ctx);
   });
   parts.root.addEventListener("keydown", (event) => onKeydown(ctx, event));
+  parts.root.addEventListener("focusout", (event) => {
+    const next = event.relatedTarget;
+    if (next instanceof Node && !parts.root.contains(next)) closePanel(ctx, false);
+  });
 }
 
 function chipValue(event: Event, key: "filter" | "sort"): string | undefined {
@@ -255,7 +257,7 @@ function openPanel(ctx: PickerContext): void {
   positionPanel(parts);
   parts.search.focus();
   scrollToActive(ctx);
-  document.addEventListener("pointerdown", ctx.onOutside, true);
+  ctx.stopOutside = dismissOnOutside(parts.root, () => closePanel(ctx, false));
   window.addEventListener("resize", ctx.onReflow);
   window.addEventListener("scroll", ctx.onReflow, true);
 }
@@ -265,7 +267,8 @@ function closePanel(ctx: PickerContext, returnFocus: boolean): void {
   ctx.open = false;
   ctx.parts.panel.hidden = true;
   ctx.parts.trigger.setAttribute("aria-expanded", "false");
-  document.removeEventListener("pointerdown", ctx.onOutside, true);
+  ctx.stopOutside?.();
+  ctx.stopOutside = null;
   window.removeEventListener("resize", ctx.onReflow);
   window.removeEventListener("scroll", ctx.onReflow, true);
   if (returnFocus) ctx.parts.trigger.focus();

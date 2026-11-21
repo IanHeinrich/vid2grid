@@ -5,10 +5,10 @@ import { updateChat, type AppState } from "../state";
 import { errorText } from "../text";
 import { formatTimestamp, parseTimestamp, timedLine } from "../time";
 import type { ChatStore, SceneNote, StreamChat } from "../types";
-import { iconButton, seekButton, smallButton } from "./buttons";
+import { editKeys, iconButton, seekButton, smallButton } from "./buttons";
 import { modelCallDeps } from "../app/modelCallDeps";
 import { createModelTask, type ModelTask } from "./modelTask";
-import type { Toast } from "./toast";
+import { offerUndo, type Toast } from "./toast";
 
 export interface SceneLogPanel {
   render(): void;
@@ -133,9 +133,9 @@ function removeNote(ctx: SceneLogContext, note: SceneNote): void {
   const chat = ctx.state.currentChat;
   if (!chat) return;
   saveQuietly(ctx, chat.id, (log) => log.filter((entry) => entry !== note));
-  ctx.deps.toast.show("Note deleted", {
-    label: "Undo",
-    run: () => saveQuietly(ctx, chat.id, (log) => [...log, note]),
+  offerUndo(ctx.deps.toast, "Note deleted", {
+    undo: () => saveQuietly(ctx, chat.id, (log) => [...log, note]),
+    stillValid: () => ctx.state.chats.some((entry) => entry.id === chat.id),
   });
 }
 
@@ -179,13 +179,13 @@ function acceptPreview(ctx: SceneLogContext): void {
     before = log;
     return [...preview.notes, ...log.filter((note) => !preview.from.includes(note))];
   });
-  ctx.deps.toast.show("Scene log condensed", {
-    label: "Undo",
-    run: () =>
+  offerUndo(ctx.deps.toast, "Scene log condensed", {
+    undo: () =>
       saveQuietly(ctx, preview.chatId, (log) => [
         ...before,
         ...log.filter((note) => !preview.notes.includes(note) && !before.includes(note)),
       ]),
+    stillValid: () => ctx.state.chats.some((entry) => entry.id === preview.chatId),
   });
 }
 
@@ -273,15 +273,7 @@ function editItem(ctx: SceneLogContext, note: SceneNote | null): HTMLLIElement {
     const duration = ctx.state.currentChat?.video?.durationSeconds ?? Infinity;
     finishEdit(ctx, { timeSeconds: Math.min(Math.max(0, parsed), duration), text: value });
   };
-  for (const input of [time, text]) {
-    input.addEventListener("keydown", (event) => {
-      if (event.isComposing) return;
-      if (event.key === "Enter") save();
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      finishEdit(ctx, null);
-    });
-  }
+  editKeys([time, text], { save, cancel: () => finishEdit(ctx, null) });
   const buttons = [
     smallButton("note-edit", "Save", save),
     smallButton("note-edit", "Cancel", () => finishEdit(ctx, null)),

@@ -98,6 +98,19 @@ describe("scene log", () => {
     await vi.waitFor(() => expect(texts()).toEqual([" she enters", " door opens"]));
   });
 
+  it("restores a deleted note into its own chat after switching to another", async () => {
+    await openChat(notes);
+    const log = panel();
+    items()[0]?.querySelector<HTMLButtonElement>(".note-delete")?.click();
+    await vi.waitFor(async () => expect(await savedLog()).toEqual([notes[0]]));
+    await openChat([], VIDEO, "other");
+    log.render();
+    els.toast.action.click();
+    await vi.waitFor(async () => expect(await savedLog()).toEqual([notes[0], notes[1]]));
+    expect(items()).toHaveLength(0);
+    expect((await store.getChat("other"))?.sceneLog).toEqual([]);
+  });
+
   it("edits a note's text and time inline", async () => {
     await openChat(notes);
     panel();

@@ -16,6 +16,7 @@ import {
 import type { ToolContext } from "../../video/tools";
 import { headerLabel } from "../buttons";
 import { icon, type IconName } from "../icons";
+import { attachMenu } from "../menu";
 import { createModelPicker } from "../modelPicker";
 import { storedPickerSettings } from "../pickerModel";
 import { modelCallDeps } from "../../app/modelCallDeps";
@@ -65,9 +66,17 @@ export function initStudy(
   deps: StudyDeps,
 ): Study {
   const choice = { modelId: "" };
+  const menu = studyMenu(els.study.button);
   const ctx: StudyContext = {
     els: els.study,
-    menu: studyMenu(els.study.button),
+    menu,
+    menuHandle: attachMenu({
+      control: menu.control,
+      button: menu.toggle,
+      list: menu.menu,
+      items: ".study-menu-item",
+      onPick: (item) => pickMenuItem(ctx, item),
+    }),
     state,
     deps,
     timelines: new Map(),
@@ -124,8 +133,7 @@ function studyMenu(button: HTMLButtonElement): StudyMenu {
 }
 
 function listen(ctx: StudyContext): void {
-  const { button, dialog, clearButton, zoomButton } = ctx.els;
-  const { control, toggle, restart, zoom } = ctx.menu;
+  const { button, dialog, zoomButton } = ctx.els;
   button.addEventListener("click", () => {
     switch (studyState(ctx)) {
       case "running":
@@ -144,29 +152,7 @@ function listen(ctx: StudyContext): void {
         return;
     }
   });
-  toggle.addEventListener("click", () => setMenuOpen(ctx, ctx.menu.menu.hidden));
-  restart.addEventListener("click", () => {
-    setMenuOpen(ctx, false);
-    openDialog(ctx, true);
-  });
-  clearButton.addEventListener("click", () => {
-    setMenuOpen(ctx, false);
-    clearTimeline(ctx);
-  });
-  zoom.addEventListener("click", () => {
-    setMenuOpen(ctx, false);
-    reportStudyFailure(ctx, startZoom(ctx));
-  });
   zoomButton.addEventListener("click", () => reportStudyFailure(ctx, startZoom(ctx)));
-  control.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape" || ctx.menu.menu.hidden) return;
-    event.preventDefault();
-    setMenuOpen(ctx, false);
-    toggle.focus();
-  });
-  document.addEventListener("click", (event) => {
-    if (event.target instanceof Node && !control.contains(event.target)) setMenuOpen(ctx, false);
-  });
   dialog.addEventListener("close", () => {
     ctx.picker.close();
     const settings = readSettings(ctx);
@@ -193,9 +179,10 @@ function listenProgress(ctx: StudyContext): void {
   });
 }
 
-function setMenuOpen(ctx: StudyContext, open: boolean): void {
-  ctx.menu.menu.hidden = !open;
-  ctx.menu.toggle.setAttribute("aria-expanded", String(open));
+function pickMenuItem(ctx: StudyContext, item: HTMLElement): void {
+  if (item === ctx.menu.restart) openDialog(ctx, true);
+  else if (item === ctx.menu.zoom) reportStudyFailure(ctx, startZoom(ctx));
+  else if (item === ctx.els.clearButton) clearTimeline(ctx);
 }
 
 function reportStudyFailure(ctx: StudyContext, work: Promise<void>): void {
@@ -519,7 +506,7 @@ function render(ctx: StudyContext): void {
   clearButton.hidden = entries === 0 || study === "running";
   showOffer(zoom, offer);
   toggle.hidden = restart.hidden && clearButton.hidden && zoom.hidden;
-  if (toggle.hidden) setMenuOpen(ctx, false);
+  if (toggle.hidden) ctx.menuHandle.close();
   renderProgress(ctx, offer);
   renderTimeline(ctx, offer);
   renderAudioList(ctx);

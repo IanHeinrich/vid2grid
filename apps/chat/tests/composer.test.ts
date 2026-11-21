@@ -721,7 +721,7 @@ describe("thoroughness saved per chat", () => {
     expect(els.composer.thoroughnessLabel.textContent).toBe("Exhaustive");
   });
 
-  it("checks the picked level and closes on a click outside", () => {
+  it("checks the picked level and closes on a press outside", () => {
     setup();
     pickThoroughness("thorough");
     const { thoroughnessButton: button, thoroughnessMenu: menu } = els.composer;
@@ -729,7 +729,7 @@ describe("thoroughness saved per chat", () => {
     expect(menuItem(menu, "normal")?.getAttribute("aria-checked")).toBe("false");
     expect(button.getAttribute("aria-label")).toBe("Thoroughness: Thorough");
     button.click();
-    document.body.click();
+    document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
     expect(menu.hidden).toBe(true);
   });
 });
