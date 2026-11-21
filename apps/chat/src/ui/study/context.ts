@@ -1,5 +1,5 @@
 import type { AnalyseAudio } from "../../audio/videoAudio";
-import type { AppElements, StatusLine } from "../../dom";
+import type { AppElements } from "../../dom";
 import { resolveModel, type AppState } from "../../state";
 import type {
   ChatStore,
@@ -23,6 +23,7 @@ import {
 import type { ToolContext } from "../../video/tools";
 import type { ChatVideo } from "../knowledgeVideos";
 import type { ModelPicker } from "../modelPicker";
+import type { StatusLine } from "../status";
 import type { Toast, ToastHandle } from "../toast";
 
 export interface StudyDeps {

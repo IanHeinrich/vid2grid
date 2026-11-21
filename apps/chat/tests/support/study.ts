@@ -1,5 +1,5 @@
 import { expect, vi } from "vitest";
-import { VENICE_BASE_URL } from "../../src/api/client";
+import { VENICE_BASE_URL } from "../../src/api/venice";
 import type { AnalyseAudio } from "../../src/audio/videoAudio";
 import { createMemoryStore } from "../../src/chat/store";
 import type { AppElements } from "../../src/dom";

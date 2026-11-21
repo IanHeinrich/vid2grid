@@ -1,4 +1,4 @@
-import type { AppElements, StatusLine } from "../dom";
+import type { AppElements } from "../dom";
 import { pendingVideo, type AppState } from "../state";
 import { errorText } from "../text";
 import type { ChatStore } from "../types";
@@ -12,6 +12,7 @@ import {
   videoStorageSupported,
   type StoredVideoInfo,
 } from "../video/videoStore";
+import type { StatusLine } from "./status";
 
 export interface VideoStorage {
   supported(): boolean;

@@ -7,7 +7,7 @@ import { ANSWER_NOW_NOTE } from "../src/chat/history";
 import { createMemoryStore } from "../src/chat/store";
 import { STORY_SYSTEM_PROMPT } from "../src/chat/summary";
 import type { AppElements } from "../src/dom";
-import { VENICE_BASE_URL } from "../src/api/client";
+import { VENICE_BASE_URL } from "../src/api/venice";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import {
   blankChat,

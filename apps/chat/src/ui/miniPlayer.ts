@@ -1,4 +1,5 @@
 import type { AppElements } from "../dom";
+import { clamp } from "../spans";
 import { formatSpan } from "../time";
 
 const STORAGE_KEY = "vid2grid-chat-mini-player";
@@ -66,10 +67,8 @@ export interface MiniPlayer {
   dispose(): void;
 }
 
-type MiniPlayerElements = AppElements["video"];
-
 interface MiniPlayerContext {
-  els: MiniPlayerElements;
+  els: AppElements["miniPlayer"];
   deps: MiniPlayerDeps;
   storage: Storage;
   layout: Layout;
@@ -82,10 +81,6 @@ interface MiniPlayerContext {
   lastPresented: PresentedFrame | null;
   frameDurations: number[];
   signal: AbortSignal;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
 }
 
 export function clampPosition(rect: Rect, viewport: Size, margin = EDGE_MARGIN): Point {
@@ -239,11 +234,14 @@ export function playQuietly(video: HTMLVideoElement): void {
     .catch(() => undefined);
 }
 
-export function initMiniPlayer(els: MiniPlayerElements, deps: MiniPlayerDeps): MiniPlayer {
+export function initMiniPlayer(
+  els: Pick<AppElements, "miniPlayer">,
+  deps: MiniPlayerDeps,
+): MiniPlayer {
   const listening = new AbortController();
   const storage = deps.storage ?? localStorage;
   const ctx: MiniPlayerContext = {
-    els,
+    els: els.miniPlayer,
     deps,
     storage,
     layout: parseLayout(storage.getItem(STORAGE_KEY)),
@@ -274,24 +272,24 @@ export function initMiniPlayer(els: MiniPlayerElements, deps: MiniPlayerDeps): M
 function listen(ctx: MiniPlayerContext): void {
   const { signal } = ctx;
   const els = ctx.els;
-  const video = els.miniPlayerVideo;
-  els.miniPlayerBar.addEventListener("pointerdown", (event) => startDrag(ctx, event), { signal });
-  els.miniPlayerResize.addEventListener("pointerdown", (event) => startResize(ctx, event), {
+  const video = els.video;
+  els.bar.addEventListener("pointerdown", (event) => startDrag(ctx, event), { signal });
+  els.resize.addEventListener("pointerdown", (event) => startResize(ctx, event), {
     signal,
   });
-  els.miniPlayerResize.addEventListener("keydown", (event) => resizeByKey(ctx, event), { signal });
-  els.miniPlayerDock.addEventListener("click", () => setDocked(ctx, !ctx.layout.docked), {
+  els.resize.addEventListener("keydown", (event) => resizeByKey(ctx, event), { signal });
+  els.dock.addEventListener("click", () => setDocked(ctx, !ctx.layout.docked), {
     signal,
   });
-  els.miniPlayerStepBack.addEventListener("click", () => step(ctx, -1), { signal });
-  els.miniPlayerStepForward.addEventListener("click", () => step(ctx, 1), { signal });
-  els.miniPlayerSpeed.addEventListener("change", () => setSpeed(ctx), { signal });
-  els.miniPlayerLoopAround.addEventListener("click", () => toggleLoopAround(ctx), { signal });
-  els.miniPlayerLoopIn.addEventListener("click", () => setLoopPoint(ctx, "in"), { signal });
-  els.miniPlayerLoopOut.addEventListener("click", () => setLoopPoint(ctx, "out"), { signal });
-  els.miniPlayerLoopClear.addEventListener("click", () => setLoop(ctx, null), { signal });
-  els.miniPlayer.addEventListener("pointerenter", () => (ctx.hovered = true), { signal });
-  els.miniPlayer.addEventListener("pointerleave", () => (ctx.hovered = false), { signal });
+  els.stepBack.addEventListener("click", () => step(ctx, -1), { signal });
+  els.stepForward.addEventListener("click", () => step(ctx, 1), { signal });
+  els.speed.addEventListener("change", () => setSpeed(ctx), { signal });
+  els.loopAround.addEventListener("click", () => toggleLoopAround(ctx), { signal });
+  els.loopIn.addEventListener("click", () => setLoopPoint(ctx, "in"), { signal });
+  els.loopOut.addEventListener("click", () => setLoopPoint(ctx, "out"), { signal });
+  els.loopClear.addEventListener("click", () => setLoop(ctx, null), { signal });
+  els.el.addEventListener("pointerenter", () => (ctx.hovered = true), { signal });
+  els.el.addEventListener("pointerleave", () => (ctx.hovered = false), { signal });
   video.addEventListener("timeupdate", () => enforceLoop(ctx), { signal });
   video.addEventListener(
     "play",
@@ -320,13 +318,13 @@ function viewport(): Size {
 }
 
 function currentRect(ctx: MiniPlayerContext): Rect {
-  const box = ctx.els.miniPlayer.getBoundingClientRect();
+  const box = ctx.els.el.getBoundingClientRect();
   return { x: box.left, y: box.top, width: box.width, height: box.height };
 }
 
 function widthLimits(ctx: MiniPlayerContext): WidthLimits {
-  const playerHeight = ctx.els.miniPlayer.getBoundingClientRect().height;
-  const videoHeight = ctx.els.miniPlayerVideo.getBoundingClientRect().height;
+  const playerHeight = ctx.els.el.getBoundingClientRect().height;
+  const videoHeight = ctx.els.video.getBoundingClientRect().height;
   return {
     aspect: ctx.deps.aspect(),
     chromeHeight: Math.max(0, playerHeight - videoHeight),
@@ -339,17 +337,17 @@ function saveLayout(ctx: MiniPlayerContext): void {
 }
 
 function applyLayout(ctx: MiniPlayerContext): void {
-  const { miniPlayer, miniPlayerDock, miniPlayerResize, miniPlayerVideo } = ctx.els;
+  const { el, dock, resize, video } = ctx.els;
   const { docked, placement } = ctx.layout;
-  miniPlayerVideo.style.aspectRatio = String(ctx.deps.aspect());
-  miniPlayer.classList.toggle("is-docked", docked);
-  miniPlayer.classList.toggle("is-placed", !docked && placement !== undefined);
-  miniPlayerDock.setAttribute("aria-pressed", String(docked));
-  miniPlayerResize.hidden = docked;
+  video.style.aspectRatio = String(ctx.deps.aspect());
+  el.classList.toggle("is-docked", docked);
+  el.classList.toggle("is-placed", !docked && placement !== undefined);
+  dock.setAttribute("aria-pressed", String(docked));
+  resize.hidden = docked;
   if (docked || !placement) {
-    miniPlayer.style.removeProperty("left");
-    miniPlayer.style.removeProperty("top");
-    miniPlayer.style.removeProperty("width");
+    el.style.removeProperty("left");
+    el.style.removeProperty("top");
+    el.style.removeProperty("width");
     return;
   }
   // The saved placement is left alone, so a window shrunk for a moment does not move it for good.
@@ -360,7 +358,7 @@ function applyLayout(ctx: MiniPlayerContext): void {
 }
 
 function showAt(ctx: MiniPlayerContext, placement: Placement): void {
-  const style = ctx.els.miniPlayer.style;
+  const style = ctx.els.el.style;
   style.left = `${Math.round(placement.x)}px`;
   style.top = `${Math.round(placement.y)}px`;
   style.width = `${Math.round(placement.width)}px`;
@@ -369,7 +367,7 @@ function showAt(ctx: MiniPlayerContext, placement: Placement): void {
 function place(ctx: MiniPlayerContext, { x, y, width }: Placement): void {
   const placement = { x, y, width };
   ctx.layout = { ...ctx.layout, placement };
-  ctx.els.miniPlayer.classList.add("is-placed");
+  ctx.els.el.classList.add("is-placed");
   showAt(ctx, placement);
 }
 
@@ -437,16 +435,16 @@ function isTyping(target: EventTarget | null): boolean {
 
 function onKey(ctx: MiniPlayerContext, event: KeyboardEvent): void {
   if (event.key !== "," && event.key !== ".") return;
-  if (event.ctrlKey || event.metaKey || event.altKey || ctx.els.miniPlayer.hidden) return;
+  if (event.ctrlKey || event.metaKey || event.altKey || ctx.els.el.hidden) return;
   const target = event.target;
-  const inside = target instanceof Node && ctx.els.miniPlayer.contains(target);
+  const inside = target instanceof Node && ctx.els.el.contains(target);
   if (!inside && (!ctx.hovered || isTyping(target))) return;
   event.preventDefault();
   step(ctx, event.key === "," ? -1 : 1);
 }
 
 function step(ctx: MiniPlayerContext, direction: -1 | 1): void {
-  const video = ctx.els.miniPlayerVideo;
+  const video = ctx.els.video;
   video.pause();
   const current = video.currentTime;
   const duration = ctx.deps.durationSeconds();
@@ -462,7 +460,7 @@ function forgetFrames(ctx: MiniPlayerContext): void {
 
 // For files without demuxed frame times, the presented frames show how long a frame lasts.
 function watchFrames(ctx: MiniPlayerContext): void {
-  const video = ctx.els.miniPlayerVideo;
+  const video = ctx.els.video;
   ctx.lastPresented = null;
   if (ctx.watchingFrames || !("requestVideoFrameCallback" in video)) return;
   ctx.watchingFrames = true;
@@ -480,9 +478,9 @@ function watchFrames(ctx: MiniPlayerContext): void {
 }
 
 function setSpeed(ctx: MiniPlayerContext): void {
-  const rate = Number(ctx.els.miniPlayerSpeed.value);
+  const rate = Number(ctx.els.speed.value);
   if (!(rate > 0)) return;
-  const video = ctx.els.miniPlayerVideo;
+  const video = ctx.els.video;
   // A new src resets playbackRate to the default, so both are set.
   video.defaultPlaybackRate = rate;
   video.playbackRate = rate;
@@ -503,7 +501,7 @@ function toggleLoopAround(ctx: MiniPlayerContext): void {
 }
 
 function setLoopPoint(ctx: MiniPlayerContext, point: "in" | "out"): void {
-  const time = ctx.els.miniPlayerVideo.currentTime;
+  const time = ctx.els.video.currentTime;
   const next = withLoopPoint(ctx.loop, point, time, ctx.deps.durationSeconds());
   if (next) setLoop(ctx, next);
 }
@@ -511,7 +509,7 @@ function setLoopPoint(ctx: MiniPlayerContext, point: "in" | "out"): void {
 function setLoop(ctx: MiniPlayerContext, loop: Loop | null, around = false): void {
   ctx.loop = loop;
   ctx.loopIsAround = loop !== null && around;
-  const video = ctx.els.miniPlayerVideo;
+  const video = ctx.els.video;
   if (loop && (video.currentTime < loop.start || video.currentTime >= loop.end)) {
     video.currentTime = loop.start;
   }
@@ -520,7 +518,7 @@ function setLoop(ctx: MiniPlayerContext, loop: Loop | null, around = false): voi
 }
 
 function enforceLoop(ctx: MiniPlayerContext): void {
-  const video = ctx.els.miniPlayerVideo;
+  const video = ctx.els.video;
   const restart = loopRestart(video.currentTime, ctx.loop);
   if (restart !== undefined) video.currentTime = restart;
 }
@@ -529,34 +527,34 @@ function enforceLoop(ctx: MiniPlayerContext): void {
 function watchLoop(ctx: MiniPlayerContext): void {
   if (ctx.loopFrame !== null) return;
   const tick = () => {
-    if (!ctx.loop || ctx.els.miniPlayerVideo.paused || ctx.signal.aborted) {
+    if (!ctx.loop || ctx.els.video.paused || ctx.signal.aborted) {
       ctx.loopFrame = null;
       return;
     }
     enforceLoop(ctx);
     ctx.loopFrame = requestAnimationFrame(tick);
   };
-  if (ctx.loop && !ctx.els.miniPlayerVideo.paused) ctx.loopFrame = requestAnimationFrame(tick);
+  if (ctx.loop && !ctx.els.video.paused) ctx.loopFrame = requestAnimationFrame(tick);
 }
 
 function renderLoop(ctx: MiniPlayerContext): void {
   const els = ctx.els;
   const { loop, aroundSeconds } = ctx;
   const duration = ctx.deps.durationSeconds();
-  els.miniPlayerLoopAround.hidden = aroundSeconds === null;
-  els.miniPlayerLoopAround.setAttribute("aria-pressed", String(ctx.loopIsAround));
+  els.loopAround.hidden = aroundSeconds === null;
+  els.loopAround.setAttribute("aria-pressed", String(ctx.loopIsAround));
   if (aroundSeconds !== null) {
     const range = loopAround(aroundSeconds, duration);
-    els.miniPlayerLoopAround.title = `Loop ${formatSpan(range.start, range.end)} until turned off`;
+    els.loopAround.title = `Loop ${formatSpan(range.start, range.end)} until turned off`;
   }
-  els.miniPlayerLoopRange.hidden = loop === null;
-  els.miniPlayerLoopClear.hidden = loop === null;
-  els.miniPlayerLoopTrack.hidden = loop === null;
+  els.loopRange.hidden = loop === null;
+  els.loopClear.hidden = loop === null;
+  els.loopTrack.hidden = loop === null;
   if (!loop) return;
   const span = formatSpan(loop.start, loop.end);
-  els.miniPlayerLoopRange.textContent = span;
-  els.miniPlayerLoopTrack.title = `Looping ${span}`;
+  els.loopRange.textContent = span;
+  els.loopTrack.title = `Looping ${span}`;
   const percent = (seconds: number) => `${duration > 0 ? (seconds / duration) * 100 : 0}%`;
-  els.miniPlayerLoopBand.style.left = percent(loop.start);
-  els.miniPlayerLoopBand.style.width = percent(loop.end - loop.start);
+  els.loopBand.style.left = percent(loop.start);
+  els.loopBand.style.width = percent(loop.end - loop.start);
 }

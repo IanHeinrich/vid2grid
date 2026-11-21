@@ -1,6 +1,6 @@
+import { streamReply, textRequest, type ModelCallDeps } from "../api/modelCall";
 import { findTimestamps, formatTimestamp } from "../time";
 import type { ClaimCheck, ClaimVerdict, ContentPart, ImageRef } from "../types";
-import { streamReply, textRequest, type ModelCallDeps } from "./modelCall";
 
 const MAX_CLAIMS = 8;
 // The frames tool renders at most nine moments.

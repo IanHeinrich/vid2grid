@@ -1,10 +1,10 @@
 import {
   getBalance as fetchBalance,
-  isVenice,
   listModels as fetchModels,
   type AccountBalance,
   type BalanceUnavailable,
 } from "../api/client";
+import { isVenice } from "../api/venice";
 import type { AppElements } from "../dom";
 import type { AppState } from "../state";
 import { errorText, plural } from "../text";

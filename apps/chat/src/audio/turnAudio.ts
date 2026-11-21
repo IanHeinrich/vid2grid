@@ -1,7 +1,7 @@
 import type { AudioAnalysisProgress } from "@vid2grid/core";
-import type { StatusLine } from "../dom";
 import type { GlobalSettings } from "../settings";
 import type { AudioCoverage, ChatStore, ToolSchema } from "../types";
+import type { StatusLine } from "../ui/status";
 import { toolSchemas, type ListenContext } from "../video/tools";
 import { audioCoverage, audioProgressText, loadAudio, settingsLabels } from "./videoAudio";
 

@@ -1,4 +1,4 @@
-import type { AppElements } from "../../dom";
+import { part, type AppElements } from "../../dom";
 import { resolveModel, type AppState } from "../../state";
 import { errorText } from "../../text";
 import type { Chat, ModelInfo, StudyPlanOptions, VideoTimeline } from "../../types";
@@ -107,12 +107,6 @@ export function initStudy(
     status: () => statusText(ctx),
     render: () => render(ctx),
   };
-}
-
-function part<T extends HTMLElement>(root: Element, selector: string, type: new () => T): T {
-  const el = root.querySelector(selector);
-  if (!(el instanceof type)) throw new Error(`Missing or mistyped element: ${selector}`);
-  return el;
 }
 
 function studyMenu(button: HTMLButtonElement): StudyMenu {

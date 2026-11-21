@@ -1,8 +1,7 @@
 import { switchReply } from "../chat/alternates";
-import { blobToDataUrl } from "../chat/dataUrl";
 import { imagesOf, storyForBranch } from "../chat/history";
 import { extractTimedClaims, verifyClaims } from "../chat/verify";
-import type { StatusLine } from "../dom";
+import { blobToDataUrl } from "../dataUrl";
 import {
   currentModel,
   removeMessages,
@@ -27,6 +26,7 @@ import type {
 import { createToolRunner, type ToolContext } from "../video/tools";
 import type { Conversation } from "./conversation";
 import { modelCallDeps } from "./modelTask";
+import type { StatusLine } from "./status";
 import type { Toast, ToastHandle } from "./toast";
 
 const REATTACH_TO_CHECK = "Reattach the video to check the timestamps.";

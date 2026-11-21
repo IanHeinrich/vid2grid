@@ -1,4 +1,4 @@
-import { isVenice } from "../api/client";
+import { isVenice } from "../api/venice";
 import type { AppElements } from "../dom";
 import { chatModelId, defaultModelId, type AppState } from "../state";
 import type { ChatStore } from "../types";

@@ -1,5 +1,5 @@
 import type { VideoInfo } from "@vid2grid/core";
-import { isVenice } from "./api/client";
+import { isVenice } from "./api/venice";
 import type { GlobalSettings } from "./settings";
 import { formatTimestamp } from "./time";
 import type { Chat, ChatMessage, ChatStore, ImageRef, ModelInfo, VideoAttachment } from "./types";

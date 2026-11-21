@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { VENICE_BASE_URL } from "../src/api/client";
+import { VENICE_BASE_URL } from "../src/api/venice";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import {
   addPending,

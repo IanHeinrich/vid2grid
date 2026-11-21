@@ -1,8 +1,9 @@
 import { modelVisionProfile, type PlanOptionInput } from "@vid2grid/core";
+import { textRequest } from "../api/modelCall";
 import { addUsage, usageCostUsd } from "../api/usage";
-import { blobToDataUrl } from "../chat/dataUrl";
 import { FALLBACK_IMAGE_TOKENS } from "../chat/history";
-import { textRequest } from "../chat/modelCall";
+import { blobToDataUrl } from "../dataUrl";
+import { clamp, mergeSpans } from "../spans";
 import { errorText } from "../text";
 import { CLOCK_TIME, clockSeconds, formatSpan } from "../time";
 import type {
@@ -18,7 +19,7 @@ import type {
   UnclearSpan,
   VideoTimeline,
 } from "../types";
-import { MAX_FRAMES_PER_SHEET, choosePerSheet, clamp } from "./packing";
+import { MAX_FRAMES_PER_SHEET, choosePerSheet } from "./packing";
 import { roundForLabel, sheetLine, sheetRefs, type ToolContext } from "./tools";
 
 export const DEFAULT_WINDOW_SECONDS = 45;
@@ -230,17 +231,8 @@ function zoomSpans(unclear: readonly UnclearSpan[], bounds: StudyWindow): StudyW
         startSeconds: clamp(span.startSeconds - startPad, bounds.startSeconds, bounds.endSeconds),
         endSeconds: clamp(span.endSeconds + endPad, bounds.startSeconds, bounds.endSeconds),
       };
-    })
-    .sort((a, b) => a.startSeconds - b.startSeconds);
-  const merged: StudyWindow[] = [];
-  for (const span of padded) {
-    const last = merged.at(-1);
-    if (last !== undefined && span.startSeconds - last.endSeconds <= ZOOM_MERGE_GAP_SECONDS) {
-      last.endSeconds = Math.max(last.endSeconds, span.endSeconds);
-    } else {
-      merged.push(span);
-    }
-  }
+    });
+  const merged = mergeSpans(padded, ZOOM_MERGE_GAP_SECONDS);
   return merged.filter((span) => span.endSeconds > span.startSeconds).flatMap(splitSpan);
 }
 

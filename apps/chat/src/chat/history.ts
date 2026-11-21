@@ -1,5 +1,5 @@
 import { plural } from "../text";
-import { formatSpan, formatTimestamp, sceneLogLines } from "../time";
+import { formatSpan, formatTimestamp } from "../time";
 import type {
   AssistantMessage,
   AudioCoverage,
@@ -22,6 +22,7 @@ import type {
   Voice,
   WireMessage,
 } from "../types";
+import { sceneLogLines } from "./prompts";
 import { effortFor, lowestEffort } from "./thoroughness";
 
 export function imagesOf(message: ChatMessage): readonly ImageRef[] {
@@ -372,7 +373,7 @@ function storyImagesMessage(
 }
 
 // What a request sends: the images carried past the story's cut, if any, then the visible messages.
-export function sentMessages(chat: Chat, messages: readonly ChatMessage[]): readonly ChatMessage[] {
+function sentMessages(chat: Chat, messages: readonly ChatMessage[]): readonly ChatMessage[] {
   const { earlier, messages: visible } = splitStory(chat, messages);
   const carried = storyImagesMessage(earlier, visible, chat.settings.earlierImages ?? "describe");
   return carried ? [carried, ...visible] : visible;

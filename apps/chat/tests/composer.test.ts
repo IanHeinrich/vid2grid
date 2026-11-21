@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryStore } from "../src/chat/store";
 import type { AppElements } from "../src/dom";
-import { VENICE_BASE_URL } from "../src/api/client";
+import { VENICE_BASE_URL } from "../src/api/venice";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import {
   addPending,

@@ -8,7 +8,7 @@ import {
 } from "../audio/videoAudio";
 import { pinsExceedCap } from "../chat/history";
 import { effortFor, roundsFor } from "../chat/thoroughness";
-import type { AppElements, StatusLine } from "../dom";
+import type { AppElements } from "../dom";
 import {
   addPending,
   chatModelId,
@@ -45,6 +45,7 @@ import type {
 } from "../types";
 import { resolveSheetResolution } from "../video/resolution";
 import { iconButton, pinToggle } from "./buttons";
+import type { StatusLine } from "./status";
 import type { Turns } from "./turns";
 import type { VideoPanel } from "./videoPanel";
 

@@ -8,7 +8,7 @@ import {
   type AnalyseAudio,
   type AudioDeps,
 } from "../audio/videoAudio";
-import type { AppElements, StatusLine } from "../dom";
+import type { AppElements } from "../dom";
 import {
   currentModel,
   isRunningIn,
@@ -36,6 +36,7 @@ import { renderOverview, type ToolContext } from "../video/tools";
 import { storedAudioOn } from "./composer";
 import { createCoverageStrip, type CoverageStrip } from "./coverageStrip";
 import { initMiniPlayer, playQuietly, videoAspect, type MiniPlayer } from "./miniPlayer";
+import type { StatusLine } from "./status";
 
 const AGAIN_TEXT = "Click Reattach again to choose the file.";
 const VIDEO_PICKER_TYPES = [
@@ -122,7 +123,7 @@ interface AudioPrep {
 }
 
 interface VideoPanelContext {
-  els: AppElements["video"];
+  els: Pick<AppElements, "video" | "miniPlayer">;
   state: AppState;
   deps: VideoPanelDeps;
   objectUrl: string | null;
@@ -175,7 +176,7 @@ function chatModel(state: AppState, chat: Chat): ModelInfo | null {
 }
 
 export function initVideoPanel(
-  els: Pick<AppElements, "video">,
+  els: Pick<AppElements, "video" | "miniPlayer">,
   state: AppState,
   deps: VideoPanelDeps,
 ): VideoPanel {
@@ -185,7 +186,7 @@ export function initVideoPanel(
     return playing.older?.video ?? (chat ? shownVideo(state, chat.id) : undefined);
   };
   const ctx: VideoPanelContext = {
-    els: els.video,
+    els,
     state,
     deps,
     objectUrl: null,
@@ -199,7 +200,7 @@ export function initVideoPanel(
     playing,
     seekToken: 0,
     audioPrep: undefined,
-    player: initMiniPlayer(els.video, {
+    player: initMiniPlayer(els, {
       durationSeconds: () => shown()?.durationSeconds ?? 0,
       frameTimes: () =>
         playing.older ? ctx.frameTimes.get(playing.older.file) : loadedFrameTimes(ctx),
@@ -210,8 +211,8 @@ export function initVideoPanel(
   listen(ctx);
   render(ctx);
   const { coverage } = ctx;
-  els.video.miniPlayerVideo.after(coverage.el);
-  coverage.follow(els.video.miniPlayerVideo);
+  els.miniPlayer.video.after(coverage.el);
+  coverage.follow(els.miniPlayer.video);
   return {
     restore: () => restore(ctx),
     attach: (file, handle) => attach(ctx, file, handle),
@@ -221,7 +222,7 @@ export function initVideoPanel(
     cue: (seconds) => openAtTimestamp(ctx, seconds, false),
     openPlayer: (seconds) => openPlayer(ctx, seconds),
     attachedPlaybackTime: () =>
-      playing.older || showingPending(ctx) ? undefined : els.video.miniPlayerVideo.currentTime,
+      playing.older || showingPending(ctx) ? undefined : els.miniPlayer.video.currentTime,
     view: () => ({
       video: state.currentChat?.video,
       url: committedLoaded(ctx) ? ctx.objectUrl : null,
@@ -246,7 +247,7 @@ function pendingUrlOf(ctx: VideoPanelContext, file: File): string | null {
 }
 
 function listen(ctx: VideoPanelContext): void {
-  const { chip, reattachInput, miniPlayerClose } = ctx.els;
+  const { chip, reattachInput } = ctx.els.video;
   chip.addEventListener("click", () => {
     if (isMissing(ctx)) void requestReattach(ctx);
     else openPlayer(ctx);
@@ -259,7 +260,7 @@ function listen(ctx: VideoPanelContext): void {
       ctx.deps.status.show(`Could not attach ${file.name}: ${errorText(error)}`, "error");
     });
   });
-  miniPlayerClose.addEventListener("click", () => closePlayer(ctx));
+  ctx.els.miniPlayer.close.addEventListener("click", () => closePlayer(ctx));
 }
 
 function isDomError(error: unknown, ...names: string[]): boolean {
@@ -308,7 +309,7 @@ function currentPendingFile(ctx: VideoPanelContext): PendingFile | undefined {
 
 function showingPending(ctx: VideoPanelContext): boolean {
   const url = ctx.pendingUrl?.url;
-  return url !== undefined && ctx.els.miniPlayerVideo.getAttribute("src") === url;
+  return url !== undefined && ctx.els.miniPlayer.video.getAttribute("src") === url;
 }
 
 function sheetSource(ctx: VideoPanelContext, chatId: string): SheetSource | undefined {
@@ -564,7 +565,7 @@ async function reattachWithPermission(ctx: VideoPanelContext, chatId: string): P
 
 async function pickVideo(ctx: VideoPanelContext): Promise<void> {
   if (!window.showOpenFilePicker) {
-    ctx.els.reattachInput.click();
+    ctx.els.video.reattachInput.click();
     return;
   }
   let picked: FileSystemFileHandle | undefined;
@@ -609,7 +610,7 @@ function loadedFrameTimes(ctx: VideoPanelContext): number[] | undefined {
 
 function setUrl(ctx: VideoPanelContext, file: File | null): void {
   closePlayer(ctx);
-  const player = ctx.els.miniPlayerVideo;
+  const player = ctx.els.miniPlayer.video;
   player.removeAttribute("src");
   ctx.player.reset();
   if (ctx.objectUrl) URL.revokeObjectURL(ctx.objectUrl);
@@ -624,7 +625,7 @@ function syncPendingUrl(ctx: VideoPanelContext): void {
   if (previous) {
     if (showingPending(ctx)) {
       closePlayer(ctx);
-      ctx.els.miniPlayerVideo.removeAttribute("src");
+      ctx.els.miniPlayer.video.removeAttribute("src");
       ctx.player.reset();
     }
     URL.revokeObjectURL(previous.url);
@@ -648,7 +649,7 @@ function openPlayer(ctx: VideoPanelContext, seconds?: number, play = true): void
     return;
   }
   releaseOlder(ctx);
-  const { miniPlayer, miniPlayerTitle, miniPlayerVideo } = ctx.els;
+  const { el: miniPlayer, title: miniPlayerTitle, video: miniPlayerVideo } = ctx.els.miniPlayer;
   if (miniPlayerVideo.getAttribute("src") !== url) miniPlayerVideo.src = url;
   // The coverage strip marks the chat's own video, not one waiting to be sent.
   ctx.coverage.el.hidden = showingPending(ctx);
@@ -664,7 +665,7 @@ function openPlayer(ctx: VideoPanelContext, seconds?: number, play = true): void
 
 function openAtTimestamp(ctx: VideoPanelContext, seconds: number, play: boolean): void {
   openPlayer(ctx, seconds, play);
-  if (!ctx.els.miniPlayer.hidden) ctx.player.offerLoopAround(seconds);
+  if (!ctx.els.miniPlayer.el.hidden) ctx.player.offerLoopAround(seconds);
 }
 
 function seekMoment(ctx: VideoPanelContext, seconds: number, video?: VideoAttachment): void {
@@ -703,7 +704,7 @@ function playOlder(ctx: VideoPanelContext, older: OlderVideo, seconds: number): 
   releaseOlder(ctx);
   ctx.playing.older = older;
   readFrameTimesOf(ctx, older.file);
-  const { miniPlayer, miniPlayerTitle, miniPlayerVideo } = ctx.els;
+  const { el: miniPlayer, title: miniPlayerTitle, video: miniPlayerVideo } = ctx.els.miniPlayer;
   ctx.player.reset();
   miniPlayerVideo.src = older.url;
   miniPlayerTitle.textContent = older.video.name;
@@ -719,7 +720,7 @@ function releaseOlder(ctx: VideoPanelContext): void {
   const { older } = ctx.playing;
   if (!older) return;
   ctx.playing.older = undefined;
-  const player = ctx.els.miniPlayerVideo;
+  const player = ctx.els.miniPlayer.video;
   if (player.getAttribute("src") === older.url) {
     player.pause();
     player.removeAttribute("src");
@@ -730,7 +731,7 @@ function releaseOlder(ctx: VideoPanelContext): void {
 }
 
 function closePlayer(ctx: VideoPanelContext): void {
-  const { miniPlayer, miniPlayerVideo } = ctx.els;
+  const { el: miniPlayer, video: miniPlayerVideo } = ctx.els.miniPlayer;
   releaseOlder(ctx);
   if (miniPlayer.hidden) return;
   miniPlayerVideo.pause();
@@ -747,7 +748,7 @@ function render(ctx: VideoPanelContext): void {
 }
 
 function renderChip(ctx: VideoPanelContext): void {
-  const { chip, chipName, chipMeta } = ctx.els;
+  const { chip, chipName, chipMeta } = ctx.els.video;
   const chat = ctx.state.currentChat;
   const video = currentShownVideo(ctx);
   chip.hidden = !chat || !video;

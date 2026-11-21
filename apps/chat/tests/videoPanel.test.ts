@@ -291,10 +291,10 @@ describe("removing a pending video before sending", () => {
     const videos = panel();
     await videos.attach(video("dropped.mp4", 2));
     videos.openPlayer(1);
-    expect(els.video.miniPlayer.hidden).toBe(false);
+    expect(els.miniPlayer.el.hidden).toBe(false);
     removePendingVideo(state, "chat");
     videos.render();
-    expect(els.video.miniPlayer.hidden).toBe(true);
+    expect(els.miniPlayer.el.hidden).toBe(true);
     expect(els.video.chip.hidden).toBe(true);
     expect(revoke).toHaveBeenCalledWith("blob:video-1");
   });
@@ -413,10 +413,10 @@ describe("a new chat", () => {
     const ref: ImageRef = { id: "i", pinned: false, source: { kind: "upload", name: "i" } };
     addPending(state, "chat", { kind: "image", ref });
     videos.openPlayer(1);
-    expect(els.video.miniPlayer.hidden).toBe(false);
+    expect(els.miniPlayer.el.hidden).toBe(false);
     await openOther(videos, "new", MODEL);
     expect(els.video.chip.hidden).toBe(true);
-    expect(els.video.miniPlayer.hidden).toBe(true);
+    expect(els.miniPlayer.el.hidden).toBe(true);
     expect(currentPending(state)).toEqual([]);
     expect(videos.view()).toEqual({ video: undefined, url: null });
     expect(videos.pendingView()).toEqual({ video: undefined, url: null });
@@ -584,8 +584,8 @@ describe("cueing the mini-player", () => {
     await videos.attach(video("beach.mp4"));
     play.mockClear();
     videos.cue(42);
-    expect(els.video.miniPlayer.hidden).toBe(false);
-    expect(els.video.miniPlayerVideo.currentTime).toBe(42);
+    expect(els.miniPlayer.el.hidden).toBe(false);
+    expect(els.miniPlayer.video.currentTime).toBe(42);
     await Promise.resolve();
     expect(play).not.toHaveBeenCalled();
     expect(pause).toHaveBeenCalled();
@@ -600,33 +600,33 @@ describe("mini-player", () => {
     const videos = panel();
     await videos.attach(video("beach.mp4"));
     videos.seek(42);
-    expect(els.video.miniPlayer.hidden).toBe(false);
-    expect(els.video.miniPlayerVideo.getAttribute("src")).toBe("blob:video");
-    expect(els.video.miniPlayerTitle.textContent).toBe("beach.mp4");
+    expect(els.miniPlayer.el.hidden).toBe(false);
+    expect(els.miniPlayer.video.getAttribute("src")).toBe("blob:video");
+    expect(els.miniPlayer.title.textContent).toBe("beach.mp4");
     await vi.waitFor(() => expect(play).toHaveBeenCalled());
-    els.video.miniPlayerClose.click();
-    expect(els.video.miniPlayer.hidden).toBe(true);
+    els.miniPlayer.close.click();
+    expect(els.miniPlayer.el.hidden).toBe(true);
   });
 
   it("offers a loop around a clicked timestamp but not when the video is popped out", async () => {
     const videos = panel();
     await videos.attach(video("beach.mp4"));
     videos.openPlayer(10);
-    expect(els.video.miniPlayerLoopAround.hidden).toBe(true);
+    expect(els.miniPlayer.loopAround.hidden).toBe(true);
     videos.seek(42);
-    expect(els.video.miniPlayerLoopAround.hidden).toBe(false);
-    expect(els.video.miniPlayerLoopAround.title).toBe("Loop 0:40.0 to 0:44.0 until turned off");
-    els.video.miniPlayerLoopAround.click();
-    expect(els.video.miniPlayerLoopRange.textContent).toBe("0:40.0 to 0:44.0");
-    els.video.miniPlayerClose.click();
-    expect(els.video.miniPlayerLoopAround.hidden).toBe(true);
-    expect(els.video.miniPlayerLoopRange.hidden).toBe(true);
+    expect(els.miniPlayer.loopAround.hidden).toBe(false);
+    expect(els.miniPlayer.loopAround.title).toBe("Loop 0:40.0 to 0:44.0 until turned off");
+    els.miniPlayer.loopAround.click();
+    expect(els.miniPlayer.loopRange.textContent).toBe("0:40.0 to 0:44.0");
+    els.miniPlayer.close.click();
+    expect(els.miniPlayer.loopAround.hidden).toBe(true);
+    expect(els.miniPlayer.loopRange.hidden).toBe(true);
   });
 
   it("asks to reattach instead of opening a player with no file", async () => {
     await openChatWithVideo(attachmentFor(video("beach.mp4")));
     panel().seek(42);
-    expect(els.video.miniPlayer.hidden).toBe(true);
+    expect(els.miniPlayer.el.hidden).toBe(true);
     expect(spies.status.show).toHaveBeenCalledWith("Reattach the video to jump to 0:42.");
   });
 });
@@ -641,8 +641,8 @@ describe("frame stepping", () => {
     expect(spies.readFrameTimes).toHaveBeenCalledTimes(1);
     expect(spies.readFrameTimes.mock.calls[0]?.[0]).toBe(state.video?.file);
     videos.openPlayer(0.6);
-    els.video.miniPlayerStepForward.click();
-    expect(els.video.miniPlayerVideo.currentTime).toBeCloseTo(1.375);
+    els.miniPlayer.stepForward.click();
+    expect(els.miniPlayer.video.currentTime).toBeCloseTo(1.375);
   });
 
   it("drops the frame times when the video changes", async () => {
@@ -652,8 +652,8 @@ describe("frame stepping", () => {
     await videos.attach(video("two.mp4", 2));
     await settle();
     videos.openPlayer(1);
-    els.video.miniPlayerStepForward.click();
-    expect(els.video.miniPlayerVideo.currentTime).toBeCloseTo(31.5 / 30);
+    els.miniPlayer.stepForward.click();
+    expect(els.miniPlayer.video.currentTime).toBeCloseTo(31.5 / 30);
   });
 
   it("falls back to an estimated frame when reading frame times fails", async () => {
@@ -662,8 +662,8 @@ describe("frame stepping", () => {
     await videos.attach(video("beach.mp4"));
     await settle();
     videos.openPlayer(1);
-    els.video.miniPlayerStepForward.click();
-    expect(els.video.miniPlayerVideo.currentTime).toBeCloseTo(31.5 / 30);
+    els.miniPlayer.stepForward.click();
+    expect(els.miniPlayer.video.currentTime).toBeCloseTo(31.5 / 30);
     expect(spies.status.show).not.toHaveBeenCalledWith(expect.stringContaining("demux"), "error");
   });
 });
@@ -681,17 +681,17 @@ describe("timestamps from an earlier video", () => {
     const videos = panel();
     await attachAndSend(videos, first);
     await attachAndSend(videos, video("two.mp4", 2));
-    expect(els.video.miniPlayer.hidden).toBe(true);
+    expect(els.miniPlayer.el.hidden).toBe(true);
     videos.seek(12, attachmentFor(first));
-    await vi.waitFor(() => expect(els.video.miniPlayer.hidden).toBe(false));
-    expect(els.video.miniPlayerTitle.textContent).toBe("one.mp4");
-    expect(els.video.miniPlayerVideo.getAttribute("src")).toBe("blob:video-5");
-    expect(els.video.miniPlayerVideo.currentTime).toBe(12);
+    await vi.waitFor(() => expect(els.miniPlayer.el.hidden).toBe(false));
+    expect(els.miniPlayer.title.textContent).toBe("one.mp4");
+    expect(els.miniPlayer.video.getAttribute("src")).toBe("blob:video-5");
+    expect(els.miniPlayer.video.currentTime).toBe(12);
     expect(state.currentChat?.video?.name).toBe("two.mp4");
     expect(spies.loadCopy).not.toHaveBeenCalled();
     videos.seek(5, state.currentChat?.video);
-    expect(els.video.miniPlayerTitle.textContent).toBe("two.mp4");
-    expect(els.video.miniPlayerVideo.getAttribute("src")).toBe("blob:video-4");
+    expect(els.miniPlayer.title.textContent).toBe("two.mp4");
+    expect(els.miniPlayer.video.getAttribute("src")).toBe("blob:video-4");
     expect(revoke).toHaveBeenCalledWith("blob:video-5");
   });
 
@@ -703,9 +703,9 @@ describe("timestamps from an earlier video", () => {
     videos.openPlayer(9);
     expect(videos.attachedPlaybackTime()).toBe(9);
     videos.seek(12, attachmentFor(first));
-    await vi.waitFor(() => expect(els.video.miniPlayerTitle.textContent).toBe("one.mp4"));
+    await vi.waitFor(() => expect(els.miniPlayer.title.textContent).toBe("one.mp4"));
     expect(videos.attachedPlaybackTime()).toBeUndefined();
-    els.video.miniPlayerClose.click();
+    els.miniPlayer.close.click();
     expect(videos.attachedPlaybackTime()).toBeDefined();
   });
 
@@ -714,8 +714,8 @@ describe("timestamps from an earlier video", () => {
     const videos = panel({ loadCopy: () => Promise.resolve(first) });
     await attachAndSend(videos, video("two.mp4", 2));
     videos.seek(7, attachmentFor(first));
-    await vi.waitFor(() => expect(els.video.miniPlayerTitle.textContent).toBe("one.mp4"));
-    expect(els.video.miniPlayer.hidden).toBe(false);
+    await vi.waitFor(() => expect(els.miniPlayer.title.textContent).toBe("one.mp4"));
+    expect(els.miniPlayer.el.hidden).toBe(false);
     expect(state.currentChat?.video?.name).toBe("two.mp4");
   });
 
@@ -724,7 +724,7 @@ describe("timestamps from an earlier video", () => {
     await videos.attach(video("two.mp4", 2));
     videos.seek(7, attachmentFor(video("one.mp4", 1)));
     await vi.waitFor(() => expect(spies.status.show).toHaveBeenCalledWith(MISSING));
-    expect(els.video.miniPlayer.hidden).toBe(true);
+    expect(els.miniPlayer.el.hidden).toBe(true);
   });
 });
 

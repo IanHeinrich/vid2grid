@@ -1,4 +1,5 @@
 import { isAbortError, untilAborted } from "../abort";
+import { blobToDataUrl } from "../dataUrl";
 import { errorText } from "../text";
 import type {
   ApiSettings,
@@ -24,7 +25,6 @@ import type {
   VideoTimeline,
 } from "../types";
 import { seenSpans, unseenCitations } from "./coverage";
-import { blobToDataUrl } from "./dataUrl";
 import {
   buildRequest,
   estimateRequestTokens,
@@ -46,7 +46,7 @@ const REASONING_LIMIT_SCALE: Record<Thoroughness, number> = {
   thorough: 2,
   exhaustive: 4,
 };
-export const LOOP_SENTENCE_MIN_CHARS = 25;
+const LOOP_SENTENCE_MIN_CHARS = 25;
 export const LOOP_SENTENCE_REPEATS = 4;
 // Repeats count only among recent sentences, so filler said now and then across a long trace is fine.
 export const LOOP_WINDOW_SENTENCES = 40;

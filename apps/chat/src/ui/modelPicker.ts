@@ -1,3 +1,4 @@
+import { part } from "../dom";
 import { saveSettings, type GlobalSettings } from "../settings";
 import { reportsPrivacy, setSettings, type AppState } from "../state";
 import type { ModelInfo } from "../types";
@@ -310,12 +311,6 @@ interface PickerContext {
   open: boolean;
   onOutside: (event: Event) => void;
   onReflow: () => void;
-}
-
-function part<T extends Element>(root: ParentNode, selector: string, type: new () => T): T {
-  const el = root.querySelector(selector);
-  if (!(el instanceof type)) throw new Error(`Missing model picker part: ${selector}`);
-  return el;
 }
 
 function mountParts(els: ModelPickerElements): PickerParts {

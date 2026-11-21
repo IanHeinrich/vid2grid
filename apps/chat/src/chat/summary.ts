@@ -1,10 +1,9 @@
-import { CLOCK_TIME, clockSeconds, formatTimestamp, sceneLogLines } from "../time";
+import { streamReply, textRequest, type ModelCallDeps } from "../api/modelCall";
+import { clamp } from "../spans";
+import { CLOCK_TIME, clockSeconds, formatTimestamp } from "../time";
 import type { Chat, ChatMessage, SceneNote, StorySoFar } from "../types";
 import { storyCut } from "./history";
-import { streamReply, textRequest, type ModelCallDeps } from "./modelCall";
-
-// The UI still imports ModelCallDeps from here.
-export type { ModelCallDeps } from "./modelCall";
+import { sceneLogLines } from "./prompts";
 
 const SUMMARIZE_ABOVE_SHARE = 0.6;
 const FALLBACK_CONTEXT_TOKENS = 32_768;
@@ -22,7 +21,7 @@ export const STORY_SYSTEM_PROMPT = [
   "Write plain prose, under 400 words, with no headings and no preamble.",
 ].join("\n");
 
-export const CONDENSE_SYSTEM_PROMPT = [
+const CONDENSE_SYSTEM_PROMPT = [
   "You tidy the scene log of a video: timestamped observations recorded while watching it.",
   "Merge notes that describe the same moment or event, drop duplicates, and keep every distinct fact.",
   "Output only lines of the form [m:ss] text, one note per line, in time order, with no other text.",
@@ -127,7 +126,7 @@ export function parseSceneNotes(reply: string, durationSeconds: number): SceneNo
     const text = match?.[4]?.trim();
     if (match === null || text === undefined || text === "") continue;
     const seconds = clockSeconds(match.slice(1, 4));
-    notes.push({ timeSeconds: Math.min(Math.max(0, seconds), durationSeconds), text });
+    notes.push({ timeSeconds: clamp(seconds, 0, durationSeconds), text });
   }
   return notes.sort((a, b) => a.timeSeconds - b.timeSeconds);
 }

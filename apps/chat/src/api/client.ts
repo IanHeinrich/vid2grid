@@ -7,9 +7,9 @@ import type {
   TokenUsage,
   ToolCall,
 } from "../types";
+import { errorText } from "../text";
 import { createSseParser } from "./sse";
-
-export const VENICE_BASE_URL = "https://api.venice.ai/api/v1";
+import { isVenice, normaliseBaseUrl } from "./venice";
 
 const DEFAULT_MAX_IMAGES = 10;
 const NO_API_MESSAGE = "Choose an API in Settings first.";
@@ -37,24 +37,12 @@ function asRecord(value: unknown): JsonRecord {
   return isRecord(value) ? value : {};
 }
 
-function normaliseBaseUrl(baseUrl: string): string {
-  return baseUrl.trim().replace(/\/+$/, "");
-}
-
 // Servers other than Venice list every model they host; these ids are never chat models.
 const NON_CHAT_ID =
   /(^|[-_/.:])(embed|tts|whisper|transcribe|rerank|moderation|dall-e|gpt-image|image-gen|stable-diffusion|sdxl|flux)/i;
 
 export function isChatModelId(id: string): boolean {
   return !NON_CHAT_ID.test(id);
-}
-
-export function isVenice(baseUrl: string): boolean {
-  try {
-    return new URL(baseUrl.trim()).hostname === "api.venice.ai";
-  } catch {
-    return false;
-  }
 }
 
 function requestHeaders(settings: ApiSettings, json: boolean): Record<string, string> {
@@ -251,7 +239,7 @@ export async function getBalance(
   } catch (error) {
     return {
       unavailable: "error",
-      message: error instanceof Error ? error.message : String(error),
+      message: errorText(error),
     };
   }
 }

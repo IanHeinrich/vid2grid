@@ -11,6 +11,7 @@ import {
 } from "@vid2grid/core";
 import { isAbortError } from "../abort";
 import type { GlobalSettings } from "../settings";
+import { clamp, mergeSpans } from "../spans";
 import { errorText } from "../text";
 import { formatTimestamp } from "../time";
 import type { AudioCoverage, AudioSpan, ChatStore, VideoAudio } from "../types";
@@ -141,7 +142,7 @@ function sameList(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((label, index) => label === b[index]);
 }
 
-export function hasCurrentLabels(audio: VideoAudio, labels: AudioLabels): boolean {
+function hasCurrentLabels(audio: VideoAudio, labels: AudioLabels): boolean {
   return (
     sameList(audio.labels, labels.labels) &&
     sameList(audio.backgroundLabels, labels.backgroundLabels)
@@ -149,7 +150,7 @@ export function hasCurrentLabels(audio: VideoAudio, labels: AudioLabels): boolea
 }
 
 // Sound events scored against other labels are dropped; speech does not depend on them.
-export function withLabels(audio: VideoAudio, labels: AudioLabels): VideoAudio {
+function withLabels(audio: VideoAudio, labels: AudioLabels): VideoAudio {
   if (hasCurrentLabels(audio, labels)) return audio;
   return {
     ...audio,
@@ -158,20 +159,6 @@ export function withLabels(audio: VideoAudio, labels: AudioLabels): VideoAudio {
     soundSpans: [],
     events: [],
   };
-}
-
-export function mergeSpans(spans: readonly AudioSpan[]): AudioSpan[] {
-  const sorted = [...spans].sort((a, b) => a.startSeconds - b.startSeconds);
-  const merged: AudioSpan[] = [];
-  for (const span of sorted) {
-    const last = merged[merged.length - 1];
-    if (last && span.startSeconds <= last.endSeconds + MIN_GAP_SECONDS) {
-      last.endSeconds = Math.max(last.endSeconds, span.endSeconds);
-    } else {
-      merged.push({ ...span });
-    }
-  }
-  return merged;
 }
 
 function overlapSeconds(span: AudioSpan, range: AudioSpan): number {
@@ -239,8 +226,12 @@ function withTrack(audio: VideoAudio, job: AudioJob, track: AudioTrack, now: num
   const events = [...audio.events.filter((event) => outside(event.startSeconds)), ...track.events];
   return {
     ...audio,
-    speechSpans: job.speech ? mergeSpans([...audio.speechSpans, span]) : audio.speechSpans,
-    soundSpans: job.sounds ? mergeSpans([...audio.soundSpans, span]) : audio.soundSpans,
+    speechSpans: job.speech
+      ? mergeSpans([...audio.speechSpans, span], MIN_GAP_SECONDS)
+      : audio.speechSpans,
+    soundSpans: job.sounds
+      ? mergeSpans([...audio.soundSpans, span], MIN_GAP_SECONDS)
+      : audio.soundSpans,
     speech: job.speech ? speech.sort((a, b) => a.start - b.start) : audio.speech,
     events: job.sounds ? events.sort((a, b) => a.startSeconds - b.startSeconds) : audio.events,
     updatedAt: now,
@@ -248,8 +239,8 @@ function withTrack(audio: VideoAudio, job: AudioJob, track: AudioTrack, now: num
 }
 
 function clampedRange(source: AudioSource, range: AudioSpan): AudioSpan {
-  const startSeconds = Math.min(Math.max(0, range.startSeconds), source.durationSeconds);
-  const endSeconds = Math.min(Math.max(startSeconds, range.endSeconds), source.durationSeconds);
+  const startSeconds = clamp(range.startSeconds, 0, source.durationSeconds);
+  const endSeconds = clamp(range.endSeconds, startSeconds, source.durationSeconds);
   return { startSeconds, endSeconds };
 }
 
@@ -348,10 +339,6 @@ export function timedAudioLines(
       line: lineOf({ speech: [], events: [event] }),
     }));
   return [...speech, ...events].sort((a, b) => a.startSeconds - b.startSeconds);
-}
-
-export function audioLines(audio: VideoAudio, range: AudioSpan, labels: AudioLabels): string[] {
-  return timedAudioLines(audio, range, labels).map((entry) => entry.line);
 }
 
 function spanText(spans: readonly AudioSpan[]): string {

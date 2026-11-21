@@ -1,5 +1,5 @@
 import { chatToMarkdown } from "../chat/exportChat";
-import type { AppElements, StatusLine } from "../dom";
+import type { AppElements } from "../dom";
 import {
   blankChat,
   currentPending,
@@ -15,6 +15,7 @@ import type { Chat, ChatMessage, ChatStore, Folder } from "../types";
 import { iconButton, inlineEdit } from "./buttons";
 import { downloadBlob, safeFilename } from "./download";
 import { icon } from "./icons";
+import type { StatusLine } from "./status";
 import type { Toast } from "./toast";
 
 const DAY_MS = 24 * 60 * 60 * 1000;

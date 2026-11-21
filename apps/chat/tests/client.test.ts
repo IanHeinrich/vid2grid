@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  ApiError,
-  VENICE_BASE_URL,
-  getBalance,
-  isChatModelId,
-  isVenice,
-  listModels,
-  streamChat,
-} from "../src/api/client";
+import { ApiError, getBalance, isChatModelId, listModels, streamChat } from "../src/api/client";
+import { VENICE_BASE_URL } from "../src/api/venice";
 import type { ApiSettings, ChatRequest, ModelInfo, StreamEvent } from "../src/types";
 
 const veniceSettings: ApiSettings = { baseUrl: VENICE_BASE_URL, apiKey: "secret" };
@@ -94,16 +87,6 @@ const veniceEntry = {
     },
   },
 };
-
-describe("isVenice", () => {
-  it("matches the Venice host only", () => {
-    expect(isVenice(VENICE_BASE_URL)).toBe(true);
-    expect(isVenice("https://api.venice.ai/api/v1/")).toBe(true);
-    expect(isVenice("http://localhost:11434/v1")).toBe(false);
-    expect(isVenice("https://example.com/api.venice.ai")).toBe(false);
-    expect(isVenice("not a url")).toBe(false);
-  });
-});
 
 describe("listModels reasoning", () => {
   it("keeps the model's default reasoning effort when it names one", async () => {

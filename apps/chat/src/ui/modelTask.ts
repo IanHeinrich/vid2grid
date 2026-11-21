@@ -1,5 +1,5 @@
-import { isVenice } from "../api/client";
-import type { ModelCallDeps } from "../chat/modelCall";
+import type { ModelCallDeps } from "../api/modelCall";
+import { isVenice } from "../api/venice";
 import type { AppState } from "../state";
 import { errorText } from "../text";
 import type { StreamChat } from "../types";

@@ -178,19 +178,22 @@ describe("parseLayout", () => {
   });
 });
 
-let els: AppElements["video"];
+let els: AppElements["miniPlayer"];
 let storage: Storage;
 let player: MiniPlayer | undefined;
 
 function start(overrides: Partial<MiniPlayerDeps> = {}): MiniPlayer {
-  player = initMiniPlayer(els, {
-    durationSeconds: () => 60,
-    frameTimes: () => undefined,
-    aspect: () => 16 / 9,
-    storage,
-    ...overrides,
-  });
-  els.miniPlayer.hidden = false;
+  player = initMiniPlayer(
+    { miniPlayer: els },
+    {
+      durationSeconds: () => 60,
+      frameTimes: () => undefined,
+      aspect: () => 16 / 9,
+      storage,
+      ...overrides,
+    },
+  );
+  els.el.hidden = false;
   return player;
 }
 
@@ -218,13 +221,13 @@ function saved(): unknown {
 }
 
 beforeEach(() => {
-  els = mountPage().video;
+  els = mountPage().miniPlayer;
   storage = window.localStorage;
   storage.clear();
-  vi.spyOn(els.miniPlayer, "getBoundingClientRect").mockImplementation(() =>
+  vi.spyOn(els.el, "getBoundingClientRect").mockImplementation(() =>
     DOMRect.fromRect({ x: RECT.left, y: RECT.top, width: RECT.width, height: RECT.height }),
   );
-  vi.spyOn(els.miniPlayerVideo, "getBoundingClientRect").mockImplementation(() =>
+  vi.spyOn(els.video, "getBoundingClientRect").mockImplementation(() =>
     DOMRect.fromRect({ width: RECT.width, height: RECT.width / (16 / 9) }),
   );
   vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
@@ -239,34 +242,34 @@ afterEach(() => {
 describe("moving", () => {
   it("drags by the header, stays inside the viewport and remembers where it went", () => {
     start();
-    pointer(els.miniPlayerBar, "pointerdown", 700, 510);
+    pointer(els.bar, "pointerdown", 700, 510);
     pointer(window, "pointermove", 500, 310);
-    expect(els.miniPlayer.classList.contains("is-placed")).toBe(true);
-    expect(els.miniPlayer.style.left).toBe("400px");
-    expect(els.miniPlayer.style.top).toBe("300px");
+    expect(els.el.classList.contains("is-placed")).toBe(true);
+    expect(els.el.style.left).toBe("400px");
+    expect(els.el.style.top).toBe("300px");
     pointer(window, "pointermove", -500, 310);
-    expect(els.miniPlayer.style.left).toBe("8px");
+    expect(els.el.style.left).toBe("8px");
     pointer(window, "pointerup", -500, 310);
     expect(saved()).toEqual({ docked: false, placement: { x: 8, y: 300, width: 320 } });
     pointer(window, "pointermove", 0, 0);
-    expect(els.miniPlayer.style.top).toBe("300px");
+    expect(els.el.style.top).toBe("300px");
   });
 
   it("does not start a drag from the header's buttons", () => {
     start();
-    pointer(els.miniPlayerDock, "pointerdown", 700, 510);
+    pointer(els.dock, "pointerdown", 700, 510);
     pointer(window, "pointermove", 500, 310);
-    expect(els.miniPlayer.classList.contains("is-placed")).toBe(false);
+    expect(els.el.classList.contains("is-placed")).toBe(false);
   });
 
   it("pulls a saved placement back on screen after the window shrinks", () => {
     const placement = { x: 900, y: 600, width: 320 };
     storage.setItem("vid2grid-chat-mini-player", JSON.stringify({ docked: false, placement }));
     start().layout();
-    expect(els.miniPlayer.style.left).toBe("696px");
+    expect(els.el.style.left).toBe("696px");
     vi.spyOn(window, "innerWidth", "get").mockReturnValue(700);
     window.dispatchEvent(new Event("resize"));
-    expect(els.miniPlayer.style.left).toBe("372px");
+    expect(els.el.style.left).toBe("372px");
     expect(saved()).toEqual({ docked: false, placement });
   });
 });
@@ -278,41 +281,41 @@ describe("docking", () => {
       JSON.stringify({ docked: false, placement: { x: 100, y: 100, width: 320 } }),
     );
     start().layout();
-    els.miniPlayerDock.click();
-    expect(els.miniPlayer.classList.contains("is-docked")).toBe(true);
-    expect(els.miniPlayer.classList.contains("is-placed")).toBe(false);
-    expect(els.miniPlayerDock.getAttribute("aria-pressed")).toBe("true");
-    expect(els.miniPlayerResize.hidden).toBe(true);
-    expect(els.miniPlayer.style.left).toBe("");
-    pointer(els.miniPlayerBar, "pointerdown", 10, 10);
+    els.dock.click();
+    expect(els.el.classList.contains("is-docked")).toBe(true);
+    expect(els.el.classList.contains("is-placed")).toBe(false);
+    expect(els.dock.getAttribute("aria-pressed")).toBe("true");
+    expect(els.resize.hidden).toBe(true);
+    expect(els.el.style.left).toBe("");
+    pointer(els.bar, "pointerdown", 10, 10);
     pointer(window, "pointermove", 300, 300);
-    expect(els.miniPlayer.style.left).toBe("");
+    expect(els.el.style.left).toBe("");
     player?.dispose();
     start();
-    expect(els.miniPlayer.classList.contains("is-docked")).toBe(true);
-    els.miniPlayerDock.click();
-    expect(els.miniPlayer.style.left).toBe("100px");
-    expect(els.miniPlayerResize.hidden).toBe(false);
+    expect(els.el.classList.contains("is-docked")).toBe(true);
+    els.dock.click();
+    expect(els.el.style.left).toBe("100px");
+    expect(els.resize.hidden).toBe(false);
   });
 });
 
 describe("resizing", () => {
   it("resizes from the corner handle by pointer, keeping the aspect", () => {
     start();
-    pointer(els.miniPlayerResize, "pointerdown", 600, 500);
+    pointer(els.resize, "pointerdown", 600, 500);
     pointer(window, "pointermove", 520, 500);
     pointer(window, "pointerup", 520, 500);
-    expect(els.miniPlayer.style.width).toBe("400px");
+    expect(els.el.style.width).toBe("400px");
     const chrome = 220 - 320 / (16 / 9);
     const height = chrome + 400 / (16 / 9);
-    expect(els.miniPlayer.style.left).toBe("520px");
-    expect(els.miniPlayer.style.top).toBe(`${Math.round(720 - height)}px`);
+    expect(els.el.style.left).toBe("520px");
+    expect(els.el.style.top).toBe(`${Math.round(720 - height)}px`);
   });
 
   it("resizes with the arrow keys on the handle", () => {
     start();
-    els.miniPlayerResize.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft" }));
-    expect(els.miniPlayer.style.width).toBe("344px");
+    els.resize.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft" }));
+    expect(els.el.style.width).toBe("344px");
     expect(saved()).toMatchObject({ placement: { width: 344 } });
   });
 });
@@ -320,23 +323,23 @@ describe("resizing", () => {
 describe("looping around a timestamp", () => {
   it("offers a loop around a clicked timestamp and loops it until turned off", () => {
     start();
-    const video = els.miniPlayerVideo;
-    expect(els.miniPlayerLoopAround.hidden).toBe(true);
+    const video = els.video;
+    expect(els.loopAround.hidden).toBe(true);
     video.currentTime = 30;
     player?.offerLoopAround(30);
-    expect(els.miniPlayerLoopAround.hidden).toBe(false);
-    expect(els.miniPlayerLoopAround.title).toBe("Loop 0:28.0 to 0:32.0 until turned off");
-    els.miniPlayerLoopAround.click();
-    expect(els.miniPlayerLoopAround.getAttribute("aria-pressed")).toBe("true");
-    expect(els.miniPlayerLoopRange.textContent).toBe("0:28.0 to 0:32.0");
-    expect(els.miniPlayerLoopTrack.hidden).toBe(false);
-    expect(els.miniPlayerLoopBand.style.left).toBe(`${(28 / 60) * 100}%`);
+    expect(els.loopAround.hidden).toBe(false);
+    expect(els.loopAround.title).toBe("Loop 0:28.0 to 0:32.0 until turned off");
+    els.loopAround.click();
+    expect(els.loopAround.getAttribute("aria-pressed")).toBe("true");
+    expect(els.loopRange.textContent).toBe("0:28.0 to 0:32.0");
+    expect(els.loopTrack.hidden).toBe(false);
+    expect(els.loopBand.style.left).toBe(`${(28 / 60) * 100}%`);
     video.currentTime = 32.2;
     video.dispatchEvent(new Event("timeupdate"));
     expect(video.currentTime).toBe(28);
-    els.miniPlayerLoopAround.click();
-    expect(els.miniPlayerLoopAround.getAttribute("aria-pressed")).toBe("false");
-    expect(els.miniPlayerLoopRange.hidden).toBe(true);
+    els.loopAround.click();
+    expect(els.loopAround.getAttribute("aria-pressed")).toBe("false");
+    expect(els.loopRange.hidden).toBe(true);
     video.currentTime = 40;
     video.dispatchEvent(new Event("timeupdate"));
     expect(video.currentTime).toBe(40);
@@ -345,35 +348,35 @@ describe("looping around a timestamp", () => {
   it("drops a loop around one moment when another timestamp is clicked", () => {
     start();
     player?.offerLoopAround(30);
-    els.miniPlayerLoopAround.click();
+    els.loopAround.click();
     player?.offerLoopAround(31);
-    expect(els.miniPlayerLoopRange.hidden).toBe(true);
-    expect(els.miniPlayerLoopAround.getAttribute("aria-pressed")).toBe("false");
+    expect(els.loopRange.hidden).toBe(true);
+    expect(els.loopAround.getAttribute("aria-pressed")).toBe("false");
   });
 
   it("forgets the loop on reset", () => {
     start();
     player?.offerLoopAround(30);
-    els.miniPlayerLoopAround.click();
+    els.loopAround.click();
     player?.reset();
-    expect(els.miniPlayerLoopAround.hidden).toBe(true);
-    expect(els.miniPlayerLoopRange.hidden).toBe(true);
+    expect(els.loopAround.hidden).toBe(true);
+    expect(els.loopRange.hidden).toBe(true);
   });
 });
 
 describe("loop in and out", () => {
   it("sets loop in and out at the current time and clears it", () => {
     start();
-    const video = els.miniPlayerVideo;
+    const video = els.video;
     video.currentTime = 10;
-    els.miniPlayerLoopIn.click();
+    els.loopIn.click();
     video.currentTime = 14;
-    els.miniPlayerLoopOut.click();
-    expect(els.miniPlayerLoopRange.textContent).toBe("0:10.0 to 0:14.0");
+    els.loopOut.click();
+    expect(els.loopRange.textContent).toBe("0:10.0 to 0:14.0");
     expect(video.currentTime).toBe(10);
-    els.miniPlayerLoopClear.click();
-    expect(els.miniPlayerLoopRange.hidden).toBe(true);
-    expect(els.miniPlayerLoopClear.hidden).toBe(true);
+    els.loopClear.click();
+    expect(els.loopRange.hidden).toBe(true);
+    expect(els.loopClear.hidden).toBe(true);
   });
 
   it("restarts the loop when it runs to the end of the video", () => {
@@ -381,9 +384,9 @@ describe("loop in and out", () => {
       .spyOn(HTMLMediaElement.prototype, "play")
       .mockImplementation(() => Promise.resolve());
     start();
-    const video = els.miniPlayerVideo;
+    const video = els.video;
     video.currentTime = 50;
-    els.miniPlayerLoopIn.click();
+    els.loopIn.click();
     video.currentTime = 60;
     video.dispatchEvent(new Event("ended"));
     expect(video.currentTime).toBe(50);
@@ -395,35 +398,35 @@ describe("frame stepping and speed", () => {
   it("steps between the video's own frames with the buttons", () => {
     const pause = vi.spyOn(HTMLMediaElement.prototype, "pause");
     start({ frameTimes: () => [0, 0.1, 0.5, 0.6] });
-    els.miniPlayerVideo.currentTime = 0.05;
-    els.miniPlayerStepForward.click();
-    expect(els.miniPlayerVideo.currentTime).toBeCloseTo(0.3);
-    els.miniPlayerStepBack.click();
-    expect(els.miniPlayerVideo.currentTime).toBeCloseTo(0.05);
+    els.video.currentTime = 0.05;
+    els.stepForward.click();
+    expect(els.video.currentTime).toBeCloseTo(0.3);
+    els.stepBack.click();
+    expect(els.video.currentTime).toBeCloseTo(0.05);
     expect(pause).toHaveBeenCalled();
   });
 
   it("steps by the frame measured during playback when there are no frame times", () => {
     start();
-    const video = els.miniPlayerVideo;
+    const video = els.video;
     presentFrames(video, [0, 0.04, 0.08, 0.12]);
     video.currentTime = 1;
-    els.miniPlayerStepForward.click();
+    els.stepForward.click();
     expect(video.currentTime).toBeCloseTo(1.06);
     video.dispatchEvent(new Event("loadstart"));
-    els.miniPlayerStepBack.click();
+    els.stepBack.click();
     expect(video.currentTime).toBeCloseTo(30.5 / 30);
   });
 
   it("steps with , and . while hovered or focused, but not while typing elsewhere", () => {
     start();
-    const video = els.miniPlayerVideo;
+    const video = els.video;
     const press = (target: EventTarget, key: string, init: KeyboardEventInit = {}) =>
       target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, ...init }));
     video.currentTime = 1;
     press(document.body, ".");
     expect(video.currentTime).toBe(1);
-    els.miniPlayer.dispatchEvent(new Event("pointerenter"));
+    els.el.dispatchEvent(new Event("pointerenter"));
     press(document.body, ".");
     expect(video.currentTime).toBeCloseTo(31.5 / 30);
     const textarea = document.createElement("textarea");
@@ -432,16 +435,16 @@ describe("frame stepping and speed", () => {
     expect(video.currentTime).toBeCloseTo(31.5 / 30);
     press(document.body, ",", { ctrlKey: true });
     expect(video.currentTime).toBeCloseTo(31.5 / 30);
-    els.miniPlayer.dispatchEvent(new Event("pointerleave"));
-    press(els.miniPlayerStepBack, ",");
+    els.el.dispatchEvent(new Event("pointerleave"));
+    press(els.stepBack, ",");
     expect(video.currentTime).toBeCloseTo(30.5 / 30);
   });
 
   it("changes the playback speed, the default rate included", () => {
     start();
-    els.miniPlayerSpeed.value = "0.25";
-    els.miniPlayerSpeed.dispatchEvent(new Event("change"));
-    expect(els.miniPlayerVideo.playbackRate).toBe(0.25);
-    expect(els.miniPlayerVideo.defaultPlaybackRate).toBe(0.25);
+    els.speed.value = "0.25";
+    els.speed.dispatchEvent(new Event("change"));
+    expect(els.video.playbackRate).toBe(0.25);
+    expect(els.video.defaultPlaybackRate).toBe(0.25);
   });
 });

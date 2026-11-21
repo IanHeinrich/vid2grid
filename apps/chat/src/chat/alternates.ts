@@ -1,3 +1,4 @@
+import { clamp } from "../spans";
 import type {
   AlternateReply,
   AssistantMessage,
@@ -30,7 +31,7 @@ export function replyCount(user: UserMessage): number {
 
 export function currentReplyIndex(user: UserMessage): number {
   const last = user.alternates?.length ?? 0;
-  return Math.min(Math.max(0, user.replyIndex ?? last), last);
+  return clamp(user.replyIndex ?? last, 0, last);
 }
 
 function findUser(

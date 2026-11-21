@@ -1,5 +1,3 @@
-import type { SceneNote } from "./types";
-
 export function formatTimestamp(seconds: number, tenths = false): string {
   // Whole tenths first: 1.2 - 1 is 0.19999999999999996, which would floor to the tenth below.
   const tenthsTotal = Math.floor(Math.max(0, seconds) * 10 + 1e-6);
@@ -142,10 +140,4 @@ export function parseTimestamp(text: string): number | undefined {
   const match = TIME_INPUT.exec(trimmed);
   if (match === null) return undefined;
   return clockSeconds(match.slice(1));
-}
-
-export function sceneLogLines(notes: readonly SceneNote[]): string[] {
-  return [...notes]
-    .sort((a, b) => a.timeSeconds - b.timeSeconds)
-    .map((note) => `[${formatTimestamp(note.timeSeconds)}] ${note.text}`);
 }

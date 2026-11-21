@@ -10,6 +10,7 @@ import {
   type TimedAudioLine,
 } from "../audio/videoAudio";
 import { imageLabel, recallName } from "../chat/history";
+import { clamp } from "../spans";
 import { errorText, plural } from "../text";
 import { formatSpan, formatTimestamp } from "../time";
 import type {
@@ -25,7 +26,7 @@ import type {
   VideoAudio,
 } from "../types";
 import { overviewOptions } from "./overview";
-import { MAX_FRAMES_PER_SHEET, choosePerSheet, clamp, type SheetGeometry } from "./packing";
+import { MAX_FRAMES_PER_SHEET, choosePerSheet, type SheetGeometry } from "./packing";
 import { renderSheets, type RenderedSheet } from "./render";
 import { sheetCacheKey } from "./sheetCache";
 
@@ -38,7 +39,7 @@ const SAME_MOMENT_SECONDS = 0.05;
 const KEYFRAME_RANGE_PADDING_SECONDS = 0.01;
 // Above 1 fps the burned-in timestamps show milliseconds, so 1:45.5 is not printed as 1:45.
 const SUBSECOND_TIMESTAMP_FPS = 2;
-export const MAX_LISTEN_SECONDS = 600;
+const MAX_LISTEN_SECONDS = 600;
 export const MAX_LISTEN_LINES = 150;
 
 export const TOOL_SCHEMAS: ToolSchema[] = [

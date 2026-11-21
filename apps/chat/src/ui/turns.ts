@@ -1,6 +1,6 @@
 import { modelVisionProfile } from "@vid2grid/core";
 import { untilAborted } from "../abort";
-import { isVenice } from "../api/client";
+import { isVenice } from "../api/venice";
 import { turnAudio, type AudioStatus, type TurnAudio } from "../audio/turnAudio";
 import {
   runTurn,
@@ -13,7 +13,6 @@ import { archiveCurrentReply, compareWithModel } from "../chat/alternates";
 import { imagesOf } from "../chat/history";
 import { shouldSummarize, summarizeStory } from "../chat/summary";
 import { messageThoroughness, roundsFor } from "../chat/thoroughness";
-import type { StatusLine } from "../dom";
 import {
   currentModel,
   isRunningIn,
@@ -51,6 +50,7 @@ import {
 } from "../video/tools";
 import type { Conversation } from "./conversation";
 import { modelCallDeps } from "./modelTask";
+import type { StatusLine } from "./status";
 import type { Toast } from "./toast";
 import { estimateTokens } from "./tokenMeter";
 import { toolContext } from "./videoPanel";

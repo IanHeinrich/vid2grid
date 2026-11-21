@@ -1,8 +1,9 @@
 import "./styles/index.css";
-import { getBalance, isVenice, listModels, streamChat } from "./api/client";
+import { getBalance, listModels, streamChat } from "./api/client";
+import { isVenice } from "./api/venice";
 import { classifyFile } from "./attachments/images";
 import { openChatStore } from "./chat/store";
-import { initStatus, queryElements, type AppElements, type StatusLine } from "./dom";
+import { queryElements, type AppElements } from "./dom";
 import { latestCalls } from "./latest";
 import { loadSettings, type GlobalSettings } from "./settings";
 import {
@@ -52,6 +53,7 @@ import { storedPickerSettings } from "./ui/modelPicker";
 import { initSceneLog, type SceneLogPanel } from "./ui/sceneLog";
 import { initStudy, type Study, type StudyDeps } from "./ui/study/studyPanel";
 import { initShortcuts } from "./ui/shortcuts";
+import { initStatus, type StatusLine } from "./ui/status";
 import { initToast, type Toast } from "./ui/toast";
 import { initTurns, type Turns, type TurnsDeps } from "./ui/turns";
 import { initVideoCopies, type VideoCopies } from "./ui/videoCopies";

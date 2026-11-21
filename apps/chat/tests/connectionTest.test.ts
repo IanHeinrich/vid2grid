@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, VENICE_BASE_URL } from "../src/api/client";
+import { ApiError } from "../src/api/client";
+import { VENICE_BASE_URL } from "../src/api/venice";
 import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { createAppState, setSettings, type AppState } from "../src/state";
