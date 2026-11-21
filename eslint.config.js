@@ -54,6 +54,12 @@ export default tseslint.config(
     },
   },
   {
+    files: ["**/tests/**/*.ts"],
+    rules: {
+      "max-lines-per-function": "off",
+    },
+  },
+  {
     files: ["packages/core/src/**/*.ts", "packages/core/tests/**/*.ts"],
     rules: {
       "no-restricted-imports": [
@@ -79,6 +85,60 @@ export default tseslint.config(
           name,
           message: "core must not touch browser globals; go through a port.",
         })),
+      ],
+    },
+  },
+  {
+    files: ["apps/chat/src/api/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/chat/**", "**/video/**", "**/audio/**", "**/app/**", "**/ui/**"],
+              message: "api is the provider layer; it imports only utilities.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: [
+      "apps/chat/src/chat/**/*.ts",
+      "apps/chat/src/video/**/*.ts",
+      "apps/chat/src/audio/**/*.ts",
+    ],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/app/**", "**/ui/**"],
+              message: "chat, video and audio are domain layers; app and ui depend on them.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["apps/chat/src/app/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/ui/**"],
+              // Use cases take UI components as typed dependencies; only runtime imports are banned.
+              allowTypeImports: true,
+              message: "app may describe ui components by type but not import ui code.",
+            },
+          ],
+        },
       ],
     },
   },

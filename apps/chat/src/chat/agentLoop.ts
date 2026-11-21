@@ -1,4 +1,5 @@
-import { isAbortError, untilAborted } from "../abort";
+import { isAbortError } from "../abort";
+import { blobToDataUrl } from "../dataUrl";
 import { errorText } from "../text";
 import type {
   ApiSettings,
@@ -12,51 +13,33 @@ import type {
   RunTool,
   SceneNote,
   StreamChat,
-  StreamEvent,
   Thoroughness,
-  TokenUsage,
   ToolCall,
   ToolMessage,
-  ToolResult,
   ToolSchema,
   TurnReceipt,
   VideoCast,
   VideoTimeline,
 } from "../types";
 import { seenSpans, unseenCitations } from "./coverage";
-import { blobToDataUrl } from "./dataUrl";
-import {
-  buildRequest,
-  estimateRequestTokens,
-  keptImages,
-  pinsExceedCap,
-  requestImageCount,
-  sheetSidesByUrl,
-} from "./history";
+import { pinsExceedCap } from "./imageSelection";
+import { buildRequest } from "./request";
+import { keptImages } from "./story";
+import { streamAssistant, type StreamEnding, type Streamed } from "./streamRound";
 import { roundsFor } from "./thoroughness";
+import { estimateRequestTokens, sheetSidesByUrl } from "./tokenEstimate";
+import { answerToolCalls } from "./toolCalls";
+import { stripToolMarkup } from "./toolMarkup";
 
 export { DEEP_MAX_ROUNDS, DEFAULT_MAX_ROUNDS } from "./thoroughness";
-
-const NO_VIDEO = "No video is attached.";
-
-// Generous for honest deliberation: a normal reply still thinking past this with no answer is stuck.
-export const REASONING_LIMIT_CHARS = 24_000;
-const REASONING_LIMIT_SCALE: Record<Thoroughness, number> = {
-  normal: 1,
-  thorough: 2,
-  exhaustive: 4,
-};
-export const LOOP_SENTENCE_MIN_CHARS = 25;
-export const LOOP_SENTENCE_REPEATS = 4;
-// Repeats count only among recent sentences, so filler said now and then across a long trace is fine.
-export const LOOP_WINDOW_SENTENCES = 40;
-// Far longer than any sentence worth matching; past it the unfinished sentence stops growing.
-const MAX_PENDING_CHARS = 2_000;
-const SENTENCE_END = /[.!?\n]+/;
-
-export function reasoningLimit(tier: Thoroughness): number {
-  return REASONING_LIMIT_CHARS * REASONING_LIMIT_SCALE[tier];
-}
+export {
+  LOOP_SENTENCE_REPEATS,
+  LOOP_WINDOW_SENTENCES,
+  REASONING_LIMIT_CHARS,
+  reasoningLimit,
+  reasoningLoopWatch,
+} from "./reasoningWatch";
+export { stripToolMarkup } from "./toolMarkup";
 
 export interface TurnDeps {
   chat: Chat;
@@ -107,7 +90,7 @@ export interface TurnOutcome {
   answeredNow?: AnswerNowReason;
 }
 
-interface Turn {
+export interface Turn {
   deps: TurnDeps;
   // As it was when the turn began: a note recorded mid-turn waits for the next turn's context,
   // so every round shares one context block and the prompt cache holds.
@@ -119,65 +102,20 @@ interface Turn {
   newId: () => string;
   startedAt: number;
   imagesSent: number;
-}
-
-type StreamEnding =
-  | { kind: "complete" }
-  | { kind: "aborted" }
-  | { kind: "failed"; error: unknown }
-  | { kind: "cut"; reason: AnswerNowReason };
-
-interface Streamed {
-  message: AssistantMessage;
-  ending: StreamEnding;
+  // Stored images never change, so each kept one is read and encoded once a turn, not every round.
+  dataUrls: Map<string, string>;
 }
 
 interface RoundResult extends Streamed {
   answeredNow?: AnswerNowReason;
 }
 
-interface PreparedRequest {
+export interface PreparedRequest {
   request: ChatRequest;
   estimatedTokens: number;
 }
 
 const STOPPED: TurnOutcome = { status: "stopped" };
-const THINK_END = "</think>";
-
-// DeepSeek's special tokens use a fullwidth bar, and a lower one-eighth block in place of spaces.
-const BAR = "[\\uFF5C|]";
-const SEP = "[\\u2581_ ]";
-const DSML_OPEN = `<\\s*${BAR}\\s*DSML\\s*${BAR}\\s*`;
-const DSML_CLOSE = `<\\s*(?:\\/\\s*${BAR}|${BAR}\\s*\\/)\\s*DSML\\s*${BAR}\\s*`;
-const DSML_ANY = `<\\s*\\/?\\s*${BAR}\\s*\\/?\\s*DSML\\s*${BAR}`;
-const UNTIL_CLOSED_OR_END = (close: string) => `[\\s\\S]*?(?:${close}|$)`;
-
-// Models fall back to their native tool syntax as text, mostly when told to stop calling tools.
-// Whole blocks go first, so the stray-tag patterns do not leave a block's arguments behind.
-const LEAKED_TOOL_MARKUP = [
-  new RegExp(
-    `${DSML_OPEN}(\\w*calls|invoke)\\b[^>]*>${UNTIL_CLOSED_OR_END(`${DSML_CLOSE}\\1\\s*>`)}`,
-    "gi",
-  ),
-  new RegExp(
-    `<${BAR}\\s*tool${SEP}calls${SEP}begin\\s*${BAR}>${UNTIL_CLOSED_OR_END(`<${BAR}\\s*tool${SEP}calls${SEP}end\\s*${BAR}>`)}`,
-    "gi",
-  ),
-  /<(tool_calls?|function_calls)>[\s\S]*?(?:<\/\1>|$)/gi,
-  /<\|\s*(tool\w*?)(?:_begin)?\s*\|>[\s\S]*?<\|\s*(?:\/\s*\1|\1_end)\s*\|>/gi,
-  new RegExp(`${DSML_ANY}[^>]*>`, "gi"),
-  new RegExp(`<${BAR}\\s*tool${SEP}[^>]*?${BAR}>`, "gi"),
-  /<\|\s*\/?\s*tool\w*\s*\|>/gi,
-];
-
-export function stripToolMarkup(text: string): { text: string; stripped: boolean } {
-  const cleaned = LEAKED_TOOL_MARKUP.reduce(
-    (current, pattern) => current.replace(pattern, ""),
-    text,
-  );
-  if (cleaned === text) return { text, stripped: false };
-  return { text: cleaned.replace(/\n{3,}/g, "\n\n").trim(), stripped: true };
-}
 
 export async function runTurn(deps: TurnDeps): Promise<TurnOutcome> {
   const { model } = deps;
@@ -200,6 +138,7 @@ export async function runTurn(deps: TurnDeps): Promise<TurnOutcome> {
     newId: deps.newId ?? (() => crypto.randomUUID()),
     startedAt: now(),
     imagesSent: 0,
+    dataUrls: new Map(),
   };
   try {
     for (let round = 0; round < maxRounds; round++) {
@@ -318,7 +257,7 @@ async function prepareRequest(
   const { deps, messages } = turn;
   const kept = keptImages(turn.chat, messages, deps.model.maxImages);
   const dataUrls = deps.model.vision
-    ? await loadDataUrls(deps.store, kept)
+    ? await loadDataUrls(deps.store, kept, turn.dataUrls)
     : new Map<string, string>();
   const request = buildRequest({
     chat: turn.chat,
@@ -345,276 +284,17 @@ async function prepareRequest(
 async function loadDataUrls(
   store: ImageStore,
   ids: ReadonlySet<string>,
-): Promise<Map<string, string>> {
+  loaded: Map<string, string>,
+): Promise<ReadonlyMap<string, string>> {
+  for (const id of loaded.keys()) if (!ids.has(id)) loaded.delete(id);
   const entries = await Promise.all(
-    [...ids].map(async (id): Promise<[string, string] | undefined> => {
-      const blob = await store.getImage(id);
-      return blob === undefined ? undefined : [id, await blobToDataUrl(blob)];
-    }),
+    [...ids]
+      .filter((id) => !loaded.has(id))
+      .map(async (id): Promise<[string, string] | undefined> => {
+        const blob = await store.getImage(id);
+        return blob === undefined ? undefined : [id, await blobToDataUrl(blob)];
+      }),
   );
-  return new Map(entries.filter((entry) => entry !== undefined));
-}
-
-// Qwen3 and DeepSeek-R1 templates on local servers pre-fill <think>, so only the closing tag streams.
-function splitThink(text: string, reasoning: string): Pick<AssistantMessage, "text" | "reasoning"> {
-  if (reasoning.length > 0) return { text, reasoning };
-  const end = text.indexOf(THINK_END);
-  if (end < 0) return { text };
-  const thought = text.slice(0, end).replace(/^\s*<think>/, "");
-  return { reasoning: thought.trim(), text: text.slice(end + THINK_END.length).trimStart() };
-}
-
-function normaliseSentence(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
-}
-
-function recentSentences(): (sentence: string) => number {
-  const window: string[] = [];
-  const counts = new Map<string, number>();
-  return (sentence) => {
-    window.push(sentence);
-    counts.set(sentence, (counts.get(sentence) ?? 0) + 1);
-    const dropped = window.length > LOOP_WINDOW_SENTENCES ? window.shift() : undefined;
-    if (dropped !== undefined) counts.set(dropped, (counts.get(dropped) ?? 1) - 1);
-    return counts.get(sentence) ?? 0;
-  };
-}
-
-// Fed reasoning as it streams; true once a sentence keeps coming back or the reasoning runs too long.
-// Only the new delta is split, so a long stream costs time in proportion to its length.
-export function reasoningLoopWatch(limitChars: number): (delta: string) => boolean {
-  const remember = recentSentences();
-  let length = 0;
-  let pending = "";
-  return (delta) => {
-    length += delta.length;
-    if (length > limitChars) return true;
-    const pieces = delta.split(SENTENCE_END);
-    const last = pieces.pop() ?? "";
-    if (pieces.length === 0) {
-      pending = (pending + last).slice(0, MAX_PENDING_CHARS);
-      return false;
-    }
-    const finished = [pending + (pieces[0] ?? ""), ...pieces.slice(1)];
-    pending = last.slice(0, MAX_PENDING_CHARS);
-    return finished.some((piece) => {
-      const sentence = normaliseSentence(piece);
-      if (sentence.length < LOOP_SENTENCE_MIN_CHARS) return false;
-      return remember(sentence) >= LOOP_SENTENCE_REPEATS;
-    });
-  };
-}
-
-interface StreamCutter {
-  signal: AbortSignal;
-  reason(): AnswerNowReason | undefined;
-  cut(reason: AnswerNowReason): void;
-  dispose(): void;
-}
-
-// Its own signal, so a cut ends only this stream while a stop still ends it too.
-function streamCutter(deps: TurnDeps, watch: boolean): StreamCutter {
-  const controller = new AbortController();
-  let reason: AnswerNowReason | undefined;
-  const cut = (why: AnswerNowReason) => {
-    reason ??= why;
-    controller.abort();
-  };
-  const stop = () => controller.abort();
-  const answerNowAsked = () => cut("user");
-  const answerNow = watch ? deps.answerNow : undefined;
-  deps.signal.addEventListener("abort", stop);
-  answerNow?.addEventListener("abort", answerNowAsked);
-  if (deps.signal.aborted) stop();
-  else if (answerNow?.aborted) answerNowAsked();
-  return {
-    signal: controller.signal,
-    reason: () => reason,
-    cut,
-    dispose: () => {
-      deps.signal.removeEventListener("abort", stop);
-      answerNow?.removeEventListener("abort", answerNowAsked);
-    },
-  };
-}
-
-function joinReasoning(earlier: string, latest: string | undefined): string {
-  return [earlier, latest ?? ""].filter((part) => part !== "").join("\n\n");
-}
-
-interface StreamOptions {
-  // Watch for a reasoning loop and for Answer now; off for the answer-now retry itself.
-  watch: boolean;
-  // The stream this one retries: its id and reasoning carry over, marked as cut short.
-  cut?: AssistantMessage;
-}
-
-interface StreamedParts {
-  text: string;
-  reasoning: string;
-  toolCalls: ToolCall[];
-  usage?: TokenUsage;
-}
-
-// True when the event changed what the message shows.
-function applyEvent(parts: StreamedParts, event: StreamEvent): boolean {
-  switch (event.type) {
-    case "text":
-      parts.text += event.delta;
-      return true;
-    case "reasoning":
-      parts.reasoning += event.delta;
-      return true;
-    case "toolCalls":
-      parts.toolCalls = [...parts.toolCalls, ...event.calls];
-      return false;
-    case "usage":
-      parts.usage = event.usage;
-      return true;
-    case "done":
-      return false;
-  }
-}
-
-function streamedMessage(
-  base: Pick<AssistantMessage, "id" | "createdAt" | "role">,
-  parts: StreamedParts,
-  cut: AssistantMessage | undefined,
-): AssistantMessage {
-  const split = splitThink(parts.text, parts.reasoning);
-  const thought = joinReasoning(cut?.reasoning ?? "", split.reasoning);
-  return {
-    ...base,
-    text: split.text,
-    ...(thought !== "" || split.reasoning !== undefined ? { reasoning: thought } : {}),
-    toolCalls: parts.toolCalls,
-    ...(parts.usage ? { usage: parts.usage } : {}),
-    ...(cut ? { reasoningCutShort: true as const } : {}),
-  };
-}
-
-async function streamAssistant(
-  turn: Turn,
-  { request, estimatedTokens }: PreparedRequest,
-  round: number,
-  { watch, cut }: StreamOptions,
-): Promise<Streamed> {
-  const { deps } = turn;
-  turn.imagesSent += requestImageCount(request);
-  const base = cut
-    ? { id: cut.id, createdAt: cut.createdAt, role: "assistant" as const }
-    : { id: turn.newId(), createdAt: turn.now(), role: "assistant" as const };
-  const parts: StreamedParts = { text: "", reasoning: "", toolCalls: [] };
-  const current = () => streamedMessage(base, parts, cut);
-  const looping = reasoningLoopWatch(reasoningLimit(turn.thoroughness));
-  const cutter = streamCutter(deps, watch);
-  deps.onEvent({ type: "assistantStart", message: current() });
-  deps.onEvent({
-    type: "requestStart",
-    round: round + 1,
-    images: requestImageCount(request),
-    estimatedTokens,
-  });
-  try {
-    if (!cutter.signal.aborted) {
-      for await (const event of deps.streamChat(deps.api, request, cutter.signal)) {
-        const changed = applyEvent(parts, event);
-        const answering = parts.text !== "" || parts.toolCalls.length > 0;
-        if (watch && event.type === "reasoning" && !answering && looping(event.delta)) {
-          cutter.cut("loop");
-        }
-        if (changed) deps.onEvent({ type: "assistantDelta", message: current() });
-        if (cutter.signal.aborted) break;
-      }
-    }
-  } catch (error) {
-    return { message: current(), ending: failedEnding(deps, cutter, error) };
-  } finally {
-    cutter.dispose();
-  }
-  return { message: current(), ending: settledEnding(deps, cutter) };
-}
-
-function settledEnding(deps: TurnDeps, cutter: StreamCutter): StreamEnding {
-  if (deps.signal.aborted) return { kind: "aborted" };
-  const reason = cutter.reason();
-  return reason ? { kind: "cut", reason } : { kind: "complete" };
-}
-
-function failedEnding(deps: TurnDeps, cutter: StreamCutter, error: unknown): StreamEnding {
-  if (!deps.signal.aborted && !isAbortError(error)) return { kind: "failed", error };
-  const ending = settledEnding(deps, cutter);
-  return ending.kind === "cut" ? ending : { kind: "aborted" };
-}
-
-function roundSuffix(round: number, maxRounds: number): string {
-  return ` (Round ${round + 1} of ${maxRounds}. Batch several calls into one round when you can.)`;
-}
-
-function runCall({ deps }: Turn, call: ToolCall): Promise<ToolResult> {
-  deps.onEvent({ type: "toolStart", call });
-  return deps.runTool ? deps.runTool(call) : Promise.resolve({ text: NO_VIDEO, images: [] });
-}
-
-interface StartedCall {
-  call: ToolCall;
-  // Undefined when a stop came before the call's turn to run.
-  result: Promise<ToolResult | undefined>;
-}
-
-function halted({ deps }: Turn): boolean {
-  return deps.signal.aborted || deps.answerNow?.aborted === true;
-}
-
-// listen reads audio rather than rendering frames, so it starts at once; renders run one at a time.
-function startCalls(turn: Turn, calls: readonly ToolCall[]): StartedCall[] {
-  const listening = calls.map((call) => (call.name === "listen" ? runCall(turn, call) : undefined));
-  let previous: Promise<ToolResult | undefined> = Promise.resolve(undefined);
-  return calls.map((call, index) => {
-    const started = listening[index];
-    if (started) return { call, result: started };
-    previous = previous.then(() => (halted(turn) ? undefined : runCall(turn, call)));
-    return { call, result: previous };
-  });
-}
-
-// Answer now drops whatever is still running, as a stop does, rather than waiting on a render.
-function unlessAnsweringNow(
-  { deps }: Turn,
-  pending: Promise<ToolResult | undefined>,
-): Promise<ToolResult | undefined> {
-  if (!deps.answerNow) return pending;
-  return Promise.race([pending, untilAborted(deps.answerNow).then(() => undefined)]);
-}
-
-async function answerToolCalls(
-  turn: Turn,
-  calls: readonly ToolCall[],
-  round: number,
-): Promise<boolean> {
-  const { deps } = turn;
-  const started = startCalls(turn, calls);
-  // Results are awaited in order, so one failing after a stop or an earlier failure is never awaited.
-  for (const { result } of started) result.catch(() => undefined);
-  for (const { call, result: pending } of started) {
-    const result = await unlessAnsweringNow(turn, pending);
-    // A render cannot be cancelled once started, so a stop only discards its result.
-    if (result === undefined || halted(turn)) return false;
-    const message: ToolMessage = {
-      id: turn.newId(),
-      createdAt: turn.now(),
-      role: "tool",
-      toolCallId: call.id,
-      text: result.text + roundSuffix(round, turn.maxRounds),
-      images: result.images,
-    };
-    turn.messages.push(message);
-    await deps.persist(message);
-    deps.onEvent({ type: "toolDone", message });
-    if (result.note) deps.onEvent({ type: "note", note: result.note });
-  }
-  return true;
+  for (const entry of entries) if (entry !== undefined) loaded.set(...entry);
+  return loaded;
 }

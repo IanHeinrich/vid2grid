@@ -1,0 +1,223 @@
+/* Status and composer */
+
+.status {
+  margin: 0 auto;
+  width: 100%;
+  max-width: 860px;
+  padding: 0 1.25rem;
+  min-height: 1.2rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.status.is-error {
+  color: var(--danger);
+}
+
+.composer {
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 0.4rem 1.25rem 1rem;
+}
+
+.pending-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.pending-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-raised);
+  font-size: 0.875rem;
+}
+
+.pending-thumb {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.pending-progress {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.pending-label {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pending-detail {
+  max-width: 280px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.pending-remove {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.pending-remove:hover {
+  color: var(--danger);
+}
+
+.composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  padding: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.composer-row:focus-within {
+  border-color: var(--accent);
+}
+
+.message-input {
+  flex: 1;
+  min-height: 2.5rem;
+  max-height: 240px;
+  padding: 0.45rem 0.25rem;
+  border: none;
+  outline: none;
+  background: transparent;
+  resize: none;
+}
+
+.deep-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+  height: 2.5rem;
+  padding: 0 0.6rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.deep-toggle:hover:not(:disabled) {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.deep-toggle:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.deep-toggle.is-on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+
+.composer-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.composer-menu-list {
+  position: absolute;
+  bottom: calc(100% + 0.5rem);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 16rem;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: var(--panel-shadow);
+}
+
+.composer-menu-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.4rem 0.6rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.composer-menu-item:hover,
+.composer-menu-item:focus-visible {
+  background: var(--bg-raised);
+}
+
+.composer-menu-item[aria-checked="true"] .composer-menu-name {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.composer-menu-hint {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.answer-now-button {
+  flex-shrink: 0;
+  height: 2.5rem;
+}
+
+.send-button {
+  flex-shrink: 0;
+  height: 2.5rem;
+}
+
+.send-button.is-stop {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.composer-hint {
+  margin: 0.4rem 0 0;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.drop-overlay {
+  position: absolute;
+  inset: 0.5rem;
+  display: none;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  color: var(--accent);
+  font-size: 1.2rem;
+  pointer-events: none;
+}
+
+.main.is-dragover .drop-overlay {
+  display: grid;
+}

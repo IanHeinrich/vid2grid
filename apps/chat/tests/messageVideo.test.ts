@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChatMessage, UserMessage, VideoAttachment } from "../src/types";
-import { olderVideos, videoForMessage } from "../src/ui/messageVideo";
+import { olderVideos, videoForMessage } from "../src/ui/conversation/messageVideo";
 
 function attachment(name: string): VideoAttachment {
   return { name, fileKey: `${name}-key`, durationSeconds: 60, width: 640, height: 360 };

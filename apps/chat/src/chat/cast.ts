@@ -1,6 +1,8 @@
-import { CLOCK_TIME, clockSeconds, formatTimestamp, sceneLogLines } from "../time";
+import { streamReply, textRequest, type ModelCallDeps } from "../api/modelCall";
+import { clamp } from "../spans";
+import { CLOCK_TIME, clockSeconds, formatTimestamp } from "../time";
 import type { CastCard, ContentPart, SceneNote } from "../types";
-import { streamReply, textRequest, type ModelCallDeps } from "./modelCall";
+import { sceneLogLines } from "./prompts";
 
 export const CAST_SYSTEM_PROMPT = [
   "You list the people or characters in a video from contact sheets of its frames and a log of what happens.",
@@ -35,7 +37,7 @@ export async function suggestCast(deps: CastDeps, input: CastInput): Promise<Cas
     { role: "user", content },
   ]);
   const reply = await streamReply(deps, request);
-  return parseCast(reply, input.durationSeconds, deps.newId ?? (() => crypto.randomUUID()));
+  return parseCast(reply.text, input.durationSeconds, deps.newId ?? (() => crypto.randomUUID()));
 }
 
 const BULLET = /^\s*(?:[-*•]|\d+[.)])\s*/;
@@ -48,7 +50,7 @@ function cleanName(text: string): string {
 function seenSeconds(text: string | undefined, durationSeconds: number): number | undefined {
   const match = text === undefined ? null : SEEN.exec(text);
   if (match === null) return undefined;
-  return Math.min(Math.max(0, clockSeconds(match.slice(1))), durationSeconds);
+  return clamp(clockSeconds(match.slice(1)), 0, durationSeconds);
 }
 
 export function parseCast(reply: string, durationSeconds: number, newId: () => string): CastCard[] {

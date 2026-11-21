@@ -1,11 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
+import { blankChat } from "../src/chat/chats";
 import { savePersona } from "../src/chat/personas";
 import { createMemoryStore } from "../src/chat/store";
-import { queryElements, type AppElements } from "../src/dom";
+import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import {
-  blankChat,
   createAppState,
   replaceChat,
   setCurrentChat,
@@ -22,14 +21,16 @@ import type {
   StreamChat,
   UserMessage,
 } from "../src/types";
-import { initConversation } from "../src/ui/conversation";
-import { initMessageActions, type MessageActions } from "../src/ui/messageActions";
-import { initChatSettings } from "../src/ui/settingsDialog";
-import { initToast } from "../src/ui/toast";
+import { initConversation } from "../src/ui/conversation/conversation";
+import { initMessageActions, type MessageActions } from "../src/app/messageActions";
+import { initChatSettings } from "../src/ui/settings/chatSettingsPanel";
+import { initToast } from "../src/ui/shared/toast";
 import type * as Tools from "../src/video/tools";
 import { createToolRunner, type ToolContext } from "../src/video/tools";
+import { conversationDeps } from "./support/conversationDeps";
+import { mountPage, stillToast } from "./support/page";
+import { replyWith } from "./support/streams";
 
-vi.mock("@vid2grid/browser", () => ({}));
 vi.mock("../src/video/tools", async (importOriginal) => {
   const actual = await importOriginal<typeof Tools>();
   return { ...actual, createToolRunner: vi.fn(actual.createToolRunner) };
@@ -74,14 +75,6 @@ const A2: ChatMessage = {
 const U3: ChatMessage = { id: "U3", createdAt: 7, role: "user", text: "three", images: [] };
 const CHAT = [U1, A1a, T1, A1, U2, A2, U3];
 
-function replying(text: string): StreamChat {
-  return async function* () {
-    await Promise.resolve();
-    yield { type: "text", delta: text };
-    yield { type: "done", finishReason: "stop" };
-  };
-}
-
 function frameTools(): ToolContext {
   return {
     file: new File(["x"], "clip.mp4"),
@@ -102,37 +95,10 @@ function ids(messages: readonly ChatMessage[]): string[] {
 }
 
 function setup(): MessageActions {
-  const conversation = initConversation(els, {
-    store,
-    onSeek: vi.fn(),
-    onCue: vi.fn(),
-    onMessageChanged: vi.fn(),
-    onEdit: vi.fn(),
-    onReplay: vi.fn(),
-    onKeepGoing: vi.fn(),
-    onBranch: vi.fn(),
-    onDelete: vi.fn(),
-    onCopy: vi.fn(),
-    onPopOut: vi.fn(),
-    onReattach: vi.fn(),
-    isRunning: () => state.running,
-    videoView: () => ({ video: undefined, url: null }),
-    showThinking: () => false,
-    onPrefill: vi.fn(),
-    focusComposer: vi.fn(),
-    models: () => [],
-    chatModelId: () => "m",
-    pickerSettings: {
-      privateOnly: () => false,
-      setPrivateOnly: vi.fn(),
-      favourites: () => [],
-      setFavourites: vi.fn(),
-    },
-    onSwitchReply: vi.fn(),
-    onCompare: vi.fn(),
-    onVerify: vi.fn(() => Promise.resolve(undefined)),
-    onMessagesChanged: vi.fn(),
-  });
+  const conversation = initConversation(
+    els,
+    conversationDeps(store, { isRunning: () => state.running }),
+  );
   conversation.reset(state.messages);
   return initMessageActions(state, {
     store,
@@ -157,15 +123,14 @@ function shownAnswers(): string[] {
 }
 
 beforeEach(async () => {
-  document.body.innerHTML = indexHtml;
-  els = queryElements();
+  els = mountPage();
   state = createAppState(DEFAULT_SETTINGS);
   store = createMemoryStore();
   onOpen = vi.fn();
   onMessagesChanged = vi.fn();
   timers = [];
   clipboard = { writeText: vi.fn(() => Promise.resolve()) };
-  streamChat = replying("1: confirmed: the door is open");
+  streamChat = replyWith("1: confirmed: the door is open");
   toolContext = () => frameTools();
   chat = { ...blankChat("m", "chat", 1), title: "Beach" };
   await store.putChat(chat);
@@ -333,7 +298,7 @@ describe("branching with a preset", () => {
     setCurrentChat(state, branch, []);
     initChatSettings(els, state, {
       store,
-      toast: initToast(els, { set: () => 0, clear: vi.fn() }),
+      toast: stillToast(els),
       onChanged: vi.fn(),
       onError: vi.fn(),
       storage: localStorage,

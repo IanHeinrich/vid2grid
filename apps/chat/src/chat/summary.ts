@@ -1,10 +1,9 @@
-import { CLOCK_TIME, clockSeconds, formatTimestamp, sceneLogLines } from "../time";
+import { streamReply, textRequest, type ModelCallDeps } from "../api/modelCall";
+import { clamp } from "../spans";
+import { formatTimestamp, parseMomentLine } from "../time";
 import type { Chat, ChatMessage, SceneNote, StorySoFar } from "../types";
-import { storyCut } from "./history";
-import { streamReply, textRequest, type ModelCallDeps } from "./modelCall";
-
-// The UI still imports ModelCallDeps from here.
-export type { ModelCallDeps } from "./modelCall";
+import { storyCut } from "./story";
+import { sceneLogLines } from "./prompts";
 
 const SUMMARIZE_ABOVE_SHARE = 0.6;
 const FALLBACK_CONTEXT_TOKENS = 32_768;
@@ -22,7 +21,7 @@ export const STORY_SYSTEM_PROMPT = [
   "Write plain prose, under 400 words, with no headings and no preamble.",
 ].join("\n");
 
-export const CONDENSE_SYSTEM_PROMPT = [
+const CONDENSE_SYSTEM_PROMPT = [
   "You tidy the scene log of a video: timestamped observations recorded while watching it.",
   "Merge notes that describe the same moment or event, drop duplicates, and keep every distinct fact.",
   "Output only lines of the form [m:ss] text, one note per line, in time order, with no other text.",
@@ -59,7 +58,7 @@ export async function summarizeStory(
     { role: "system", content: STORY_SYSTEM_PROMPT },
     { role: "user", content: sections.join("\n\n") },
   ]);
-  const text = await streamReply(deps, request);
+  const { text } = await streamReply(deps, request);
   if (text === "") throw new Error("The model returned an empty summary.");
   return {
     text,
@@ -112,22 +111,17 @@ export async function condenseSceneLog(
       content: `The video is ${formatTimestamp(durationSeconds)} long. Scene log:\n${sceneLogLines(sorted).join("\n")}`,
     },
   ]);
-  const condensed = parseSceneNotes(await streamReply(deps, request), durationSeconds);
+  const { text } = await streamReply(deps, request);
+  const condensed = parseSceneNotes(text, durationSeconds);
   return condensed.length > 0 ? condensed : sorted;
 }
-
-const NOTE_LINE = new RegExp(
-  String.raw`^\s*(?:[-*•]\s*)?\[?\s*${CLOCK_TIME}\s*\]?\s*[:–—-]?\s*(.*)$`,
-);
 
 export function parseSceneNotes(reply: string, durationSeconds: number): SceneNote[] {
   const notes: SceneNote[] = [];
   for (const line of reply.split(/\r?\n/)) {
-    const match = NOTE_LINE.exec(line);
-    const text = match?.[4]?.trim();
-    if (match === null || text === undefined || text === "") continue;
-    const seconds = clockSeconds(match.slice(1, 4));
-    notes.push({ timeSeconds: Math.min(Math.max(0, seconds), durationSeconds), text });
+    const note = parseMomentLine(line);
+    if (note === undefined || note.text === "") continue;
+    notes.push({ timeSeconds: clamp(note.startSeconds, 0, durationSeconds), text: note.text });
   }
   return notes.sort((a, b) => a.timeSeconds - b.timeSeconds);
 }

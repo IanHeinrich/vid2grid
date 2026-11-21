@@ -18,9 +18,8 @@ import {
   startStudy,
   store,
   VIDEO,
-} from "./studyHarness";
+} from "./support/study";
 
-vi.mock("@vid2grid/browser", () => ({}));
 vi.mock("../src/video/study", async (importOriginal) => {
   const actual = await importOriginal<typeof StudyModule>();
   return { ...actual, runStudy: vi.fn(), runZoom: vi.fn() };

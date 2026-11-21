@@ -1,4 +1,5 @@
-import { formatSpan, formatTimestamp, sceneLogLines } from "../time";
+import { blobToDataUrl } from "../dataUrl";
+import { formatSpan, formatTimestamp } from "../time";
 import type {
   AssistantMessage,
   Chat,
@@ -12,8 +13,8 @@ import type {
   VideoCast,
   VideoTimeline,
 } from "../types";
-import { blobToDataUrl } from "./dataUrl";
-import { imagesOf } from "./history";
+import { imagesOf } from "../imageRefs";
+import { sceneLogLines } from "./prompts";
 
 export const BACKUP_FORMAT = "vid2grid-chat-backup";
 export const BACKUP_VERSION = 1;

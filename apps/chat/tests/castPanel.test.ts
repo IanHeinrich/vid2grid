@@ -1,15 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
+import { blankChat } from "../src/chat/chats";
 import { createMemoryStore } from "../src/chat/store";
-import { queryElements, type AppElements } from "../src/dom";
+import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
-import {
-  blankChat,
-  createAppState,
-  replaceChat,
-  setCurrentChat,
-  type AppState,
-} from "../src/state";
+import { createAppState, replaceChat, setCurrentChat, type AppState } from "../src/state";
 import type {
   CastCard,
   Chat,
@@ -19,8 +13,9 @@ import type {
   StreamChat,
   VideoAttachment,
 } from "../src/types";
-import { initCastPanel, type CastPanelDeps } from "../src/ui/castPanel";
-import { initToast } from "../src/ui/toast";
+import { initCastPanel, type CastPanelDeps } from "../src/ui/knowledge/castPanel";
+import { mountPage, stillToast } from "./support/page";
+import { replyWith } from "./support/streams";
 
 const VIDEO: VideoAttachment = {
   name: "beach.mp4",
@@ -38,15 +33,6 @@ let store: ChatStore;
 let seek: ReturnType<typeof vi.fn>;
 let ids: number;
 
-function stream(reply: string, requests: ChatRequest[] = []): StreamChat {
-  return async function* (_settings, request) {
-    await Promise.resolve();
-    requests.push(request);
-    yield { type: "text", delta: reply };
-    yield { type: "done", finishReason: "stop" };
-  };
-}
-
 async function openChat(
   video: VideoAttachment | null = VIDEO,
   messages: ChatMessage[] = [],
@@ -58,10 +44,10 @@ async function openChat(
   setCurrentChat(state, chat, messages);
 }
 
-function panel(streamChat: StreamChat = stream(""), shownVideo?: CastPanelDeps["shownVideo"]) {
+function panel(streamChat: StreamChat = replyWith(""), shownVideo?: CastPanelDeps["shownVideo"]) {
   return initCastPanel(els, state, {
     store,
-    toast: initToast(els, { set: () => 0, clear: vi.fn() }),
+    toast: stillToast(els),
     streamChat,
     seek,
     onChanged: vi.fn(),
@@ -94,8 +80,7 @@ function clickButton(root: ParentNode, label: string): void {
 }
 
 beforeEach(() => {
-  document.body.innerHTML = indexHtml;
-  els = queryElements();
+  els = mountPage();
   state = createAppState(DEFAULT_SETTINGS);
   store = createMemoryStore();
   seek = vi.fn();
@@ -133,7 +118,7 @@ describe("an older video's people", () => {
   it("shows what was saved for it read only, and seeks that video", async () => {
     await store.putCast({ fileKey: "park", cards: [MARA], updatedAt: 1 });
     await openChat();
-    panel(stream(""), () => ({ video: PARK, current: false }));
+    panel(replyWith(""), () => ({ video: PARK, current: false }));
     await vi.waitFor(() => expect(names()).toEqual(["Mara"]));
     expect(els.cast.title.textContent).toBe("People in park.mp4");
     expect(els.cast.list.querySelector(".note-edit, .note-delete")).toBeNull();
@@ -145,7 +130,7 @@ describe("an older video's people", () => {
 
   it("says when nothing was saved for it", async () => {
     await openChat();
-    panel(stream(""), () => ({ video: PARK, current: false }));
+    panel(replyWith(""), () => ({ video: PARK, current: false }));
     await vi.waitFor(() => expect(els.cast.empty.hidden).toBe(false));
     expect(els.cast.empty.textContent).toBe("No people were saved for this video.");
   });
@@ -155,7 +140,7 @@ describe("an older video's people", () => {
     await store.putCast({ fileKey: "park", cards: [], updatedAt: 1 });
     await openChat();
     let shown = { video: VIDEO, current: true };
-    const cast = panel(stream(""), () => shown);
+    const cast = panel(replyWith(""), () => shown);
     await vi.waitFor(() => expect(names()).toEqual(["Mara"]));
     els.cast.list.querySelector<HTMLButtonElement>(".note-delete")?.click();
     shown = { video: PARK, current: false };
@@ -312,7 +297,7 @@ describe("cast panel suggestions", () => {
     };
     await openChat(VIDEO, [overview]);
     const requests: ChatRequest[] = [];
-    panel(stream("Mara | in red | 0:12\nTheo | grey beard | 1:00", requests));
+    panel(replyWith("Mara | in red | 0:12\nTheo | grey beard | 1:00", requests));
     await vi.waitFor(() => expect(names()).toEqual(["Mara"]));
     els.cast.suggestButton.click();
     await vi.waitFor(() => expect(names()).toEqual(["Mara", "Theo"]));
@@ -323,7 +308,7 @@ describe("cast panel suggestions", () => {
 
   it("asks for an overview or notes before suggesting from nothing", async () => {
     await openChat();
-    panel(stream("Unused | x | 0:01"));
+    panel(replyWith("Unused | x | 0:01"));
     els.cast.suggestButton.click();
     await vi.waitFor(() => expect(els.cast.status.textContent).toContain("Wait for the overview"));
     expect(els.cast.status.classList.contains("is-error")).toBe(true);

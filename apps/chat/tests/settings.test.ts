@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { VENICE_BASE_URL } from "../src/api/client";
+import { VENICE_BASE_URL } from "../src/api/venice";
 import {
   DEFAULT_BACKGROUND_SOUND_LABELS,
   DEFAULT_SETTINGS,

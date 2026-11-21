@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import indexHtml from "../index.html?raw";
-import { initStatus, queryElements } from "../src/dom";
+import { queryElements } from "../src/dom";
 
 describe("queryElements", () => {
   it("finds every element the app needs in index.html", () => {
@@ -81,19 +81,5 @@ describe("conversation view markup", () => {
     expect(lightbox.zoomIn).toBeInstanceOf(HTMLButtonElement);
     expect(lightbox.ask).toBeInstanceOf(HTMLButtonElement);
     expect(shortcuts.toggle.getAttribute("aria-controls")).toBe(shortcuts.popover.id);
-  });
-});
-
-describe("initStatus", () => {
-  it("shows errors marked and clears them", () => {
-    document.body.innerHTML = indexHtml;
-    const els = queryElements();
-    const status = initStatus(els);
-    status.show("No key", "error");
-    expect(els.status.message.textContent).toBe("No key");
-    expect(els.status.message.classList.contains("is-error")).toBe(true);
-    status.clear();
-    expect(els.status.message.textContent).toBe("");
-    expect(els.status.message.classList.contains("is-error")).toBe(false);
   });
 });

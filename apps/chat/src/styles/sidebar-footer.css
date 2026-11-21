@@ -1,0 +1,72 @@
+.sidebar-footer {
+  position: relative;
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.sidebar-footer .button {
+  flex: 1;
+  text-align: left;
+}
+
+.sidebar-footer .shortcuts-toggle {
+  flex: 0 0 auto;
+  min-width: 2.2rem;
+  text-align: center;
+}
+
+.shortcuts-popover {
+  position: absolute;
+  bottom: calc(100% + 0.4rem);
+  left: 1rem;
+  z-index: 20;
+  width: max-content;
+  max-width: min(22rem, 80vw);
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  box-shadow: var(--panel-shadow);
+  font-size: 0.875rem;
+}
+
+.shortcuts-title {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+}
+
+.shortcuts-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.4rem 0.9rem;
+  margin: 0;
+}
+
+.shortcuts-list dt {
+  white-space: nowrap;
+}
+
+.shortcuts-list dd {
+  margin: 0;
+  color: var(--muted);
+}
+
+kbd {
+  padding: 0 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-raised);
+  font-family: inherit;
+  font-size: 0.875rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

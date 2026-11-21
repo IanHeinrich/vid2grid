@@ -1,4 +1,4 @@
-import { resolveModel } from "../../state";
+import { resolveModel } from "../../chat/models";
 import { formatTimestamp, parseTimestamp } from "../../time";
 import type { StudyPlanOptions } from "../../types";
 import type { StudyEstimate, StudyPlan } from "../../video/study";

@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
+import { blankChat } from "../src/chat/chats";
 import { exportBackup, type Backup } from "../src/chat/exportChat";
 import { createMemoryStore } from "../src/chat/store";
-import { queryElements, type AppElements } from "../src/dom";
-import { blankChat } from "../src/state";
+import type { AppElements } from "../src/dom";
 import type { ChatStore } from "../src/types";
-import { initBackup } from "../src/ui/backup";
+import { initBackup } from "../src/ui/settings/backup";
+import { mountPage } from "./support/page";
 
 const NOW = Date.UTC(2026, 10, 19);
 const IMAGE_BYTES = 1.5 * 1024 ** 2;
@@ -54,8 +54,7 @@ function chooseRestoreFile(file: Blob): void {
 }
 
 beforeEach(async () => {
-  document.body.innerHTML = indexHtml;
-  els = queryElements();
+  els = mountPage();
   store = createMemoryStore();
   toast = { show: vi.fn() };
   download = vi.fn<(blob: Blob, filename: string) => void>();

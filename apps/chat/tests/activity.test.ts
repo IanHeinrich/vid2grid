@@ -10,7 +10,7 @@ import {
   toolSummary,
   updateStreamingReasoning,
   waitingStatus,
-} from "../src/ui/activity";
+} from "../src/ui/conversation/activity";
 
 function assistant(
   id: string,

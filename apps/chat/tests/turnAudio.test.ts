@@ -1,10 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { turnAudio, type TurnAudioInput } from "../src/audio/turnAudio";
+import { turnAudio, type TurnAudioInput } from "../src/app/turnAudio";
 import { createMemoryStore } from "../src/chat/store";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import type { VideoAudio } from "../src/types";
-
-vi.mock("@vid2grid/browser", () => ({}));
 
 function input(extra: Partial<TurnAudioInput> = {}) {
   const status = { show: vi.fn(), clear: vi.fn() };

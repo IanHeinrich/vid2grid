@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { blankChat, removeChat, replaceChat, setCurrentChat } from "../src/state";
+import { blankChat } from "../src/chat/chats";
+import { removeChat, replaceChat, setCurrentChat } from "../src/state";
 import type * as StudyModule from "../src/video/study";
 import { runStudy } from "../src/video/study";
 import {
@@ -26,9 +27,8 @@ import {
   store,
   timeline,
   zoomItem,
-} from "./studyHarness";
+} from "./support/study";
 
-vi.mock("@vid2grid/browser", () => ({}));
 vi.mock("../src/video/study", async (importOriginal) => {
   const actual = await importOriginal<typeof StudyModule>();
   return { ...actual, runStudy: vi.fn(), runZoom: vi.fn() };

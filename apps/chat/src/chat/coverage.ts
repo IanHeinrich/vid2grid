@@ -1,6 +1,6 @@
 import { findTimestamps } from "../time";
 import type { ChatMessage, ImageSource } from "../types";
-import { imagesOf } from "./history";
+import { imagesOf } from "../imageRefs";
 
 // Sheet times are rounded and frames sheets show instants, so a citation this close is seen.
 const SEEN_TOLERANCE_SECONDS = 0.5;

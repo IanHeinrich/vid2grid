@@ -1,6 +1,6 @@
-import { findTimestamps, formatTimestamp } from "../time";
+import { streamReply, textRequest, type ModelCallDeps } from "../api/modelCall";
+import { BULLET, findTimestamps, formatTimestamp } from "../time";
 import type { ClaimCheck, ClaimVerdict, ContentPart, ImageRef } from "../types";
-import { streamReply, textRequest, type ModelCallDeps } from "./modelCall";
 
 const MAX_CLAIMS = 8;
 // The frames tool renders at most nine moments.
@@ -65,11 +65,14 @@ export async function verifyClaims(
       ],
     },
   ]);
-  return parseVerdicts(await streamReply(deps, request), claims);
+  const { text } = await streamReply(deps, request);
+  return parseVerdicts(text, claims);
 }
 
-const VERDICT_LINE =
-  /^\s*(?:[-*•]\s*)?\**\s*(\d+)\s*[:.)]\s*\**\s*(confirmed|contradicted|unclear)\b\**\s*[:–—-]?\s*(.*)$/i;
+const VERDICT_LINE = new RegExp(
+  String.raw`${BULLET}\**\s*(\d+)\s*[:.)]\s*\**\s*(confirmed|contradicted|unclear)\b\**\s*[:–—-]?\s*(.*)$`,
+  "i",
+);
 
 const VERDICTS: readonly ClaimVerdict[] = ["confirmed", "contradicted", "unclear"];
 

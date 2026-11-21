@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
-import { effectiveVideoReferences } from "../src/chat/history";
+import { effectiveVideoReferences } from "../src/chat/prompts";
 import { listPersonas, savePersona, type Persona } from "../src/chat/personas";
-import { queryElements, type AppElements } from "../src/dom";
-import { initPresetManager, VOICE_HINTS, type PresetManager } from "../src/ui/presetManager";
-import { initToast } from "../src/ui/toast";
+import type { AppElements } from "../src/dom";
+import { VOICE_HINTS } from "../src/ui/settings/personaFields";
+import { initPresetManager, type PresetManager } from "../src/ui/settings/presetManager";
+import { mountPage, stillToast } from "./support/page";
 
 let els: AppElements;
 let onApply: ReturnType<typeof vi.fn>;
@@ -23,7 +23,7 @@ const analyst: Persona = { id: "p2", name: "Analyst", systemPrompt: "Be precise.
 function setup(presets: Persona[] = [mara, analyst]): PresetManager {
   for (const preset of presets) savePersona(preset, localStorage);
   return initPresetManager(els, {
-    toast: initToast(els, { set: () => 0, clear: vi.fn() }),
+    toast: stillToast(els),
     storage: localStorage,
     onApply,
     onChanged,
@@ -51,8 +51,7 @@ function pick(select: HTMLSelectElement, value: string): void {
 }
 
 beforeEach(() => {
-  document.body.innerHTML = indexHtml;
-  els = queryElements();
+  els = mountPage();
   localStorage.clear();
   onApply = vi.fn();
   onChanged = vi.fn();

@@ -5,14 +5,12 @@ import {
   AUDIO_PIECE_SECONDS,
   AudioDecodeError,
   audioCoverage,
-  audioLines,
   audioProgressText,
   cachedAudioCoverage,
   describeAudioCoverage,
   ensureAudio,
   isRangeHeard,
   loadAudio,
-  mergeSpans,
   onAudioChanged,
   timedAudioLines,
   type AnalyseAudio,
@@ -303,9 +301,8 @@ describe("audio lines", () => {
       { startSeconds: 12, line: '[0:12] "Hello there."' },
       { startSeconds: 30, line: "[0:30-0:40] music 0.70, quiet (-8 dB)" },
     ]);
-    expect(audioLines(heard(), { startSeconds: 20, endSeconds: 60 }, LABELS)).toEqual([
-      "[0:30-0:40] music 0.70, quiet (-8 dB)",
-    ]);
+    const timed = timedAudioLines(heard(), { startSeconds: 20, endSeconds: 60 }, LABELS);
+    expect(timed.map((entry) => entry.line)).toEqual(["[0:30-0:40] music 0.70, quiet (-8 dB)"]);
   });
 
   it("lists a cue that is one sound tag as a sound, at its start time", () => {
@@ -319,17 +316,15 @@ describe("audio lines", () => {
   it("keeps events heard with grouped wordings while the label lines are unchanged", () => {
     const labels = { labels: ["music: piano music; a band playing"], backgroundLabels: [] };
     const audio = heard({ labels: [...labels.labels], backgroundLabels: [] });
-    expect(audioLines(audio, { startSeconds: 20, endSeconds: 60 }, labels)).toEqual([
-      "[0:30-0:40] music 0.70, quiet (-8 dB)",
-    ]);
+    const timed = timedAudioLines(audio, { startSeconds: 20, endSeconds: 60 }, labels);
+    expect(timed.map((entry) => entry.line)).toEqual(["[0:30-0:40] music 0.70, quiet (-8 dB)"]);
     expect(isRangeHeard(audio, { startSeconds: 10, endSeconds: 20 }, labels)).toBe(true);
   });
 
   it("leaves out sound events scored against other labels", () => {
     const labels = { labels: ["footsteps"], backgroundLabels: ["silence"] };
-    expect(audioLines(heard(), { startSeconds: 0, endSeconds: 60 }, labels)).toEqual([
-      '[0:12] "Hello there."',
-    ]);
+    const timed = timedAudioLines(heard(), { startSeconds: 0, endSeconds: 60 }, labels);
+    expect(timed.map((entry) => entry.line)).toEqual(['[0:12] "Hello there."']);
   });
 
   it("tells a heard range from one not analysed", () => {
@@ -388,19 +383,6 @@ describe("audio coverage", () => {
 });
 
 describe("helpers", () => {
-  it("merges overlapping and touching spans", () => {
-    expect(
-      mergeSpans([
-        { startSeconds: 50, endSeconds: 90 },
-        { startSeconds: 0, endSeconds: 60 },
-        { startSeconds: 200, endSeconds: 210 },
-      ]),
-    ).toEqual([
-      { startSeconds: 0, endSeconds: 90 },
-      { startSeconds: 200, endSeconds: 210 },
-    ]);
-  });
-
   it("words analysis progress", () => {
     expect(audioProgressText({ stage: "speech", done: 1, total: 4 })).toBe(
       "Transcribing speech… 25%",

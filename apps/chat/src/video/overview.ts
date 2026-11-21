@@ -1,4 +1,5 @@
-import { MAX_FRAMES_PER_SHEET, choosePerSheet, clamp, type SheetGeometry } from "./packing";
+import { clamp } from "../spans";
+import { MAX_FRAMES_PER_SHEET, choosePerSheet, type SheetGeometry } from "./packing";
 
 const MAX_OVERVIEW_SHEETS = 4;
 const OVERVIEW_FRAMES_PER_SECOND = 2;

@@ -1,31 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { ModelInfo } from "../src/types";
 import {
   OVERVIEW_TOKEN_BUDGET,
   resolveOverviewResolution,
   resolveSheetResolution,
 } from "../src/video/resolution";
-
-function model(id: string, overrides: Partial<ModelInfo> = {}): ModelInfo {
-  return {
-    id,
-    name: id,
-    vision: true,
-    tools: true,
-    reasoning: false,
-    reasoningEffortOptions: [],
-    maxImages: 10,
-    privacy: "private",
-    traits: [],
-    uncensored: false,
-    recommended: false,
-    beta: false,
-    videoInput: false,
-    audioInput: false,
-    e2ee: false,
-    ...overrides,
-  };
-}
+import { model } from "./support/factories";
 
 describe("resolveSheetResolution", () => {
   it("uses a fixed resolution as is", () => {

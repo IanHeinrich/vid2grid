@@ -1,19 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { VENICE_BASE_URL } from "../src/api/client";
+import { blankChat } from "../src/chat/chats";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import {
   addPending,
-  blankChat,
-  chatModelId,
   clearPending,
   createAppState,
-  currentModel,
   currentPending,
-  defaultModelId,
-  effectiveDefaultModelId,
   isRunningIn,
   overviewFor,
-  overviewText,
   pendingFor,
   pendingImages,
   removeChat,
@@ -21,9 +15,7 @@ import {
   removePending,
   removePendingVideo,
   replaceChat,
-  resolveModel,
   restoreMessages,
-  sendBlocker,
   setChats,
   setCurrentChat,
   setLoadedVideo,
@@ -34,40 +26,14 @@ import {
   setPendingVideo,
   setRunning,
   shownVideo,
-  titleFromMessage,
   updateChat,
   upsertMessage,
-  visionModels,
 } from "../src/state";
-import type { Chat, ImageRef, ModelInfo, UserMessage, VideoAttachment } from "../src/types";
+import type { Chat, UserMessage, VideoAttachment } from "../src/types";
+import { upload } from "./support/factories";
 
 function chat(id: string, updatedAt: number): Chat {
   return { ...blankChat("chat-model", id, updatedAt), title: `Chat ${id}` };
-}
-
-function model(id: string, overrides: Partial<ModelInfo> = {}): ModelInfo {
-  return {
-    id,
-    name: id.toUpperCase(),
-    vision: true,
-    tools: true,
-    reasoning: false,
-    reasoningEffortOptions: [],
-    maxImages: 10,
-    traits: [],
-    uncensored: false,
-    recommended: false,
-    beta: false,
-    videoInput: false,
-    audioInput: false,
-    e2ee: false,
-    privacy: "private",
-    ...overrides,
-  };
-}
-
-function image(id: string): ImageRef {
-  return { id, source: { kind: "upload", name: `${id}.png` }, pinned: false };
 }
 
 function userMessage(id: string, text: string): UserMessage {
@@ -111,7 +77,7 @@ describe("chat setters", () => {
     const state = createAppState(DEFAULT_SETTINGS);
     setChats(state, [chat("a", 1)]);
     setCurrentChat(state, chat("a", 1), [userMessage("m", "hi")]);
-    addPending(state, "a", { kind: "image", ref: image("i") });
+    addPending(state, "a", { kind: "image", ref: upload("i") });
     removeChat(state, "a");
     expect(state.chats).toEqual([]);
     expect(state.currentChat).toBeNull();
@@ -127,12 +93,12 @@ describe("chat setters", () => {
       info: { durationSeconds: 1, width: 1, height: 1 },
     });
     setCurrentChat(state, chat("a", 1), []);
-    addPending(state, "a", { kind: "image", ref: image("i") });
+    addPending(state, "a", { kind: "image", ref: upload("i") });
     setCurrentChat(state, chat("b", 1), []);
     expect(state.video).toBeNull();
     expect(currentPending(state)).toEqual([]);
     setCurrentChat(state, chat("a", 1), []);
-    expect(currentPending(state)).toEqual([{ kind: "image", ref: image("i") }]);
+    expect(currentPending(state)).toEqual([{ kind: "image", ref: upload("i") }]);
   });
 });
 
@@ -168,9 +134,9 @@ describe("removing and restoring messages", () => {
 describe("pending attachments", () => {
   it("adds, pins, removes and clears", () => {
     const state = createAppState(DEFAULT_SETTINGS);
-    addPending(state, "c", { kind: "image", ref: image("a") });
-    addPending(state, "c", { kind: "overview", refs: [image("s1"), image("s2")] });
-    addPending(state, "other", { kind: "image", ref: image("x") });
+    addPending(state, "c", { kind: "image", ref: upload("a") });
+    addPending(state, "c", { kind: "overview", refs: [upload("s1"), upload("s2")] });
+    addPending(state, "other", { kind: "image", ref: upload("x") });
     setPendingPinned(state, "c", 0, true);
     expect(pendingImages(pendingFor(state, "c")).map((ref) => [ref.id, ref.pinned])).toEqual([
       ["a", true],
@@ -200,11 +166,11 @@ describe("the pending video", () => {
     setChats(state, [{ ...chat("c", 1), video: own }]);
     expect(shownVideo(state, "c")).toBe(own);
     setPendingVideo(state, "c", dropped);
-    addPending(state, "c", { kind: "overview", refs: [image("s1")] });
-    addPending(state, "c", { kind: "image", ref: image("a") });
+    addPending(state, "c", { kind: "overview", refs: [upload("s1")] });
+    addPending(state, "c", { kind: "image", ref: upload("a") });
     expect(shownVideo(state, "c")).toBe(dropped);
     removePendingVideo(state, "c");
-    expect(pendingFor(state, "c")).toEqual([{ kind: "image", ref: image("a") }]);
+    expect(pendingFor(state, "c")).toEqual([{ kind: "image", ref: upload("a") }]);
     expect(shownVideo(state, "c")).toBe(own);
   });
 
@@ -220,44 +186,6 @@ describe("the pending video", () => {
 });
 
 describe("models", () => {
-  it("lists only vision models, and only private ones when asked", () => {
-    const models = [
-      model("a"),
-      model("b", { privacy: "anonymized" }),
-      model("c", { vision: false }),
-    ];
-    expect(visionModels(models, true).map((entry) => entry.id)).toEqual(["a"]);
-    expect(visionModels(models, false).map((entry) => entry.id)).toEqual(["a", "b"]);
-  });
-
-  it("ignores private-only on a server that reports no privacy", () => {
-    const models = [model("a", { privacy: "unknown" }), model("b", { privacy: "unknown" })];
-    expect(visionModels(models, true).map((entry) => entry.id)).toEqual(["a", "b"]);
-  });
-
-  it("builds a fallback for a model that is not in the loaded list", () => {
-    const state = createAppState({ ...DEFAULT_SETTINGS, fallbackMaxImages: 6 });
-    setModels(state, [model("known")]);
-    expect(resolveModel(state, "known").name).toBe("KNOWN");
-    expect(resolveModel(state, "other")).toEqual({
-      id: "other",
-      name: "other",
-      vision: true,
-      tools: true,
-      reasoning: false,
-      reasoningEffortOptions: [],
-      maxImages: 6,
-      privacy: "unknown",
-      traits: [],
-      uncensored: false,
-      recommended: false,
-      beta: false,
-      videoInput: false,
-      audioInput: false,
-      e2ee: false,
-    });
-  });
-
   it("records a load error until models load", () => {
     const state = createAppState(DEFAULT_SETTINGS);
     setModelsError(state, "401");
@@ -267,78 +195,7 @@ describe("models", () => {
   });
 });
 
-describe("default model for new chats", () => {
-  it("keeps the stored default while it is listed or nothing is loaded", () => {
-    expect(effectiveDefaultModelId([], true, "stored")).toBe("stored");
-    expect(effectiveDefaultModelId([model("a"), model("stored")], true, "stored")).toBe("stored");
-  });
-
-  it("uses the first listed model when no default is stored", () => {
-    const models = [
-      model("first", { privacy: "unknown" }),
-      model("second", { privacy: "unknown" }),
-    ];
-    expect(effectiveDefaultModelId(models, true, "")).toBe("first");
-    expect(effectiveDefaultModelId([], true, "")).toBe("");
-  });
-
-  it("uses the first visible vision model when the stored default is not listed", () => {
-    const models = [model("anon", { privacy: "anonymized" }), model("priv")];
-    expect(effectiveDefaultModelId(models, true, "gone")).toBe("priv");
-    expect(effectiveDefaultModelId(models, false, "gone")).toBe("anon");
-    const state = createAppState({ ...DEFAULT_SETTINGS, defaultModelId: "gone" });
-    setModels(state, models);
-    expect(defaultModelId(state)).toBe("priv");
-  });
-});
-
-describe("a chat's model", () => {
-  it("follows the default for a chat made before the models loaded", () => {
-    const state = createAppState({ ...DEFAULT_SETTINGS, defaultModelId: "gone" });
-    setModels(state, [model("first")]);
-    const unset = blankChat("", "a", 1);
-    expect(chatModelId(state, unset)).toBe("first");
-    expect(chatModelId(state, chat("b", 1))).toBe("chat-model");
-    setCurrentChat(state, unset, []);
-    expect(currentModel(state)?.id).toBe("first");
-  });
-
-  it("has no model while neither the chat nor the settings name one", () => {
-    const state = createAppState({ ...DEFAULT_SETTINGS, baseUrl: "http://localhost:1234/v1" });
-    setCurrentChat(state, blankChat("", "a", 1), []);
-    expect(currentModel(state)).toBeNull();
-    expect(sendBlocker(state)).toMatch(/Choose a model/);
-  });
-});
-
-describe("sendBlocker", () => {
-  it("asks for an API before anything else is checked", () => {
-    const state = createAppState(DEFAULT_SETTINGS);
-    setCurrentChat(state, chat("a", 1), []);
-    expect(sendBlocker(state)).toBe("Choose an API in Settings to start chatting.");
-  });
-
-  it("asks for a Venice key, then a model, then allows sending", () => {
-    const venice = { ...DEFAULT_SETTINGS, baseUrl: VENICE_BASE_URL };
-    const state = createAppState(venice);
-    expect(sendBlocker(state)).toMatch(/new chat/);
-    setCurrentChat(state, chat("a", 1), []);
-    expect(sendBlocker(state)).toBe("Add your API key in Settings to start chatting.");
-    const keyed = createAppState({ ...venice, apiKey: "key" });
-    const unset = chat("a", 1);
-    setCurrentChat(keyed, { ...unset, settings: { ...unset.settings, modelId: "" } }, []);
-    expect(currentModel(keyed)).toBeNull();
-    expect(sendBlocker(keyed)).toMatch(/Choose a model/);
-    setCurrentChat(keyed, chat("a", 1), []);
-    expect(sendBlocker(keyed)).toBeNull();
-  });
-
-  it("needs no key for a server other than Venice", () => {
-    const state = createAppState({ ...DEFAULT_SETTINGS, baseUrl: "http://localhost:1234/v1" });
-    setCurrentChat(state, chat("a", 1), []);
-    expect(sendBlocker(state)).toBeNull();
-  });
-
+describe("running turns", () => {
   it("tracks a running turn per chat, with running meaning the current chat's", () => {
     const state = createAppState(DEFAULT_SETTINGS);
     setCurrentChat(state, chat("a", 1), []);
@@ -351,50 +208,6 @@ describe("sendBlocker", () => {
     setRunning(state, false, "a");
     expect(state.running).toBe(true);
     expect(isRunningIn(state, "a")).toBe(false);
-  });
-});
-
-describe("blankChat", () => {
-  it("uses the default model and the Auto sheet resolution", () => {
-    expect(blankChat("m", "id", 5)).toEqual({
-      id: "id",
-      title: "New chat",
-      createdAt: 5,
-      updatedAt: 5,
-      settings: { systemPrompt: "", modelId: "m", sheetResolution: "auto" },
-      sceneLog: [],
-    });
-  });
-});
-
-describe("titleFromMessage", () => {
-  it("keeps short messages and cuts long ones near 40 characters", () => {
-    expect(titleFromMessage("  What happens\nnext?  ")).toBe("What happens next?");
-    const title = titleFromMessage("a".repeat(30) + " " + "b".repeat(30));
-    expect(title).toBe(`${"a".repeat(30)} ${"b".repeat(9)}…`);
-  });
-});
-
-describe("overviewText", () => {
-  it("is empty once the overview is ready and shows progress or failure otherwise", () => {
-    expect(overviewText(undefined)).toBe("");
-    expect(overviewText({ kind: "ready", fileKey: "k", sheets: 4 })).toBe("");
-    expect(overviewText({ kind: "rendering", fileKey: "k", done: 1, total: 4 })).toBe(
-      "Overview 25%",
-    );
-    expect(overviewText({ kind: "rendering", fileKey: "k", done: 0, total: 0 })).toBe(
-      "Rendering overview",
-    );
-    expect(overviewText({ kind: "failed", fileKey: "k", error: "boom" })).toBe("Overview failed");
-  });
-
-  it("says when the overview waits for a model or was reused", () => {
-    expect(overviewText({ kind: "needsModel", fileKey: "k" })).toBe(
-      "Choose a model to prepare the overview",
-    );
-    expect(overviewText({ kind: "ready", fileKey: "k", sheets: 4, reused: true })).toBe(
-      "Seen before, overview reused",
-    );
   });
 });
 

@@ -2,10 +2,6 @@ import { GUTTER_PX, countGridPackingBlanks } from "@vid2grid/core";
 
 export const MAX_FRAMES_PER_SHEET = 20;
 
-export function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
 export interface SheetGeometry {
   sourceAspect: number;
   outputResolution: number;

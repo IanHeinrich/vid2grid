@@ -1,15 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
-import { queryElements, type AppElements } from "../src/dom";
+import { blankChat } from "../src/chat/chats";
+import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
-import { blankChat, createAppState, setCurrentChat } from "../src/state";
+import { createAppState, setCurrentChat } from "../src/state";
 import {
   initChatDrawer,
   initKnowledgeDrawer,
   type ChatDrawer,
   type KnowledgeDrawer,
-} from "../src/ui/chatDrawer";
-import { initShortcuts } from "../src/ui/shortcuts";
+} from "../src/ui/shell/chatDrawer";
+import { initShortcuts } from "../src/ui/shared/shortcuts";
+import { mountPage } from "./support/page";
 
 let els: AppElements;
 let running: boolean;
@@ -29,8 +30,7 @@ function press(init: KeyboardEventInit, target: EventTarget = document.body): Ke
 }
 
 beforeEach(() => {
-  document.body.innerHTML = indexHtml;
-  els = queryElements();
+  els = mountPage();
   running = true;
   const state = createAppState(DEFAULT_SETTINGS);
   setCurrentChat(state, blankChat("m", "chat", 1), []);
@@ -142,7 +142,7 @@ describe("the shortcut list", () => {
     expect(popover.hidden).toBe(true);
     expect(deps.stop).not.toHaveBeenCalled();
     toggle.click();
-    document.body.click();
+    document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
     expect(popover.hidden).toBe(true);
   });
 });

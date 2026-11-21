@@ -5,18 +5,8 @@ import { createMemoryStore } from "../src/chat/store";
 import type { ImageRef, ImageStore, SheetCache, ToolCall, VideoAttachment } from "../src/types";
 import type { RenderedSheet } from "../src/video/render";
 import { sheetCacheKey } from "../src/video/sheetCache";
-import {
-  LISTEN_SCHEMA,
-  MAX_LISTEN_LINES,
-  TOOL_GUIDANCE,
-  TOOL_SCHEMAS,
-  createToolRunner,
-  toolSchemas,
-  renderOverview,
-  type ToolContext,
-} from "../src/video/tools";
-
-vi.mock("@vid2grid/browser", () => ({}));
+import { createToolRunner, renderOverview, type ToolContext } from "../src/video/tools";
+import { MAX_LISTEN_LINES } from "../src/video/listenTool";
 
 class FakeStore implements ImageStore, SheetCache {
   readonly images = new Map<string, Blob>();
@@ -73,25 +63,6 @@ function call(name: string, args: unknown): ToolCall {
   return { id: "call-1", name, arguments: typeof args === "string" ? args : JSON.stringify(args) };
 }
 
-describe("tool definitions", () => {
-  it("offers look, frames, note and recall", () => {
-    expect(TOOL_SCHEMAS.map((schema) => schema.function.name)).toEqual([
-      "look",
-      "frames",
-      "note",
-      "recall",
-    ]);
-  });
-
-  it("tells the model how to use them, leaving the answer style to the voice", () => {
-    expect(TOOL_GUIDANCE).toContain("note");
-    expect(TOOL_GUIDANCE).toContain("one frames call");
-    expect(TOOL_GUIDANCE).toContain("recall one by its stub's name");
-    expect(TOOL_GUIDANCE).not.toContain("[m:ss]");
-    expect(JSON.stringify(TOOL_SCHEMAS)).not.toContain("system prompt");
-  });
-});
-
 const LISTEN_LABELS = { labels: ["music", "applause"], backgroundLabels: ["silence"] };
 
 const HEARD_AT_A_MINUTE: Pick<AudioTrack, "speech" | "events"> = {
@@ -144,19 +115,6 @@ function analysedSpans(analyse: ReturnType<typeof listenSetup>["analyse"]) {
 }
 
 describe("listen", () => {
-  it("is offered only alongside audio", () => {
-    expect(toolSchemas(false)).toEqual(TOOL_SCHEMAS);
-    expect(toolSchemas(true).map((schema) => schema.function.name)).toEqual([
-      "look",
-      "frames",
-      "note",
-      "recall",
-      "listen",
-    ]);
-    expect(LISTEN_SCHEMA.function.description).toContain("at most 10 minutes");
-    expect(LISTEN_SCHEMA.function.description).toContain("on the user's machine");
-  });
-
   it("analyses the piece holding the range and returns what was heard in it", async () => {
     const { run, analyse } = listenSetup();
     const result = await run(call("listen", { start: 60, end: 90 }));

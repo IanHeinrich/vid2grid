@@ -1,5 +1,3 @@
-import type { SceneNote } from "./types";
-
 export function formatTimestamp(seconds: number, tenths = false): string {
   // Whole tenths first: 1.2 - 1 is 0.19999999999999996, which would floor to the tenth below.
   const tenthsTotal = Math.floor(Math.max(0, seconds) * 10 + 1e-6);
@@ -144,8 +142,38 @@ export function parseTimestamp(text: string): number | undefined {
   return clockSeconds(match.slice(1));
 }
 
-export function sceneLogLines(notes: readonly SceneNote[]): string[] {
-  return [...notes]
-    .sort((a, b) => a.timeSeconds - b.timeSeconds)
-    .map((note) => `[${formatTimestamp(note.timeSeconds)}] ${note.text}`);
+export function timedLine(time: string, text: string): string {
+  return `[${time}] ${text}`;
+}
+
+export const BULLET = String.raw`^\s*(?:[-*•]\s*)?`;
+const TEXT_AFTER_TIME = String.raw`\s*\]?\s*[:–—-]?\s*(.*)$`;
+export const SPAN_AND_TEXT = String.raw`\[?\s*${CLOCK_TIME}(?:${RANGE_SEPARATOR}${CLOCK_TIME})?${TEXT_AFTER_TIME}`;
+const SPAN_LINE = new RegExp(`${BULLET}${SPAN_AND_TEXT}`);
+const MOMENT_LINE = new RegExp(String.raw`${BULLET}\[?\s*${CLOCK_TIME}${TEXT_AFTER_TIME}`);
+
+export interface TimedLine {
+  startSeconds: number;
+  endSeconds: number;
+  text: string;
+}
+
+// Reads a match of a pattern that ends in SPAN_AND_TEXT and captures nothing before it.
+export function timedLineOf(match: RegExpExecArray): TimedLine {
+  const startSeconds = clockSeconds(match.slice(1, 4));
+  const endSeconds = match[5] === undefined ? startSeconds : clockSeconds(match.slice(4, 7));
+  return { startSeconds, endSeconds, text: (match[7] ?? "").trim() };
+}
+
+export function parseTimedLine(line: string): TimedLine | undefined {
+  const match = SPAN_LINE.exec(line);
+  return match === null ? undefined : timedLineOf(match);
+}
+
+// A range reads as a moment at its start, with the rest of the range left in the text.
+export function parseMomentLine(line: string): TimedLine | undefined {
+  const match = MOMENT_LINE.exec(line);
+  if (match === null) return undefined;
+  const seconds = clockSeconds(match.slice(1, 4));
+  return { startSeconds: seconds, endSeconds: seconds, text: (match[4] ?? "").trim() };
 }

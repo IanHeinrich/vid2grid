@@ -1,6 +1,7 @@
 import type { AnalyseAudio } from "../../audio/videoAudio";
-import type { AppElements, StatusLine } from "../../dom";
-import { resolveModel, type AppState } from "../../state";
+import { resolveModel } from "../../chat/models";
+import type { AppElements } from "../../dom";
+import type { AppState } from "../../state";
 import type {
   ChatStore,
   ModelInfo,
@@ -21,9 +22,11 @@ import {
   type ZoomPlan,
 } from "../../video/study";
 import type { ToolContext } from "../../video/tools";
-import type { ChatVideo } from "../knowledgeVideos";
-import type { ModelPicker } from "../modelPicker";
-import type { Toast, ToastHandle } from "../toast";
+import type { ChatVideo } from "../video/knowledgeVideos";
+import type { MenuHandle } from "../shared/menu";
+import type { ModelPicker } from "../modelPicker/modelPicker";
+import type { StatusLine } from "../shared/status";
+import type { Toast, ToastHandle } from "../shared/toast";
 
 export interface StudyDeps {
   store: ChatStore;
@@ -101,6 +104,7 @@ export type StudyState = "idle" | "running" | "busy" | "paused" | "done";
 export interface StudyContext {
   els: AppElements["study"];
   menu: StudyMenu;
+  menuHandle: MenuHandle;
   state: AppState;
   deps: StudyDeps;
   timelines: Map<string, VideoTimeline>;

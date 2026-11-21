@@ -1,4 +1,4 @@
-import type { ModelInfo, Thoroughness, UserMessage } from "../types";
+import type { ChatSettings, ModelInfo, Thoroughness, UserMessage } from "../types";
 
 export const DEFAULT_MAX_ROUNDS = 8;
 export const THOROUGH_MAX_ROUNDS = 15;
@@ -58,4 +58,11 @@ export function lowestEffort(model: ModelInfo): string | undefined {
   const options = model.reasoningEffortOptions;
   if (options.length === 0) return undefined;
   return clampEffort("none", options) ?? options[0];
+}
+
+export function withEffort(settings: ChatSettings, effort: string): ChatSettings {
+  const next = { ...settings };
+  if (effort === "") delete next.reasoningEffort;
+  else next.reasoningEffort = effort;
+  return next;
 }

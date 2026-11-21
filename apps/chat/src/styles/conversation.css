@@ -1,0 +1,380 @@
+/* Conversation */
+
+.conversation-area {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.conversation {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.25rem;
+}
+
+.empty-conversation {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--muted);
+  text-align: center;
+}
+
+.empty-conversation p {
+  max-width: 28rem;
+}
+
+.ready-card {
+  max-width: 820px;
+  margin: 1.25rem auto 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+
+.ready-card[hidden] {
+  display: none;
+}
+
+.ready-lead {
+  margin: 0 0 0.6rem;
+  color: var(--muted);
+}
+
+.ready-note {
+  margin: 0;
+}
+
+.ready-suggestions:not([hidden]) + .ready-note {
+  margin-top: 0.75rem;
+}
+
+.ready-starters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.starter {
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.starter:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.messages {
+  list-style: none;
+  margin: 0 auto;
+  padding: 0;
+  max-width: 820px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.message {
+  max-width: 100%;
+}
+
+.message.user {
+  align-self: flex-end;
+  max-width: 80%;
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius);
+  background: var(--bg-user);
+}
+
+.message.assistant.is-streaming .message-text:empty::after {
+  content: "…";
+  color: var(--muted);
+}
+
+.message-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+}
+
+.message.user .message-actions {
+  justify-content: flex-end;
+}
+
+.message-action.icon-action {
+  display: inline-grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.message:hover .icon-action,
+.message:focus-within .icon-action,
+.icon-action:focus-visible {
+  opacity: 1;
+}
+
+.icon-action:hover:not(:disabled) {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.message-action:disabled {
+  cursor: not-allowed;
+}
+
+.message-action:not(.icon-action):disabled,
+.message:hover .message-action:disabled,
+.message:focus-within .message-action:disabled {
+  opacity: 0.35;
+}
+
+.message-action.keep-going {
+  padding: 0.2rem 0.75rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.message.is-editing > .message-text,
+.message.is-editing > .message-actions {
+  display: none;
+}
+
+.message-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: min(480px, 60vw);
+}
+
+.message-editor textarea {
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--bg);
+  resize: vertical;
+}
+
+.message-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.message-editor-problem {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.875rem;
+}
+
+.deep-tag,
+.effort-tag,
+.audio-tag {
+  display: inline-block;
+  margin-bottom: 0.3rem;
+  padding: 0 0.45rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 0.875rem;
+}
+
+:is(.deep-tag, .effort-tag) + :is(.effort-tag, .audio-tag) {
+  margin-left: 0.3rem;
+}
+
+.continuation-marker {
+  align-self: center;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.activity {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.activity-summary {
+  cursor: pointer;
+}
+
+.activity.is-live .activity-summary {
+  font-style: italic;
+}
+
+.activity-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--border);
+}
+
+.activity-thinking {
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--border);
+  font-style: italic;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.activity-call.is-pending .activity-call-label {
+  font-style: italic;
+}
+
+.activity-thumbs {
+  display: flex;
+  gap: 0.3rem;
+  margin-top: 0.25rem;
+  overflow-x: auto;
+}
+
+.activity-thumbs .thumb-button img {
+  width: 72px;
+  height: 52px;
+}
+
+.message-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.reply-prefaces {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.reply-prefaces:not(:empty) {
+  margin-bottom: 0.6rem;
+}
+
+.reply-preface {
+  color: var(--muted);
+}
+
+.reply-preface-label {
+  display: block;
+  font-size: 0.75rem;
+  font-style: italic;
+}
+
+.reply-preface-text {
+  overflow-wrap: anywhere;
+}
+
+.timestamp {
+  padding: 0 0.15rem;
+  border: none;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.timestamp:hover {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.thumb {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 140px;
+  font-size: 0.875rem;
+}
+
+.thumb-button {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: zoom-in;
+}
+
+.thumb-button img {
+  display: block;
+  width: 140px;
+  height: 100px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--bg-raised);
+}
+
+.thumb-label {
+  display: -webkit-box;
+  color: var(--muted);
+  line-height: 1.35;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.pin-toggle {
+  display: inline-grid;
+  place-items: center;
+  align-self: flex-start;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.pin-toggle:hover {
+  color: var(--text);
+}
+
+.pin-toggle[aria-pressed="true"] {
+  color: var(--accent);
+}
+
+.pin-toggle[aria-pressed="true"] .icon-pin path:first-child {
+  fill: currentColor;
+}
+
+.error-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  color: var(--danger);
+}

@@ -7,8 +7,8 @@ import {
   importBackup,
   type Backup,
 } from "../src/chat/exportChat";
-import { blobToDataUrl } from "../src/chat/dataUrl";
 import { createMemoryStore } from "../src/chat/store";
+import { blobToDataUrl } from "../src/dataUrl";
 import type {
   Chat,
   ChatMessage,

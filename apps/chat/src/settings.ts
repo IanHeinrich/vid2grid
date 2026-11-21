@@ -1,4 +1,4 @@
-import { VENICE_BASE_URL } from "./api/client";
+import { VENICE_BASE_URL, normaliseBaseUrl } from "./api/venice";
 
 const STORAGE_KEY = "vid2grid-chat-settings";
 // Version 2 is the first that may leave the base URL unset.
@@ -77,12 +77,8 @@ function nonEmptyStringOr(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() !== "" ? value : fallback;
 }
 
-function baseUrlKey(baseUrl: string): string {
-  return baseUrl.trim().replace(/\/+$/, "");
-}
-
 export function keyFor(keys: Readonly<Record<string, string>>, baseUrl: string): string {
-  return keys[baseUrlKey(baseUrl)] ?? "";
+  return keys[normaliseBaseUrl(baseUrl)] ?? "";
 }
 
 export function withKey(
@@ -91,7 +87,7 @@ export function withKey(
   apiKey: string,
 ): Record<string, string> {
   const next = { ...keys };
-  const url = baseUrlKey(baseUrl);
+  const url = normaliseBaseUrl(baseUrl);
   if (url === "") return next;
   if (apiKey === "") delete next[url];
   else next[url] = apiKey;

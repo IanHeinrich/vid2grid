@@ -1,5 +1,5 @@
 import type { ChatSettings, VideoReferences, Voice } from "../types";
-import { effectiveVideoReferences } from "./history";
+import { effectiveVideoReferences } from "./prompts";
 
 const STORAGE_KEY = "vid2grid-chat-personas";
 const VOICES: readonly Voice[] = ["analyst", "character", "narrator"];

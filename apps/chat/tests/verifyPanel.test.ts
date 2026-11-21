@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ClaimCheck } from "../src/types";
-import { renderCheckProgress, renderVerification, verdictSummary } from "../src/ui/verifyPanel";
+import {
+  renderCheckProgress,
+  renderVerification,
+  verdictSummary,
+} from "../src/ui/conversation/verifyPanel";
 
 const CHECKS: ClaimCheck[] = [
   { claim: "A at [0:05].", seconds: [5], verdict: "confirmed", reason: "Seen." },
