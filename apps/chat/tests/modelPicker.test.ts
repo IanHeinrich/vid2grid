@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
-import { queryElements, type AppElements } from "../src/dom";
+import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS, loadSettings } from "../src/settings";
 import { createAppState, setModels, type AppState } from "../src/state";
 import type { ModelInfo } from "../src/types";
@@ -19,27 +18,8 @@ import {
   type ModelPicker,
   type PickerView,
 } from "../src/ui/modelPicker";
-
-function model(id: string, overrides: Partial<ModelInfo> = {}): ModelInfo {
-  return {
-    id,
-    name: id,
-    vision: true,
-    tools: true,
-    reasoning: false,
-    reasoningEffortOptions: [],
-    maxImages: 10,
-    privacy: "private",
-    traits: [],
-    uncensored: false,
-    recommended: false,
-    beta: false,
-    videoInput: false,
-    audioInput: false,
-    e2ee: false,
-    ...overrides,
-  };
-}
+import { model } from "./support/factories";
+import { mountPage } from "./support/page";
 
 const LONG_DESCRIPTION =
   "Sharp eyes for video frames. ".repeat(12) + "It ends with this exact sentence.";
@@ -261,8 +241,7 @@ const key = (target: Element | null, name: string) =>
 
 beforeEach(() => {
   localStorage.clear();
-  document.body.innerHTML = indexHtml;
-  els = queryElements();
+  els = mountPage();
   mount = els.chatSettings.modelPicker;
   state = createAppState({ ...DEFAULT_SETTINGS, privateOnly: true });
   setModels(state, MODELS);

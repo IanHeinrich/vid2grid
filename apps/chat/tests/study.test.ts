@@ -4,7 +4,6 @@ import type {
   ChatRequest,
   ImageRef,
   ImageStore,
-  ModelInfo,
   SheetCache,
   StreamChat,
   StreamEvent,
@@ -27,8 +26,7 @@ import {
   type ZoomPlanInput,
 } from "../src/video/study";
 import type { ToolContext } from "../src/video/tools";
-
-vi.mock("@vid2grid/browser", () => ({}));
+import { model } from "./support/factories";
 
 class FakeStore implements ImageStore, SheetCache {
   readonly images = new Map<string, Blob>();
@@ -52,27 +50,6 @@ class FakeStore implements ImageStore, SheetCache {
     this.sheets.set(key, refs);
     return Promise.resolve();
   }
-}
-
-function model(id: string, overrides: Partial<ModelInfo> = {}): ModelInfo {
-  return {
-    id,
-    name: id,
-    vision: true,
-    tools: true,
-    reasoning: false,
-    reasoningEffortOptions: [],
-    maxImages: 10,
-    privacy: "private",
-    traits: [],
-    uncensored: false,
-    recommended: false,
-    beta: false,
-    videoInput: false,
-    audioInput: false,
-    e2ee: false,
-    ...overrides,
-  };
 }
 
 const WIDE = 16 / 9;

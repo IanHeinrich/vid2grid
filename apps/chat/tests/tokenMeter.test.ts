@@ -1,8 +1,7 @@
 import { modelVisionProfile } from "@vid2grid/core";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
+import { beforeEach, describe, expect, it } from "vitest";
 import { audioNote } from "../src/chat/history";
-import { queryElements, type AppElements } from "../src/dom";
+import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { blankChat, createAppState, setCurrentChat, setModels, type AppState } from "../src/state";
 import type {
@@ -22,32 +21,14 @@ import {
   usageTotals,
 } from "../src/ui/tokenMeter";
 import { LISTEN_SCHEMA } from "../src/video/tools";
-
-vi.mock("@vid2grid/browser", () => ({}));
+import { model as baseModel } from "./support/factories";
+import { mountPage } from "./support/page";
 
 let els: AppElements;
 let state: AppState;
 
 function model(extra: Partial<ModelInfo> = {}): ModelInfo {
-  return {
-    id: "m",
-    name: "M",
-    vision: true,
-    tools: true,
-    reasoning: false,
-    reasoningEffortOptions: [],
-    maxImages: 10,
-    traits: [],
-    uncensored: false,
-    recommended: false,
-    beta: false,
-    videoInput: false,
-    audioInput: false,
-    e2ee: false,
-    privacy: "private",
-    contextTokens: 256_000,
-    ...extra,
-  };
+  return baseModel("m", { name: "M", contextTokens: 256_000, ...extra });
 }
 
 function reply(id: string, promptTokens: number, completionTokens: number): AssistantMessage {
@@ -68,8 +49,7 @@ const MESSAGES: ChatMessage[] = [
 ];
 
 beforeEach(() => {
-  document.body.innerHTML = indexHtml;
-  els = queryElements();
+  els = mountPage();
   state = createAppState({ ...DEFAULT_SETTINGS, apiKey: "key" });
 });
 

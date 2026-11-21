@@ -4,8 +4,6 @@ import { createMemoryStore } from "../src/chat/store";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import type { VideoAudio } from "../src/types";
 
-vi.mock("@vid2grid/browser", () => ({}));
-
 function input(extra: Partial<TurnAudioInput> = {}) {
   const status = { show: vi.fn(), clear: vi.fn() };
   const store = createMemoryStore();

@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
-import { queryElements, type AppElements } from "../src/dom";
+import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import {
   blankChat,
@@ -17,6 +16,7 @@ import {
   type ChatDrawer,
   type KnowledgeDrawer,
 } from "../src/ui/chatDrawer";
+import { mountPage } from "./support/page";
 
 let els: AppElements;
 let state: AppState;
@@ -50,8 +50,7 @@ function press(target: HTMLElement, key: string, shiftKey = false): KeyboardEven
 }
 
 beforeEach(() => {
-  document.body.innerHTML = indexHtml;
-  els = queryElements();
+  els = mountPage();
   state = createAppState(DEFAULT_SETTINGS);
   const chat = blankChat("model", "chat", 1);
   replaceChat(state, chat);

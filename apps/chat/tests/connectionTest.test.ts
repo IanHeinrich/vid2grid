@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
 import { ApiError, VENICE_BASE_URL } from "../src/api/client";
-import { queryElements, type AppElements } from "../src/dom";
+import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { createAppState, setSettings, type AppState } from "../src/state";
 import type { ModelInfo } from "../src/types";
@@ -13,28 +12,14 @@ import {
   testConnection,
   type ConnectionProbes,
 } from "../src/ui/connectionTest";
+import { model as baseModel } from "./support/factories";
+import { mountPage } from "./support/page";
 
 const VENICE = { baseUrl: VENICE_BASE_URL, apiKey: "key" };
 const LOCAL = { baseUrl: "http://localhost:11434/v1", apiKey: "" };
 
 function model(id: string, vision: boolean): ModelInfo {
-  return {
-    id,
-    name: id,
-    vision,
-    tools: true,
-    reasoning: false,
-    reasoningEffortOptions: [],
-    maxImages: 10,
-    privacy: "private",
-    traits: [],
-    uncensored: false,
-    recommended: false,
-    beta: false,
-    videoInput: false,
-    audioInput: false,
-    e2ee: false,
-  };
+  return baseModel(id, { vision });
 }
 
 const MODELS = [model("a", true), model("b", false), model("c", true)];
@@ -110,8 +95,7 @@ describe("initConnectionTest", () => {
   let state: AppState;
 
   beforeEach(() => {
-    document.body.innerHTML = indexHtml;
-    els = queryElements();
+    els = mountPage();
     state = createAppState(DEFAULT_SETTINGS);
     localStorage.clear();
   });

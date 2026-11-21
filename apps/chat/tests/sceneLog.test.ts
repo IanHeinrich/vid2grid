@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
 import { createMemoryStore } from "../src/chat/store";
-import { queryElements, type AppElements } from "../src/dom";
+import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import {
   blankChat,
@@ -12,7 +11,8 @@ import {
 } from "../src/state";
 import type { Chat, ChatStore, SceneNote, StreamChat, VideoAttachment } from "../src/types";
 import { initSceneLog, sceneLogTokens } from "../src/ui/sceneLog";
-import { initToast } from "../src/ui/toast";
+import { mountPage, stillToast } from "./support/page";
+import { replyWith } from "./support/streams";
 
 const VIDEO: VideoAttachment = {
   name: "beach.mp4",
@@ -27,14 +27,6 @@ let state: AppState;
 let store: ChatStore;
 let seek: ReturnType<typeof vi.fn>;
 
-function stream(reply: string): StreamChat {
-  return async function* () {
-    await Promise.resolve();
-    yield { type: "text", delta: reply };
-    yield { type: "done", finishReason: "stop" };
-  };
-}
-
 async function openChat(notes: SceneNote[], video: VideoAttachment | null = VIDEO, id = "chat") {
   const chat: Chat = { ...blankChat("model", id, 1), sceneLog: notes, ...(video && { video }) };
   await store.putChat(chat);
@@ -42,10 +34,10 @@ async function openChat(notes: SceneNote[], video: VideoAttachment | null = VIDE
   setCurrentChat(state, chat, []);
 }
 
-function panel(streamChat: StreamChat = stream(""), currentTime = () => 42) {
+function panel(streamChat: StreamChat = replyWith(""), currentTime = () => 42) {
   return initSceneLog(els, state, {
     store,
-    toast: initToast(els, { set: () => 0, clear: vi.fn() }),
+    toast: stillToast(els),
     streamChat,
     currentTime,
     seek,
@@ -66,8 +58,7 @@ async function savedLog(): Promise<SceneNote[] | undefined> {
 }
 
 beforeEach(() => {
-  document.body.innerHTML = indexHtml;
-  els = queryElements();
+  els = mountPage();
   state = createAppState(DEFAULT_SETTINGS);
   store = createMemoryStore();
   seek = vi.fn();
@@ -147,7 +138,7 @@ describe("scene log editing", () => {
 
   it("adds a note at the current playback time", async () => {
     await openChat([]);
-    panel(stream(""), () => 75.4);
+    panel(replyWith(""), () => 75.4);
     expect(els.sceneLog.empty.hidden).toBe(false);
     els.sceneLog.addButton.click();
     const time = els.sceneLog.list.querySelector<HTMLInputElement>(".note-time-input");
@@ -248,7 +239,7 @@ describe("scene log model", () => {
 describe("scene log condensing", () => {
   it("previews a condensed log and saves it only when accepted", async () => {
     await openChat(notes);
-    panel(stream("[0:05] She enters and the door opens"));
+    panel(replyWith("[0:05] She enters and the door opens"));
     els.sceneLog.condenseButton.click();
     await vi.waitFor(() => expect(els.sceneLog.preview.hidden).toBe(false));
     expect(els.sceneLog.previewList.textContent).toContain("She enters and the door opens");
@@ -262,7 +253,7 @@ describe("scene log condensing", () => {
 
   it("discards a condensed preview", async () => {
     await openChat(notes);
-    panel(stream("[0:05] Merged"));
+    panel(replyWith("[0:05] Merged"));
     els.sceneLog.condenseButton.click();
     await vi.waitFor(() => expect(els.sceneLog.preview.hidden).toBe(false));
     els.sceneLog.discardButton.click();

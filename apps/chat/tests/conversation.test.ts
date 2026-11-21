@@ -1,21 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
 import { createMemoryStore } from "../src/chat/store";
-import { queryElements, type AppElements } from "../src/dom";
+import type { AppElements } from "../src/dom";
 import type {
   AssistantMessage,
   ChatMessage,
   ChatStore,
   ImageRef,
-  ModelInfo,
-  ToolMessage,
   UserMessage,
   VideoAttachment,
 } from "../src/types";
 import { initConversation, type ConversationDeps } from "../src/ui/conversation";
 import type { VideoView } from "../src/ui/videoPanel";
-
-vi.mock("@vid2grid/browser", () => ({}));
+import { conversationDeps } from "./support/conversationDeps";
+import { assistant, model, sheet, tool, user } from "./support/factories";
+import { mountPage } from "./support/page";
 
 let els: AppElements;
 let store: ChatStore;
@@ -27,27 +25,6 @@ let verifying: (
   message: AssistantMessage,
   signal: AbortSignal,
 ) => Promise<AssistantMessage | undefined>;
-
-function model(id: string, overrides: Partial<ModelInfo> = {}): ModelInfo {
-  return {
-    id,
-    name: id,
-    vision: true,
-    tools: true,
-    reasoning: false,
-    reasoningEffortOptions: [],
-    maxImages: 10,
-    privacy: "private",
-    traits: [],
-    uncensored: false,
-    recommended: false,
-    beta: false,
-    videoInput: false,
-    audioInput: false,
-    e2ee: false,
-    ...overrides,
-  };
-}
 
 const MODELS = [
   model("chat-model", { name: "Chat Model", pricing: { inputPerMTok: 1, outputPerMTok: 2 } }),
@@ -84,53 +61,15 @@ function makeSpies() {
 }
 
 function deps(): ConversationDeps {
-  return {
-    store,
+  return conversationDeps(store, {
     ...spies,
     isRunning: () => running,
     videoView: () => view,
     showThinking: () => showThinking,
     models: () => MODELS,
     chatModelId: () => "chat-model",
-    pickerSettings: {
-      privateOnly: () => false,
-      setPrivateOnly: vi.fn(),
-      favourites: () => [],
-      setFavourites: vi.fn(),
-    },
     onVerify: (message, signal) => verifying(message, signal),
-  };
-}
-
-function user(id: string, text: string, extra: Partial<UserMessage> = {}): UserMessage {
-  return { id, createdAt: 0, role: "user", text, images: [], ...extra };
-}
-
-function assistant(
-  id: string,
-  text: string,
-  extra: Partial<AssistantMessage> = {},
-): AssistantMessage {
-  return { id, createdAt: 1, role: "assistant", text, toolCalls: [], ...extra };
-}
-
-function sheet(id: string, start: number, end: number): ImageRef {
-  return {
-    id,
-    pinned: false,
-    source: {
-      kind: "sheet",
-      call: "look",
-      name: "grid_0001",
-      startSeconds: start,
-      endSeconds: end,
-      frameCount: 4,
-    },
-  };
-}
-
-function tool(id: string, callId: string, images: ImageRef[], text = "ok"): ToolMessage {
-  return { id, createdAt: 2, role: "tool", toolCallId: callId, text, images };
+  });
 }
 
 function look(id: string, start: number, end: number) {
@@ -148,8 +87,7 @@ function buttonsLabelled(label: string): HTMLButtonElement[] {
 }
 
 beforeEach(() => {
-  document.body.innerHTML = indexHtml;
-  els = queryElements();
+  els = mountPage();
   store = createMemoryStore();
   view = { video: beach, url: "blob:beach" };
   showThinking = false;

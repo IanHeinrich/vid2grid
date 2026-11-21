@@ -54,6 +54,12 @@ export default tseslint.config(
     },
   },
   {
+    files: ["**/tests/**/*.ts"],
+    rules: {
+      "max-lines-per-function": "off",
+    },
+  },
+  {
     files: ["packages/core/src/**/*.ts", "packages/core/tests/**/*.ts"],
     rules: {
       "no-restricted-imports": [

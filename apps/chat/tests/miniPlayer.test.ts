@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
-import { queryElements, type AppElements } from "../src/dom";
+import type { AppElements } from "../src/dom";
 import {
   clampPosition,
   clampWidth,
@@ -20,6 +19,7 @@ import {
   type MiniPlayer,
   type MiniPlayerDeps,
 } from "../src/ui/miniPlayer";
+import { mountPage } from "./support/page";
 
 const VIEWPORT = { width: 1000, height: 800 };
 const LIMITS = { aspect: 2, chromeHeight: 40, viewport: VIEWPORT };
@@ -218,8 +218,7 @@ function saved(): unknown {
 }
 
 beforeEach(() => {
-  document.body.innerHTML = indexHtml;
-  els = queryElements().video;
+  els = mountPage().video;
   storage = window.localStorage;
   storage.clear();
   vi.spyOn(els.miniPlayer, "getBoundingClientRect").mockImplementation(() =>

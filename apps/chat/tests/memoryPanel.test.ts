@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
 import { createMemoryStore } from "../src/chat/store";
-import { queryElements, type AppElements } from "../src/dom";
+import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import {
   blankChat,
@@ -12,21 +11,14 @@ import {
 } from "../src/state";
 import type { Chat, ChatMessage, ChatStore, StorySoFar, StreamChat } from "../src/types";
 import { initMemoryPanel } from "../src/ui/memoryPanel";
-import { initToast } from "../src/ui/toast";
+import { mountPage, stillToast } from "./support/page";
+import { replyWith } from "./support/streams";
 
 let els: AppElements;
 let state: AppState;
 let store: ChatStore;
 
 const STORY: StorySoFar = { text: "They met on the beach.", throughMessageId: "u1", updatedAt: 5 };
-
-function stream(reply: string): StreamChat {
-  return async function* () {
-    await Promise.resolve();
-    yield { type: "text", delta: reply };
-    yield { type: "done", finishReason: "stop" };
-  };
-}
 
 function conversation(turns: number): ChatMessage[] {
   return Array.from({ length: turns }, (_, index): ChatMessage[] => [
@@ -48,10 +40,10 @@ async function openChat(extra: Partial<Chat> = {}, messages: ChatMessage[] = [])
   setCurrentChat(state, chat, messages);
 }
 
-function panel(streamChat: StreamChat = stream("")) {
+function panel(streamChat: StreamChat = replyWith("")) {
   return initMemoryPanel(els, state, {
     store,
-    toast: initToast(els, { set: () => 0, clear: vi.fn() }),
+    toast: stillToast(els),
     streamChat,
     onChanged: vi.fn(),
     now: () => 77,
@@ -63,8 +55,7 @@ async function savedStory(): Promise<StorySoFar | undefined> {
 }
 
 beforeEach(() => {
-  document.body.innerHTML = indexHtml;
-  els = queryElements();
+  els = mountPage();
   state = createAppState(DEFAULT_SETTINGS);
   store = createMemoryStore();
 });
@@ -130,7 +121,7 @@ describe("memory panel", () => {
 describe("memory panel summary", () => {
   it("summarizes the older messages on request", async () => {
     await openChat({}, conversation(6));
-    panel(stream("A long day at the beach."));
+    panel(replyWith("A long day at the beach."));
     els.memory.summarizeButton.click();
     expect(els.memory.status.textContent).toBe("Summarizing the older messages…");
     expect(els.memory.stopButton.hidden).toBe(false);
@@ -149,7 +140,7 @@ describe("memory panel summary", () => {
 
   it("says so when there is nothing old enough to fold in", async () => {
     await openChat({}, conversation(2));
-    panel(stream("Unused."));
+    panel(replyWith("Unused."));
     els.memory.summarizeButton.click();
     await vi.waitFor(() => expect(els.memory.status.textContent).toContain("Nothing to fold in"));
     expect(await savedStory()).toBeUndefined();

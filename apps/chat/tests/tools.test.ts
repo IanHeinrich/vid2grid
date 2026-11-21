@@ -16,8 +16,6 @@ import {
   type ToolContext,
 } from "../src/video/tools";
 
-vi.mock("@vid2grid/browser", () => ({}));
-
 class FakeStore implements ImageStore, SheetCache {
   readonly images = new Map<string, Blob>();
   readonly sheets = new Map<string, ImageRef[]>();

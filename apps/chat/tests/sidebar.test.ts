@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
 import { createMemoryStore } from "../src/chat/store";
-import { queryElements, type AppElements } from "../src/dom";
+import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import {
   blankChat,
@@ -20,6 +19,7 @@ import {
   type SidebarDeps,
 } from "../src/ui/sidebar";
 import { initToast } from "../src/ui/toast";
+import { mountPage } from "./support/page";
 
 const SETTINGS = {
   ...DEFAULT_SETTINGS,
@@ -104,8 +104,7 @@ async function seed(
 }
 
 beforeEach(() => {
-  document.body.innerHTML = indexHtml;
-  els = queryElements();
+  els = mountPage();
   state = createAppState(SETTINGS);
   store = createMemoryStore();
   let next = 0;

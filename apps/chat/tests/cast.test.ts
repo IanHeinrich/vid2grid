@@ -6,16 +6,8 @@ import {
   suggestCast,
   type CastDeps,
 } from "../src/chat/cast";
-import type { CastCard, ChatRequest, StreamChat } from "../src/types";
-
-function scriptedStream(reply: string, requests: ChatRequest[]): StreamChat {
-  return async function* (_settings, request) {
-    await Promise.resolve();
-    requests.push(request);
-    yield { type: "text", delta: reply };
-    yield { type: "done", finishReason: "stop" };
-  };
-}
+import type { CastCard, ChatRequest } from "../src/types";
+import { replyWith } from "./support/streams";
 
 function counter(): () => string {
   let next = 0;
@@ -26,7 +18,7 @@ function setup(reply: string) {
   const requests: ChatRequest[] = [];
   const deps: CastDeps = {
     api: { baseUrl: "https://api.example", apiKey: "key" },
-    streamChat: scriptedStream(reply, requests),
+    streamChat: replyWith(reply, requests),
     modelId: "model",
     veniceParameters: true,
     signal: new AbortController().signal,

@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
 import { VENICE_BASE_URL } from "../src/api/client";
 import { createMemoryStore } from "../src/chat/store";
-import { queryElements, type AppElements } from "../src/dom";
+import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import {
   addPending,
@@ -14,8 +13,10 @@ import {
   setSettings,
   type AppState,
 } from "../src/state";
-import type { Chat, ChatStore, ModelInfo } from "../src/types";
+import type { Chat, ChatStore } from "../src/types";
 import { completedSteps, initWelcome, keyStepLabel, type WelcomeDeps } from "../src/ui/welcome";
+import { model } from "./support/factories";
+import { mountPage } from "./support/page";
 
 let els: AppElements;
 let state: AppState;
@@ -23,26 +24,6 @@ let store: ChatStore;
 let deps: WelcomeDeps;
 let onOpenSettings: ReturnType<typeof vi.fn>;
 let onTestConnection: ReturnType<typeof vi.fn>;
-
-function model(id: string): ModelInfo {
-  return {
-    id,
-    name: id,
-    vision: true,
-    tools: true,
-    reasoning: false,
-    reasoningEffortOptions: [],
-    maxImages: 10,
-    privacy: "private",
-    traits: [],
-    uncensored: false,
-    recommended: false,
-    beta: false,
-    videoInput: false,
-    audioInput: false,
-    e2ee: false,
-  };
-}
 
 function chat(id: string, extra: Partial<Chat> = {}): Chat {
   return { ...blankChat(DEFAULT_SETTINGS.defaultModelId, id, 1), ...extra };
@@ -63,8 +44,7 @@ function stepAction(step: string): HTMLButtonElement {
 }
 
 beforeEach(() => {
-  document.body.innerHTML = indexHtml;
-  els = queryElements();
+  els = mountPage();
   state = createAppState(DEFAULT_SETTINGS);
   store = createMemoryStore();
   localStorage.clear();
@@ -167,8 +147,7 @@ describe("initWelcome", () => {
     expect(els.welcome.el.hidden).toBe(false);
     els.welcome.dismiss.click();
     expect(els.welcome.el.hidden).toBe(true);
-    document.body.innerHTML = indexHtml;
-    els = queryElements();
+    els = mountPage();
     initWelcome(els, state, deps);
     expect(els.welcome.el.hidden).toBe(true);
   });

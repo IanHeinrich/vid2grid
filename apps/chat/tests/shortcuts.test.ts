@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
-import { queryElements, type AppElements } from "../src/dom";
+import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { blankChat, createAppState, setCurrentChat } from "../src/state";
 import {
@@ -10,6 +9,7 @@ import {
   type KnowledgeDrawer,
 } from "../src/ui/chatDrawer";
 import { initShortcuts } from "../src/ui/shortcuts";
+import { mountPage } from "./support/page";
 
 let els: AppElements;
 let running: boolean;
@@ -29,8 +29,7 @@ function press(init: KeyboardEventInit, target: EventTarget = document.body): Ke
 }
 
 beforeEach(() => {
-  document.body.innerHTML = indexHtml;
-  els = queryElements();
+  els = mountPage();
   running = true;
   const state = createAppState(DEFAULT_SETTINGS);
   setCurrentChat(state, blankChat("m", "chat", 1), []);

@@ -7,19 +7,8 @@ import {
   summarizeStory,
   type SummaryDeps,
 } from "../src/chat/summary";
-import type { Chat, ChatMessage, ChatRequest, ImageRef, StreamChat } from "../src/types";
-
-function scriptedStream(replies: (string | Error)[], requests: ChatRequest[]): StreamChat {
-  const queue = [...replies];
-  return async function* (_settings, request) {
-    await Promise.resolve();
-    requests.push(request);
-    const reply = queue.shift() ?? "";
-    if (reply instanceof Error) throw reply;
-    yield { type: "text", delta: reply };
-    yield { type: "done", finishReason: "stop" };
-  };
-}
+import type { Chat, ChatMessage, ChatRequest, ImageRef } from "../src/types";
+import { scriptedReplies } from "./support/streams";
 
 function setup(
   replies: (string | Error)[] = ["The story."],
@@ -28,7 +17,7 @@ function setup(
   const requests: ChatRequest[] = [];
   const deps: SummaryDeps = {
     api: { baseUrl: "https://api.example", apiKey: "key" },
-    streamChat: scriptedStream(replies, requests),
+    streamChat: scriptedReplies(replies, requests),
     modelId: "model",
     veniceParameters: true,
     signal,

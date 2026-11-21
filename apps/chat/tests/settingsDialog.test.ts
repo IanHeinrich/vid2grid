@@ -1,9 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
 import { effectiveVideoReferences } from "../src/chat/history";
 import { listPersonas, savePersona, type Persona } from "../src/chat/personas";
 import { createMemoryStore } from "../src/chat/store";
-import { queryElements, type AppElements } from "../src/dom";
+import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS, loadSettings } from "../src/settings";
 import {
   blankChat,
@@ -16,33 +15,19 @@ import {
 import type { ChatSettings, ChatStore, ModelInfo } from "../src/types";
 import { VOICE_HINTS } from "../src/ui/presetManager";
 import { initChatSettings, initSettingsDialog, parseMaxRounds } from "../src/ui/settingsDialog";
-import { initToast, type Toast } from "../src/ui/toast";
+import type { Toast } from "../src/ui/toast";
+import { model as baseModel } from "./support/factories";
+import { mountPage, stillToast } from "./support/page";
 
 let els: AppElements;
 let state: AppState;
 
 function model(id: string, privacy: ModelInfo["privacy"]): ModelInfo {
-  return {
-    id,
-    name: id,
-    vision: true,
-    tools: true,
-    reasoning: false,
-    reasoningEffortOptions: [],
-    maxImages: 10,
-    traits: [],
-    uncensored: false,
-    recommended: false,
-    beta: false,
-    videoInput: false,
-    audioInput: false,
-    e2ee: false,
-    privacy,
-  };
+  return baseModel(id, { privacy });
 }
 
 function toast(): Toast {
-  return initToast(els, { set: () => 0, clear: vi.fn() });
+  return stillToast(els);
 }
 
 function pickerIds(mount: HTMLElement): string[] {
@@ -59,8 +44,7 @@ function pickRow(mount: HTMLElement, id: string): void {
 }
 
 beforeEach(() => {
-  document.body.innerHTML = indexHtml;
-  els = queryElements();
+  els = mountPage();
   els.settingsDialog.dialog.showModal = vi.fn();
   els.presetManager.dialog.showModal = function (this: HTMLDialogElement) {
     this.open = true;

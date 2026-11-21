@@ -1,13 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
 import { createMemoryStore } from "../src/chat/store";
-import { queryElements, type AppElements } from "../src/dom";
+import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { blankChat, createAppState, setPendingVideo, type AppState } from "../src/state";
 import type { ChatStore } from "../src/types";
 import { formatBytes, initVideoCopies, type VideoStorage } from "../src/ui/videoCopies";
-
-vi.mock("@vid2grid/browser", () => ({}));
+import { mountPage } from "./support/page";
 
 let els: AppElements;
 let state: AppState;
@@ -68,8 +66,7 @@ function bigFile(bytes: number): File {
 }
 
 beforeEach(() => {
-  document.body.innerHTML = indexHtml;
-  els = queryElements();
+  els = mountPage();
   state = createAppState({ ...DEFAULT_SETTINGS, askAboveBytes: 1000 });
   store = createMemoryStore();
   storage = fakeStorage();

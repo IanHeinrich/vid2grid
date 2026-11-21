@@ -1,15 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
-import { queryElements, type AppElements } from "../src/dom";
+import type { AppElements } from "../src/dom";
 import { initToast, type Toast } from "../src/ui/toast";
+import { mountPage } from "./support/page";
 
 let els: AppElements;
 let pending: Map<number, () => void>;
 let toast: Toast;
 
 beforeEach(() => {
-  document.body.innerHTML = indexHtml;
-  els = queryElements();
+  els = mountPage();
   pending = new Map();
   let next = 0;
   toast = initToast(els, {

@@ -11,8 +11,6 @@ import {
   videoStorageSupported,
 } from "../src/video/videoStore";
 
-vi.mock("@vid2grid/browser", () => ({}));
-
 type Chunk = string | BufferSource | Blob;
 
 class FakeWritable {

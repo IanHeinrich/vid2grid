@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
-import { queryElements, type AppElements } from "../src/dom";
+import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { blankChat, createAppState, setCurrentChat, type AppState } from "../src/state";
 import type { ChatMessage, VideoAttachment } from "../src/types";
 import { chatVideos, initVideoPicker } from "../src/ui/knowledgeVideos";
+import { mountPage } from "./support/page";
 
 function video(name: string): VideoAttachment {
   return { name, fileKey: `${name}-key`, durationSeconds: 60, width: 640, height: 360 };
@@ -45,8 +45,7 @@ function pick(fileKey: string): void {
 }
 
 beforeEach(() => {
-  document.body.innerHTML = indexHtml;
-  els = queryElements();
+  els = mountPage();
   state = createAppState(DEFAULT_SETTINGS);
 });
 

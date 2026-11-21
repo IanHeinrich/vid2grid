@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
 import type { AccountBalance, BalanceUnavailable } from "../src/api/client";
-import { queryElements, type AppElements } from "../src/dom";
+import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { createAppState, setSettings, type AppState } from "../src/state";
 import { balanceText, initBalance, sourceText } from "../src/ui/balance";
+import { mountPage } from "./support/page";
 
 let els: AppElements;
 let state: AppState;
@@ -22,8 +22,7 @@ function setup(result: AccountBalance | BalanceUnavailable) {
 }
 
 beforeEach(() => {
-  document.body.innerHTML = indexHtml;
-  els = queryElements();
+  els = mountPage();
   state = createAppState({ ...DEFAULT_SETTINGS, apiKey: "key" });
   tick = undefined;
   visible = true;

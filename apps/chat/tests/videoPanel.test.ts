@@ -1,9 +1,8 @@
 import type { AudioAnalysisOptions, AudioAnalysisRequest, AudioTrack } from "@vid2grid/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
 import type { AnalyseAudio } from "../src/audio/videoAudio";
 import { createMemoryStore } from "../src/chat/store";
-import { queryElements, type AppElements } from "../src/dom";
+import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import {
   addPending,
@@ -24,8 +23,7 @@ import type { Chat, ChatStore, ImageRef, VideoAttachment } from "../src/types";
 import { initVideoPanel, type VideoPanel, type VideoPanelDeps } from "../src/ui/videoPanel";
 import { fileKey, type RenderedSheet } from "../src/video/render";
 import type { ToolContext } from "../src/video/tools";
-
-vi.mock("@vid2grid/browser", () => ({}));
+import { mountPage } from "./support/page";
 
 const INFO = { durationSeconds: 60, width: 640, height: 360 };
 const MODEL = "vision-model";
@@ -127,8 +125,7 @@ async function openChatWithVideo(attachment: VideoAttachment): Promise<Chat> {
 }
 
 beforeEach(async () => {
-  document.body.innerHTML = indexHtml;
-  els = queryElements();
+  els = mountPage();
   state = createAppState({ ...DEFAULT_SETTINGS, apiKey: "key" });
   store = createMemoryStore();
   spies = makeSpies();

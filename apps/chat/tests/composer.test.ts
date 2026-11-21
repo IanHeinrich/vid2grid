@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
 import { createMemoryStore } from "../src/chat/store";
-import { queryElements, type AppElements } from "../src/dom";
+import type { AppElements } from "../src/dom";
 import { VENICE_BASE_URL } from "../src/api/client";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import {
@@ -20,19 +19,12 @@ import {
   setRunning,
   type AppState,
 } from "../src/state";
-import type {
-  ChatSettings,
-  ChatStore,
-  ImageRef,
-  ModelInfo,
-  StreamChat,
-  StreamEvent,
-  UserMessage,
-} from "../src/types";
+import type { ChatSettings, ChatStore, ModelInfo, StreamChat, UserMessage } from "../src/types";
 import { initComposer, storedAudioOn, type Composer, type ComposerDeps } from "../src/ui/composer";
 import { initTurns } from "../src/ui/turns";
-
-vi.mock("@vid2grid/browser", () => ({}));
+import { upload } from "./support/factories";
+import { mountPage } from "./support/page";
+import { replyWith, textThenWait, waitForAbort } from "./support/streams";
 
 const MODEL = "vision-model";
 const BEACH = { name: "beach.mp4", fileKey: "k", durationSeconds: 75, width: 1, height: 1 };
@@ -47,32 +39,7 @@ let els: AppElements;
 let state: AppState;
 let store: ChatStore;
 
-const reply: StreamChat = async function* () {
-  await Promise.resolve();
-  yield* [
-    { type: "text", delta: "Hello" },
-    { type: "done", finishReason: "stop" },
-  ] satisfies StreamEvent[];
-};
-
-function untilAbort(signal: AbortSignal): Promise<void> {
-  return new Promise((resolve) => signal.addEventListener("abort", () => resolve()));
-}
-
-async function* waitForAbort(signal: AbortSignal): AsyncGenerator<StreamEvent> {
-  await untilAbort(signal);
-  yield { type: "done", finishReason: null };
-}
-
-async function* textThenWait(signal: AbortSignal): AsyncGenerator<StreamEvent> {
-  yield { type: "text", delta: "Partial" };
-  await untilAbort(signal);
-  yield { type: "done", finishReason: null };
-}
-
-function image(id: string): ImageRef {
-  return { id, source: { kind: "upload", name: `${id}.png` }, pinned: false };
-}
+const reply = replyWith("Hello");
 
 function makeSpies() {
   return {
@@ -155,8 +122,7 @@ function pressEnter(shiftKey = false): KeyboardEvent {
 
 beforeEach(async () => {
   localStorage.clear();
-  document.body.innerHTML = indexHtml;
-  els = queryElements();
+  els = mountPage();
   state = createAppState(SETTINGS);
   store = createMemoryStore();
   const chat = blankChat(state.settings.defaultModelId, "chat", 1);
@@ -278,8 +244,8 @@ describe("stopping", () => {
 
 describe("attachments and limits", () => {
   it("pins and removes pending images", () => {
-    addPending(state, "chat", { kind: "image", ref: image("a") });
-    addPending(state, "chat", { kind: "overview", refs: [image("s1"), image("s2")] });
+    addPending(state, "chat", { kind: "image", ref: upload("a") });
+    addPending(state, "chat", { kind: "overview", refs: [upload("s1"), upload("s2")] });
     setup();
     const items = () => [...els.composer.pendingList.querySelectorAll(".pending-item")];
     expect(items().map((item) => item.querySelector(".pending-label")?.textContent)).toEqual([
@@ -289,7 +255,7 @@ describe("attachments and limits", () => {
     items()[0]?.querySelector<HTMLButtonElement>(".pin-toggle")?.click();
     expect(currentPending(state)[0]).toEqual({
       kind: "image",
-      ref: { ...image("a"), pinned: true },
+      ref: { ...upload("a"), pinned: true },
     });
     expect(items()[0]?.querySelector(".pin-toggle")?.getAttribute("aria-pressed")).toBe("true");
     items()[1]?.querySelector<HTMLButtonElement>(".pending-remove")?.click();
@@ -405,8 +371,8 @@ describe("dropped images and limits", () => {
   it("blocks sending when pinned images exceed the model's limit", async () => {
     state = createAppState({ ...SETTINGS, fallbackMaxImages: 1 });
     setCurrentChat(state, blankChat(state.settings.defaultModelId, "chat", 1), []);
-    addPending(state, "chat", { kind: "image", ref: { ...image("a"), pinned: true } });
-    addPending(state, "chat", { kind: "image", ref: { ...image("b"), pinned: true } });
+    addPending(state, "chat", { kind: "image", ref: { ...upload("a"), pinned: true } });
+    addPending(state, "chat", { kind: "image", ref: { ...upload("b"), pinned: true } });
     const spies = makeSpies();
     setup(spies);
     els.composer.messageInput.value = "Look";
@@ -436,8 +402,8 @@ describe("the pending video", () => {
 
   it("removes the pending video and its overview from the chip, leaving other items", () => {
     setPendingVideo(state, "chat", video);
-    addPending(state, "chat", { kind: "overview", refs: [image("s1")] });
-    addPending(state, "chat", { kind: "image", ref: image("a") });
+    addPending(state, "chat", { kind: "overview", refs: [upload("s1")] });
+    addPending(state, "chat", { kind: "image", ref: upload("a") });
     const onPendingChanged = vi.fn();
     initComposer(els, state, {
       store,
@@ -454,7 +420,7 @@ describe("the pending video", () => {
     );
     expect(remove?.getAttribute("aria-label")).toBe("Remove beach.mp4 · 1:15");
     remove?.click();
-    expect(currentPending(state)).toEqual([{ kind: "image", ref: image("a") }]);
+    expect(currentPending(state)).toEqual([{ kind: "image", ref: upload("a") }]);
     expect(onPendingChanged).toHaveBeenCalled();
     expect(els.composer.pendingList.querySelectorAll(".pending-item")).toHaveLength(1);
   });
@@ -499,7 +465,7 @@ describe("the pending overview", () => {
   }
 
   it("explains what removing the overview means", () => {
-    addPending(state, "chat", { kind: "overview", refs: [image("s1")] });
+    addPending(state, "chat", { kind: "overview", refs: [upload("s1")] });
     setup();
     expect(els.composer.pendingList.querySelector(".pending-detail")?.textContent).toContain(
       "must call look itself",
@@ -569,8 +535,7 @@ describe("audio toggle", () => {
     expect((sent as UserMessage | undefined)?.audio).toBe(true);
     expect((sent as UserMessage | undefined)?.thoroughness).toBeUndefined();
     expect(toggle.getAttribute("aria-pressed")).toBe("true");
-    document.body.innerHTML = indexHtml;
-    els = queryElements();
+    els = mountPage();
     setup();
     expect(els.composer.audioToggle.getAttribute("aria-pressed")).toBe("true");
     expect(storedAudioOn()).toBe(true);

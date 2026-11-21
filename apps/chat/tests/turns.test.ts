@@ -1,13 +1,12 @@
 import { modelVisionProfile } from "@vid2grid/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../index.html?raw";
 import type * as AgentLoop from "../src/chat/agentLoop";
 import { DEEP_MAX_ROUNDS, DEFAULT_MAX_ROUNDS, runTurn } from "../src/chat/agentLoop";
 import { THOROUGH_MAX_ROUNDS } from "../src/chat/thoroughness";
 import { ANSWER_NOW_NOTE } from "../src/chat/history";
 import { createMemoryStore } from "../src/chat/store";
 import { STORY_SYSTEM_PROMPT } from "../src/chat/summary";
-import { queryElements, type AppElements } from "../src/dom";
+import type { AppElements } from "../src/dom";
 import { VENICE_BASE_URL } from "../src/api/client";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import {
@@ -43,8 +42,11 @@ import {
   type Turns,
 } from "../src/ui/turns";
 import { resolveSheetResolution } from "../src/video/resolution";
+import { conversationDeps } from "./support/conversationDeps";
+import { model } from "./support/factories";
+import { mountPage } from "./support/page";
+import { waitForAbort } from "./support/streams";
 
-vi.mock("@vid2grid/browser", () => ({}));
 vi.mock("../src/chat/agentLoop", async (importOriginal) => {
   const actual = await importOriginal<typeof AgentLoop>();
   return { ...actual, runTurn: vi.fn(actual.runTurn) };
@@ -89,11 +91,6 @@ async function* answer(text: string): AsyncGenerator<StreamEvent> {
   yield { type: "done", finishReason: "stop" };
 }
 
-async function* pendingUntilAbort(signal: AbortSignal): AsyncGenerator<StreamEvent> {
-  await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve()));
-  yield { type: "done", finishReason: null };
-}
-
 async function seed(messages: ChatMessage[], chatExtra: Partial<Chat> = {}): Promise<void> {
   const chat = { ...blankChat(MODEL, "chat", 1), ...chatExtra };
   await store.putChat(chat);
@@ -130,45 +127,28 @@ function lastTurnDeps() {
 }
 
 beforeEach(() => {
-  document.body.innerHTML = indexHtml;
-  els = queryElements();
+  els = mountPage();
   state = createAppState(SETTINGS);
   store = createMemoryStore();
   status = { show: vi.fn(), clear: vi.fn() };
   toast = { show: vi.fn() };
   streamChat = vi.fn<StreamChat>(() => answer("New reply"));
   vi.mocked(runTurn).mockClear();
-  conversation = initConversation(els, {
-    store,
-    onSeek: vi.fn(),
-    onCue: vi.fn(),
-    onMessageChanged: vi.fn(),
-    onEdit: vi.fn(),
-    onReplay: vi.fn(),
-    onKeepGoing: vi.fn(),
-    onBranch: vi.fn(),
-    onDelete: vi.fn(),
-    onCopy: vi.fn(),
-    onPopOut: vi.fn(),
-    onReattach: vi.fn(),
-    isRunning: () => state.running,
-    videoView: () => ({ video: undefined, url: null }),
-    showThinking: () => false,
-    onPrefill: vi.fn(),
-    focusComposer: vi.fn(),
-    models: () => state.models,
-    chatModelId: () => state.currentChat?.settings.modelId,
-    pickerSettings: storedPickerSettings(state, localStorage),
-    onSwitchReply: vi.fn(),
-    onCompare: vi.fn(),
-    onVerify: () => Promise.resolve(undefined),
-    onMessagesChanged: vi.fn(),
-  });
+  conversation = initConversation(
+    els,
+    conversationDeps(store, {
+      isRunning: () => state.running,
+      models: () => state.models,
+      chatModelId: () => state.currentChat?.settings.modelId,
+      pickerSettings: storedPickerSettings(state, localStorage),
+      onVerify: () => Promise.resolve(undefined),
+    }),
+  );
 });
 
 describe("replay", () => {
   it("removes the old reply before the new request and reruns the turn", async () => {
-    streamChat.mockImplementation((_settings, _request, signal) => pendingUntilAbort(signal));
+    streamChat.mockImplementation((_settings, _request, signal) => waitForAbort(signal));
     await seed([U1, A1, U2, A2]);
     const running = turns();
     const replaying = running.replay();
@@ -295,7 +275,7 @@ describe("answer now", () => {
     await seed([U1]);
     const running = turns();
     streamChat
-      .mockImplementationOnce((_api, _request, signal) => pendingUntilAbort(signal))
+      .mockImplementationOnce((_api, _request, signal) => waitForAbort(signal))
       .mockImplementationOnce(() => answer("Answered."));
     const turn = running.run(() => Promise.resolve({}));
     await vi.waitFor(() => expect(streamChat).toHaveBeenCalledTimes(1));
@@ -318,7 +298,7 @@ describe("running per chat", () => {
   it("lets another chat send while one chat's reply is still running", async () => {
     await seed([U1]);
     const running = turns();
-    streamChat.mockImplementationOnce((_api, _request, signal) => pendingUntilAbort(signal));
+    streamChat.mockImplementationOnce((_api, _request, signal) => waitForAbort(signal));
     const first = running.run(() => Promise.resolve({}));
     await vi.waitFor(() => expect(streamChat).toHaveBeenCalledTimes(1));
     expect(state.running).toBe(true);
@@ -340,7 +320,7 @@ describe("running per chat", () => {
   it("refuses a second turn in the chat whose reply is running", async () => {
     await seed([U1]);
     const running = turns();
-    streamChat.mockImplementationOnce((_api, _request, signal) => pendingUntilAbort(signal));
+    streamChat.mockImplementationOnce((_api, _request, signal) => waitForAbort(signal));
     const first = running.run(() => Promise.resolve({}));
     await vi.waitFor(() => expect(streamChat).toHaveBeenCalledTimes(1));
     const prepare = vi.fn(() => Promise.resolve({}));
@@ -387,24 +367,7 @@ describe("retrying", () => {
 });
 
 function smallModel(): ModelInfo {
-  return {
-    id: MODEL,
-    name: "Small",
-    vision: true,
-    tools: true,
-    reasoning: false,
-    reasoningEffortOptions: [],
-    maxImages: 10,
-    privacy: "private",
-    contextTokens: 400,
-    traits: [],
-    uncensored: false,
-    recommended: false,
-    beta: false,
-    videoInput: false,
-    audioInput: false,
-    e2ee: false,
-  };
+  return model(MODEL, { name: "Small", contextTokens: 400 });
 }
 
 function longHistory(turnCount: number): ChatMessage[] {
@@ -467,7 +430,7 @@ describe("rolling summaries", () => {
   });
 
   it("stops while summarizing without running the turn", async () => {
-    streamChat.mockImplementation((_settings, _request, signal) => pendingUntilAbort(signal));
+    streamChat.mockImplementation((_settings, _request, signal) => waitForAbort(signal));
     await seed(longHistory(6));
     const running = turns();
     const turn = running.run(() => Promise.resolve({}));

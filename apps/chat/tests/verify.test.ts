@@ -7,19 +7,8 @@ import {
   type TimedClaim,
   type VerifyDeps,
 } from "../src/chat/verify";
-import type { ChatRequest, ContentPart, ImageRef, StreamChat } from "../src/types";
-
-function scriptedStream(replies: (string | Error)[], requests: ChatRequest[]): StreamChat {
-  const queue = [...replies];
-  return async function* (_settings, request) {
-    await Promise.resolve();
-    requests.push(request);
-    const reply = queue.shift() ?? "";
-    if (reply instanceof Error) throw reply;
-    yield { type: "text", delta: reply };
-    yield { type: "done", finishReason: "stop" };
-  };
-}
+import type { ChatRequest, ContentPart, ImageRef } from "../src/types";
+import { scriptedReplies } from "./support/streams";
 
 function frameRef(id: string): ImageRef {
   return {
@@ -41,7 +30,7 @@ function setup(replies: (string | Error)[] = [""]) {
   const rendered: number[][] = [];
   const deps: VerifyDeps = {
     api: { baseUrl: "https://api.example", apiKey: "key" },
-    streamChat: scriptedStream(replies, requests),
+    streamChat: scriptedReplies(replies, requests),
     modelId: "model",
     veniceParameters: true,
     signal: new AbortController().signal,

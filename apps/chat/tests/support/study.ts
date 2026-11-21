@@ -1,10 +1,9 @@
 import { expect, vi } from "vitest";
-import indexHtml from "../index.html?raw";
-import { VENICE_BASE_URL } from "../src/api/client";
-import type { AnalyseAudio } from "../src/audio/videoAudio";
-import { createMemoryStore } from "../src/chat/store";
-import { queryElements, type AppElements } from "../src/dom";
-import { DEFAULT_SETTINGS } from "../src/settings";
+import { VENICE_BASE_URL } from "../../src/api/client";
+import type { AnalyseAudio } from "../../src/audio/videoAudio";
+import { createMemoryStore } from "../../src/chat/store";
+import type { AppElements } from "../../src/dom";
+import { DEFAULT_SETTINGS } from "../../src/settings";
 import {
   blankChat,
   createAppState,
@@ -13,19 +12,18 @@ import {
   setCurrentChat,
   setModels,
   type AppState,
-} from "../src/state";
+} from "../../src/state";
 import type {
   ChatStore,
   ModelInfo,
   UnclearSpan,
   VideoAttachment,
   VideoTimeline,
-} from "../src/types";
-import type { ChatVideo } from "../src/ui/knowledgeVideos";
-import { initStudy, type Study } from "../src/ui/study/studyPanel";
-import { zoomOfferText } from "../src/ui/study/studyProgress";
-import { initToast } from "../src/ui/toast";
-import { resolveSheetResolution } from "../src/video/resolution";
+} from "../../src/types";
+import type { ChatVideo } from "../../src/ui/knowledgeVideos";
+import { initStudy, type Study } from "../../src/ui/study/studyPanel";
+import { zoomOfferText } from "../../src/ui/study/studyProgress";
+import { resolveSheetResolution } from "../../src/video/resolution";
 import {
   planStudy,
   planZoom,
@@ -34,8 +32,9 @@ import {
   type StudyDeps as RunDeps,
   type StudyPlanInput,
   type ZoomDeps,
-} from "../src/video/study";
-import type { ToolContext } from "../src/video/tools";
+} from "../../src/video/study";
+import type { ToolContext } from "../../src/video/tools";
+import { mountPage, stillToast } from "./page";
 
 export const STUDY_MODEL_ID = "qwen3-6-27b";
 
@@ -58,8 +57,7 @@ export let status: { show: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi
 export let analyseAudio: ReturnType<typeof vi.fn<AnalyseAudio>>;
 
 export function reloadPage(): void {
-  document.body.innerHTML = indexHtml;
-  els = queryElements();
+  els = mountPage();
 }
 
 export function resetStudy(): void {
@@ -101,7 +99,7 @@ export function setup(shownVideo?: () => ChatVideo | undefined): Study {
   return initStudy(els, state, {
     store,
     status,
-    toast: initToast(els, { set: () => 0, clear: vi.fn() }),
+    toast: stillToast(els),
     streamChat: vi.fn(),
     confirm,
     toolContext: () => toolContext,

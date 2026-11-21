@@ -39,35 +39,15 @@ import {
   upsertMessage,
   visionModels,
 } from "../src/state";
-import type { Chat, ImageRef, ModelInfo, UserMessage, VideoAttachment } from "../src/types";
+import type { Chat, ModelInfo, UserMessage, VideoAttachment } from "../src/types";
+import { model as baseModel, upload } from "./support/factories";
 
 function chat(id: string, updatedAt: number): Chat {
   return { ...blankChat("chat-model", id, updatedAt), title: `Chat ${id}` };
 }
 
 function model(id: string, overrides: Partial<ModelInfo> = {}): ModelInfo {
-  return {
-    id,
-    name: id.toUpperCase(),
-    vision: true,
-    tools: true,
-    reasoning: false,
-    reasoningEffortOptions: [],
-    maxImages: 10,
-    traits: [],
-    uncensored: false,
-    recommended: false,
-    beta: false,
-    videoInput: false,
-    audioInput: false,
-    e2ee: false,
-    privacy: "private",
-    ...overrides,
-  };
-}
-
-function image(id: string): ImageRef {
-  return { id, source: { kind: "upload", name: `${id}.png` }, pinned: false };
+  return baseModel(id, { name: id.toUpperCase(), ...overrides });
 }
 
 function userMessage(id: string, text: string): UserMessage {
@@ -111,7 +91,7 @@ describe("chat setters", () => {
     const state = createAppState(DEFAULT_SETTINGS);
     setChats(state, [chat("a", 1)]);
     setCurrentChat(state, chat("a", 1), [userMessage("m", "hi")]);
-    addPending(state, "a", { kind: "image", ref: image("i") });
+    addPending(state, "a", { kind: "image", ref: upload("i") });
     removeChat(state, "a");
     expect(state.chats).toEqual([]);
     expect(state.currentChat).toBeNull();
@@ -127,12 +107,12 @@ describe("chat setters", () => {
       info: { durationSeconds: 1, width: 1, height: 1 },
     });
     setCurrentChat(state, chat("a", 1), []);
-    addPending(state, "a", { kind: "image", ref: image("i") });
+    addPending(state, "a", { kind: "image", ref: upload("i") });
     setCurrentChat(state, chat("b", 1), []);
     expect(state.video).toBeNull();
     expect(currentPending(state)).toEqual([]);
     setCurrentChat(state, chat("a", 1), []);
-    expect(currentPending(state)).toEqual([{ kind: "image", ref: image("i") }]);
+    expect(currentPending(state)).toEqual([{ kind: "image", ref: upload("i") }]);
   });
 });
 
@@ -168,9 +148,9 @@ describe("removing and restoring messages", () => {
 describe("pending attachments", () => {
   it("adds, pins, removes and clears", () => {
     const state = createAppState(DEFAULT_SETTINGS);
-    addPending(state, "c", { kind: "image", ref: image("a") });
-    addPending(state, "c", { kind: "overview", refs: [image("s1"), image("s2")] });
-    addPending(state, "other", { kind: "image", ref: image("x") });
+    addPending(state, "c", { kind: "image", ref: upload("a") });
+    addPending(state, "c", { kind: "overview", refs: [upload("s1"), upload("s2")] });
+    addPending(state, "other", { kind: "image", ref: upload("x") });
     setPendingPinned(state, "c", 0, true);
     expect(pendingImages(pendingFor(state, "c")).map((ref) => [ref.id, ref.pinned])).toEqual([
       ["a", true],
@@ -200,11 +180,11 @@ describe("the pending video", () => {
     setChats(state, [{ ...chat("c", 1), video: own }]);
     expect(shownVideo(state, "c")).toBe(own);
     setPendingVideo(state, "c", dropped);
-    addPending(state, "c", { kind: "overview", refs: [image("s1")] });
-    addPending(state, "c", { kind: "image", ref: image("a") });
+    addPending(state, "c", { kind: "overview", refs: [upload("s1")] });
+    addPending(state, "c", { kind: "image", ref: upload("a") });
     expect(shownVideo(state, "c")).toBe(dropped);
     removePendingVideo(state, "c");
-    expect(pendingFor(state, "c")).toEqual([{ kind: "image", ref: image("a") }]);
+    expect(pendingFor(state, "c")).toEqual([{ kind: "image", ref: upload("a") }]);
     expect(shownVideo(state, "c")).toBe(own);
   });
 
