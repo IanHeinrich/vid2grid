@@ -25,15 +25,11 @@ import type {
   VideoTimeline,
 } from "../types";
 import { seenSpans, unseenCitations } from "./coverage";
-import {
-  buildRequest,
-  estimateRequestTokens,
-  keptImages,
-  pinsExceedCap,
-  requestImageCount,
-  sheetSidesByUrl,
-} from "./history";
+import { pinsExceedCap } from "./imageSelection";
+import { buildRequest } from "./request";
+import { keptImages } from "./story";
 import { roundsFor } from "./thoroughness";
+import { estimateRequestTokens, requestImageCount, sheetSidesByUrl } from "./tokenEstimate";
 
 export { DEEP_MAX_ROUNDS, DEFAULT_MAX_ROUNDS } from "./thoroughness";
 
@@ -119,6 +115,8 @@ interface Turn {
   newId: () => string;
   startedAt: number;
   imagesSent: number;
+  // Stored images never change, so each kept one is read and encoded once a turn, not every round.
+  dataUrls: Map<string, string>;
 }
 
 type StreamEnding =
@@ -200,6 +198,7 @@ export async function runTurn(deps: TurnDeps): Promise<TurnOutcome> {
     newId: deps.newId ?? (() => crypto.randomUUID()),
     startedAt: now(),
     imagesSent: 0,
+    dataUrls: new Map(),
   };
   try {
     for (let round = 0; round < maxRounds; round++) {
@@ -318,7 +317,7 @@ async function prepareRequest(
   const { deps, messages } = turn;
   const kept = keptImages(turn.chat, messages, deps.model.maxImages);
   const dataUrls = deps.model.vision
-    ? await loadDataUrls(deps.store, kept)
+    ? await loadDataUrls(deps.store, kept, turn.dataUrls)
     : new Map<string, string>();
   const request = buildRequest({
     chat: turn.chat,
@@ -345,14 +344,19 @@ async function prepareRequest(
 async function loadDataUrls(
   store: ImageStore,
   ids: ReadonlySet<string>,
-): Promise<Map<string, string>> {
+  loaded: Map<string, string>,
+): Promise<ReadonlyMap<string, string>> {
+  for (const id of loaded.keys()) if (!ids.has(id)) loaded.delete(id);
   const entries = await Promise.all(
-    [...ids].map(async (id): Promise<[string, string] | undefined> => {
-      const blob = await store.getImage(id);
-      return blob === undefined ? undefined : [id, await blobToDataUrl(blob)];
-    }),
+    [...ids]
+      .filter((id) => !loaded.has(id))
+      .map(async (id): Promise<[string, string] | undefined> => {
+        const blob = await store.getImage(id);
+        return blob === undefined ? undefined : [id, await blobToDataUrl(blob)];
+      }),
   );
-  return new Map(entries.filter((entry) => entry !== undefined));
+  for (const entry of entries) if (entry !== undefined) loaded.set(...entry);
+  return loaded;
 }
 
 // Qwen3 and DeepSeek-R1 templates on local servers pre-fill <think>, so only the closing tag streams.

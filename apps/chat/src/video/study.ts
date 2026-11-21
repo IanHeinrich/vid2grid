@@ -1,7 +1,7 @@
 import { modelVisionProfile, type PlanOptionInput } from "@vid2grid/core";
 import { textRequest } from "../api/modelCall";
 import { addUsage, usageCostUsd } from "../api/usage";
-import { FALLBACK_IMAGE_TOKENS } from "../chat/history";
+import { FALLBACK_IMAGE_TOKENS } from "../chat/tokenEstimate";
 import { blobToDataUrl } from "../dataUrl";
 import { clamp, mergeSpans } from "../spans";
 import { errorText } from "../text";

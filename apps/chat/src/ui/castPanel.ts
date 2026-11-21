@@ -1,5 +1,5 @@
 import { mergeCast, suggestCast } from "../chat/cast";
-import { latestOverview } from "../chat/history";
+import { latestOverview } from "../chat/imageSelection";
 import { blobToDataUrl } from "../dataUrl";
 import type { AppElements } from "../dom";
 import { chatModelId, currentPending, type AppState } from "../state";

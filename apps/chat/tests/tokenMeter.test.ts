@@ -1,6 +1,6 @@
 import { modelVisionProfile } from "@vid2grid/core";
 import { beforeEach, describe, expect, it } from "vitest";
-import { audioNote } from "../src/chat/history";
+import { audioNote } from "../src/chat/prompts";
 import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { blankChat, createAppState, setCurrentChat, setModels, type AppState } from "../src/state";

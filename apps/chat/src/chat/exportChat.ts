@@ -13,7 +13,7 @@ import type {
   VideoCast,
   VideoTimeline,
 } from "../types";
-import { imagesOf } from "./history";
+import { imagesOf } from "../imageRefs";
 import { sceneLogLines } from "./prompts";
 
 export const BACKUP_FORMAT = "vid2grid-chat-backup";

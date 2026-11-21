@@ -9,7 +9,7 @@ import {
   type AudioLabels,
   type TimedAudioLine,
 } from "../audio/videoAudio";
-import { imageLabel, recallName } from "../chat/history";
+import { imageLabel, recallName } from "../imageRefs";
 import { clamp } from "../spans";
 import { errorText, plural } from "../text";
 import { formatSpan, formatTimestamp } from "../time";

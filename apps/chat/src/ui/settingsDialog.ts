@@ -1,6 +1,6 @@
 import { isVenice } from "../api/venice";
 import { DEEP_MAX_ROUNDS as MAX_ROUNDS_LIMIT } from "../chat/agentLoop";
-import { applyPersonaNames, effectiveVideoReferences } from "../chat/history";
+import { applyPersonaNames, effectiveVideoReferences } from "../chat/prompts";
 import {
   applyPersona,
   chatPersona,

@@ -15,10 +15,10 @@ import {
 import {
   ANSWER_NOW_NOTE,
   audioNote,
-  estimateRequestTokens,
   EXHAUSTIVE_GUIDANCE,
   FINAL_ROUND_NOTE,
-} from "../src/chat/history";
+} from "../src/chat/prompts";
+import { estimateRequestTokens } from "../src/chat/tokenEstimate";
 import type {
   Chat,
   ChatMessage,

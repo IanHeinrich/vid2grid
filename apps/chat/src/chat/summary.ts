@@ -2,7 +2,7 @@ import { streamReply, textRequest, type ModelCallDeps } from "../api/modelCall";
 import { clamp } from "../spans";
 import { CLOCK_TIME, clockSeconds, formatTimestamp } from "../time";
 import type { Chat, ChatMessage, SceneNote, StorySoFar } from "../types";
-import { storyCut } from "./history";
+import { storyCut } from "./story";
 import { sceneLogLines } from "./prompts";
 
 const SUMMARIZE_ABOVE_SHARE = 0.6;

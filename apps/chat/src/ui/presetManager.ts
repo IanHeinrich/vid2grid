@@ -1,4 +1,4 @@
-import { effectiveVideoReferences } from "../chat/history";
+import { effectiveVideoReferences } from "../chat/prompts";
 import {
   deletePersona,
   listPersonas,

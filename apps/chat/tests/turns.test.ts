@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type * as AgentLoop from "../src/chat/agentLoop";
 import { DEEP_MAX_ROUNDS, DEFAULT_MAX_ROUNDS, runTurn } from "../src/chat/agentLoop";
 import { THOROUGH_MAX_ROUNDS } from "../src/chat/thoroughness";
-import { ANSWER_NOW_NOTE } from "../src/chat/history";
+import { ANSWER_NOW_NOTE } from "../src/chat/prompts";
 import { createMemoryStore } from "../src/chat/store";
 import { STORY_SYSTEM_PROMPT } from "../src/chat/summary";
 import type { AppElements } from "../src/dom";

@@ -10,9 +10,9 @@ import {
   type TurnOutcome,
 } from "../chat/agentLoop";
 import { archiveCurrentReply, compareWithModel } from "../chat/alternates";
-import { imagesOf } from "../chat/history";
 import { shouldSummarize, summarizeStory } from "../chat/summary";
 import { messageThoroughness, roundsFor } from "../chat/thoroughness";
+import { imagesOf } from "../imageRefs";
 import {
   currentModel,
   isRunningIn,

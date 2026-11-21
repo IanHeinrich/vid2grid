@@ -1,5 +1,6 @@
 import { switchReply } from "../chat/alternates";
-import { imagesOf, storyForBranch } from "../chat/history";
+import { storyForBranch } from "../chat/story";
+import { imagesOf } from "../imageRefs";
 import { extractTimedClaims, verifyClaims } from "../chat/verify";
 import { blobToDataUrl } from "../dataUrl";
 import {

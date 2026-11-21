@@ -6,7 +6,7 @@ import {
   onAudioChanged,
   settingsLabels,
 } from "../audio/videoAudio";
-import { pinsExceedCap } from "../chat/history";
+import { pinsExceedCap } from "../chat/imageSelection";
 import { effortFor, roundsFor } from "../chat/thoroughness";
 import type { AppElements } from "../dom";
 import {

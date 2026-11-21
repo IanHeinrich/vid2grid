@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { effectiveVideoReferences } from "../src/chat/history";
+import { effectiveVideoReferences } from "../src/chat/prompts";
 import { listPersonas, savePersona, type Persona } from "../src/chat/personas";
 import { createMemoryStore } from "../src/chat/store";
 import type { AppElements } from "../src/dom";

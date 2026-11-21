@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { effectiveVideoReferences } from "../src/chat/history";
+import { effectiveVideoReferences } from "../src/chat/prompts";
 import {
   applyPersona,
   chatPersona,
