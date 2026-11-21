@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { turnAudio, type TurnAudioInput } from "../src/audio/turnAudio";
+import { turnAudio, type TurnAudioInput } from "../src/app/turnAudio";
 import { createMemoryStore } from "../src/chat/store";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import type { VideoAudio } from "../src/types";

@@ -1,4 +1,4 @@
-import { isAbortError, untilAborted } from "../abort";
+import { isAbortError, orWhenAborted } from "../abort";
 import { blobToDataUrl } from "../dataUrl";
 import { errorText } from "../text";
 import type {
@@ -416,33 +416,20 @@ interface StreamCutter {
   signal: AbortSignal;
   reason(): AnswerNowReason | undefined;
   cut(reason: AnswerNowReason): void;
-  dispose(): void;
 }
 
 // Its own signal, so a cut ends only this stream while a stop still ends it too.
 function streamCutter(deps: TurnDeps, watch: boolean): StreamCutter {
-  const controller = new AbortController();
+  const own = new AbortController();
   let reason: AnswerNowReason | undefined;
   const cut = (why: AnswerNowReason) => {
     reason ??= why;
-    controller.abort();
+    own.abort();
   };
-  const stop = () => controller.abort();
-  const answerNowAsked = () => cut("user");
   const answerNow = watch ? deps.answerNow : undefined;
-  deps.signal.addEventListener("abort", stop);
-  answerNow?.addEventListener("abort", answerNowAsked);
-  if (deps.signal.aborted) stop();
-  else if (answerNow?.aborted) answerNowAsked();
-  return {
-    signal: controller.signal,
-    reason: () => reason,
-    cut,
-    dispose: () => {
-      deps.signal.removeEventListener("abort", stop);
-      answerNow?.removeEventListener("abort", answerNowAsked);
-    },
-  };
+  if (answerNow?.aborted) cut("user");
+  else answerNow?.addEventListener("abort", () => cut("user"), { once: true });
+  return { signal: AbortSignal.any([deps.signal, own.signal]), reason: () => reason, cut };
 }
 
 function joinReasoning(earlier: string, latest: string | undefined): string {
@@ -536,8 +523,6 @@ async function streamAssistant(
     }
   } catch (error) {
     return { message: current(), ending: failedEnding(deps, cutter, error) };
-  } finally {
-    cutter.dispose();
   }
   return { message: current(), ending: settledEnding(deps, cutter) };
 }
@@ -591,7 +576,7 @@ function unlessAnsweringNow(
   pending: Promise<ToolResult | undefined>,
 ): Promise<ToolResult | undefined> {
   if (!deps.answerNow) return pending;
-  return Promise.race([pending, untilAborted(deps.answerNow).then(() => undefined)]);
+  return orWhenAborted(pending, deps.answerNow, undefined);
 }
 
 async function answerToolCalls(

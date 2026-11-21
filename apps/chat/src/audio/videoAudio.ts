@@ -9,7 +9,7 @@ import {
   type AudioAnalysisRequest,
   type AudioTrack,
 } from "@vid2grid/core";
-import { isAbortError } from "../abort";
+import { abortable, isAbortError } from "../abort";
 import type { GlobalSettings } from "../settings";
 import { clamp, mergeSpans } from "../spans";
 import { errorText } from "../text";
@@ -279,16 +279,6 @@ async function analyseMissing(
     await saveAudio(deps.store, audio);
   }
   return audio;
-}
-
-function abortable<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
-  if (!signal) return work;
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(signal.reason as Error);
-    if (signal.aborted) onAbort();
-    signal.addEventListener("abort", onAbort, { once: true });
-    void work.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
-  });
 }
 
 // One analysis runs at a time per video: a later call waits, then analyses only what is still

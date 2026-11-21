@@ -290,7 +290,7 @@ export function runStudy(deps: StudyDeps): Promise<VideoTimeline> {
         system: STUDY_SYSTEM_PROMPT,
         notes: [],
       });
-      return studied && insideWindow(studied, range);
+      return insideWindow(studied, range);
     },
     apply: (timeline, _range, studied, index) => {
       const unclear = [...(timeline.unclear ?? []), ...studied.unclear];
@@ -434,7 +434,7 @@ interface Pass<T extends StudyWindow> {
   name: string;
   steps: readonly T[];
   first: number;
-  study(step: T, timeline: VideoTimeline): Promise<StudiedWindow | undefined>;
+  study(step: T, timeline: VideoTimeline): Promise<StudiedWindow>;
   apply(timeline: VideoTimeline, step: T, studied: StudiedWindow, index: number): VideoTimeline;
 }
 
@@ -449,7 +449,7 @@ async function runPass<T extends StudyWindow>(
   for (let index = pass.first; index < pass.steps.length; index++) {
     const step = pass.steps[index];
     if (step === undefined || signal.aborted) break;
-    let studied: StudiedWindow | undefined;
+    let studied: StudiedWindow;
     try {
       studied = await pass.study(step, timeline);
     } catch (error) {
@@ -459,7 +459,6 @@ async function runPass<T extends StudyWindow>(
         { cause: error },
       );
     }
-    if (studied === undefined) break;
     timeline = pass.apply(timeline, step, studied, index);
     await deps.saveTimeline(timeline);
     deps.onProgress(timeline);
@@ -477,11 +476,10 @@ interface RangeRequest {
   notes: string[];
 }
 
-// Undefined when aborted: a render cannot be cancelled, so its result is dropped instead.
 async function studyRange(
   deps: PassDeps,
   { range, frameCount, perSheet, call, system, notes }: RangeRequest,
-): Promise<StudiedWindow | undefined> {
+): Promise<StudiedWindow> {
   const { ctx, signal } = deps;
   const values: PlanOptionInput = {
     startSeconds: range.startSeconds,
@@ -495,7 +493,8 @@ async function studyRange(
     values,
     `${call}(${roundForLabel(range.startSeconds)}, ${roundForLabel(range.endSeconds)})`,
   );
-  if (signal.aborted) return undefined;
+  // A render cannot be cancelled, so a stop that came during it takes effect here.
+  signal.throwIfAborted();
   const parts = await sheetParts(ctx, refs);
   const caption = `Frames from ${formatSpan(range.startSeconds, range.endSeconds)} of the video.`;
   const texts = [caption, ...notes].map((text): ContentPart => ({ type: "text", text }));

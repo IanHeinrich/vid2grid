@@ -6,7 +6,8 @@ import { errorText } from "../text";
 import { formatTimestamp, parseTimestamp, timedLine } from "../time";
 import type { ChatStore, SceneNote, StreamChat } from "../types";
 import { iconButton, seekButton, smallButton } from "./buttons";
-import { createModelTask, modelCallDeps, type ModelTask } from "./modelTask";
+import { modelCallDeps } from "../app/modelCallDeps";
+import { createModelTask, type ModelTask } from "./modelTask";
 import type { Toast } from "./toast";
 
 export interface SceneLogPanel {

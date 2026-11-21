@@ -1,5 +1,6 @@
-import { isAbortError, untilAborted } from "../abort";
+import { isAbortError, orWhenAborted } from "../abort";
 import { sendBlocker } from "../app/sendBlocker";
+import type { Turns } from "../app/turns";
 import { downscaleImage } from "../attachments/images";
 import {
   cachedAudioCoverage,
@@ -42,7 +43,6 @@ import type {
 import { resolveSheetResolution } from "../video/resolution";
 import { iconButton, pinToggle } from "./buttons";
 import type { StatusLine } from "./status";
-import type { Turns } from "./turns";
 import { overviewText, videoSummary } from "./video/overviewText";
 import type { VideoPanel } from "./videoPanel";
 
@@ -87,6 +87,8 @@ export interface Composer {
   setThinking(thinking: boolean): void;
   // What has been heard so far when audio is on for the next message, otherwise undefined.
   audioCoverage(): AudioCoverage | undefined;
+  // The toggle as the user left it, whether or not a video is attached to hear.
+  audioWanted(): boolean;
 }
 
 export interface ComposerDeps {
@@ -130,7 +132,7 @@ interface ComposerContext {
   pendingRender: number;
 }
 
-export function storedAudioOn(storage: Storage = localStorage): boolean {
+function storedAudioOn(storage: Storage = localStorage): boolean {
   return storage.getItem(AUDIO_KEY) === "on";
 }
 
@@ -170,6 +172,7 @@ export function initComposer(
       renderControls(ctx);
     },
     audioCoverage: () => audioCoverage(ctx),
+    audioWanted: () => ctx.audio,
   };
 }
 
@@ -698,7 +701,7 @@ async function submit(ctx: ComposerContext): Promise<void> {
 
 async function waitForOverview(ctx: ComposerContext, signal: AbortSignal): Promise<boolean> {
   ctx.deps.status.show("Finishing overview…");
-  await Promise.race([ctx.deps.video.whenOverviewReady(), untilAborted(signal)]);
+  await orWhenAborted(ctx.deps.video.whenOverviewReady(), signal, undefined);
   ctx.deps.status.clear();
   return !signal.aborted;
 }

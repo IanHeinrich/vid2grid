@@ -8,7 +8,7 @@ import {
   type AnalyseAudio,
   type AudioDeps,
 } from "../audio/videoAudio";
-import { currentModel, resolveModel } from "../chat/models";
+import { chatModel, sheetContext, type SheetSource } from "../app/toolContext";
 import type { AppElements } from "../dom";
 import {
   isRunningIn,
@@ -26,11 +26,9 @@ import {
 } from "../state";
 import { errorText } from "../text";
 import { formatTimestamp } from "../time";
-import type { Chat, ChatStore, ImageRef, ModelInfo, VideoAttachment } from "../types";
+import type { Chat, ChatStore, ImageRef, VideoAttachment } from "../types";
 import { fileKey, probeAttachment, renderSheets } from "../video/render";
-import { resolveOverviewResolution, resolveSheetResolution } from "../video/resolution";
 import { renderOverview, type ToolContext } from "../video/tools";
-import { storedAudioOn } from "./composer";
 import { createCoverageStrip, type CoverageStrip } from "./coverageStrip";
 import { initMiniPlayer, playQuietly, videoAspect, type MiniPlayer } from "./miniPlayer";
 import type { StatusLine } from "./status";
@@ -84,7 +82,7 @@ export interface VideoPanelDeps {
   renderOverview?: typeof renderOverview;
   renderSheets?: typeof renderSheets;
   readFrameTimes?: typeof readFrameTimes;
-  audioWanted?: () => boolean;
+  audioWanted(): boolean;
   analyseAudio?: AnalyseAudio;
 }
 
@@ -96,10 +94,6 @@ interface LoadedFile {
 interface PendingFile extends LoadedFile {
   video: VideoAttachment;
   handle: FileSystemFileHandle | undefined;
-}
-
-interface SheetSource extends LoadedFile {
-  video: VideoAttachment;
 }
 
 interface Render {
@@ -142,35 +136,6 @@ interface VideoPanelContext {
   audioPrep: AudioPrep | undefined;
   player: MiniPlayer;
   coverage: CoverageStrip;
-}
-
-export function toolContext(state: AppState, store: ChatStore): ToolContext | undefined {
-  const chat = state.currentChat;
-  const model = currentModel(state);
-  if (!chat?.video || state.video?.chatId !== chat.id || model === null) return undefined;
-  return sheetContext(chat, model, { ...state.video, video: chat.video }, store);
-}
-
-function sheetContext(
-  chat: Chat,
-  model: ModelInfo,
-  { file, info, video }: SheetSource,
-  store: ChatStore,
-): ToolContext {
-  return {
-    file,
-    info,
-    video,
-    resolution: resolveSheetResolution(chat.settings.sheetResolution, model).px,
-    overviewResolution: (sheets) =>
-      resolveOverviewResolution(chat.settings.sheetResolution, model, sheets).px,
-    maxImages: model.maxImages,
-    store,
-  };
-}
-
-function chatModel(state: AppState, chat: Chat): ModelInfo | null {
-  return chat.settings.modelId === "" ? null : resolveModel(state, chat.settings.modelId);
 }
 
 export function initVideoPanel(
@@ -852,7 +817,7 @@ function showAudioPrep(ctx: VideoPanelContext, prep: AudioPrep, text: string): v
 
 // Analysed ahead so a later turn can listen without waiting; a failure here stays quiet.
 function prepareAudio(ctx: VideoPanelContext, chatId: string, toolCtx: ToolContext): void {
-  if (!(ctx.deps.audioWanted ?? storedAudioOn)() || !isCurrent(ctx, chatId)) return;
+  if (!ctx.deps.audioWanted() || !isCurrent(ctx, chatId)) return;
   stopAudioPrep(ctx);
   const prep: AudioPrep = {
     chatId,

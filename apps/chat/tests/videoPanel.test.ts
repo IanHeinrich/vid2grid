@@ -49,6 +49,7 @@ function makeSpies() {
     loadCopy: vi.fn((): Promise<File | undefined> => Promise.resolve(undefined)),
     onAttached: vi.fn(),
     onCommitted: vi.fn(),
+    audioWanted: () => false,
     probe: vi.fn((file: File) => Promise.resolve({ attachment: attachmentFor(file), info: INFO })),
     renderOverview: vi.fn(freshOverview),
     renderSheets: vi.fn(() => Promise.resolve<RenderedSheet[]>([])),

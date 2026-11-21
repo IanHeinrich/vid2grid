@@ -25,10 +25,9 @@ import type {
   UserMessage,
 } from "../types";
 import { createToolRunner, type ToolContext } from "../video/tools";
-import type { Conversation } from "./conversation";
-import { modelCallDeps } from "./modelTask";
-import type { StatusLine } from "./status";
-import type { Toast, ToastHandle } from "./toast";
+import type { StatusLine } from "../ui/status";
+import type { Toast, ToastHandle } from "../ui/toast";
+import { modelCallDeps } from "./modelCallDeps";
 
 const REATTACH_TO_CHECK = "Reattach the video to check the timestamps.";
 
@@ -44,7 +43,7 @@ export interface MessageActions {
 export interface MessageActionsDeps {
   store: ChatStore;
   status: StatusLine;
-  conversation: Pick<Conversation, "reset">;
+  conversation: { reset(messages: readonly ChatMessage[]): void };
   toast: Toast;
   streamChat: StreamChat;
   toolContext(): ToolContext | undefined;

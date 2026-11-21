@@ -4,7 +4,8 @@ import type { AppElements } from "../dom";
 import { updateChat, type AppState } from "../state";
 import { errorText } from "../text";
 import type { Chat, ChatStore, StorySoFar, StreamChat } from "../types";
-import { createModelTask, modelCallDeps, type ModelTask } from "./modelTask";
+import { modelCallDeps } from "../app/modelCallDeps";
+import { createModelTask, type ModelTask } from "./modelTask";
 import type { Toast } from "./toast";
 
 export interface MemoryPanel {

@@ -20,8 +20,8 @@ import {
   type AppState,
 } from "../src/state";
 import type { ChatSettings, ChatStore, ModelInfo, StreamChat, UserMessage } from "../src/types";
-import { initComposer, storedAudioOn, type Composer, type ComposerDeps } from "../src/ui/composer";
-import { initTurns } from "../src/ui/turns";
+import { initComposer, type Composer, type ComposerDeps } from "../src/ui/composer";
+import { initTurns } from "../src/app/turns";
 import { upload } from "./support/factories";
 import { mountPage } from "./support/page";
 import { replyWith, textThenWait, waitForAbort } from "./support/streams";
@@ -536,11 +536,19 @@ describe("audio toggle", () => {
     expect((sent as UserMessage | undefined)?.thoroughness).toBeUndefined();
     expect(toggle.getAttribute("aria-pressed")).toBe("true");
     els = mountPage();
-    setup();
+    const reopened = setup();
     expect(els.composer.audioToggle.getAttribute("aria-pressed")).toBe("true");
-    expect(storedAudioOn()).toBe(true);
+    expect(reopened.audioWanted()).toBe(true);
     els.composer.audioToggle.click();
-    expect(storedAudioOn()).toBe(false);
+    expect(reopened.audioWanted()).toBe(false);
+    expect(localStorage.getItem("vid2grid-chat-audio")).toBe("off");
+  });
+
+  it("is wanted as left even with no video to hear", () => {
+    localStorage.setItem("vid2grid-chat-audio", "on");
+    const composer = setup();
+    expect(els.composer.audioToggle.disabled).toBe(true);
+    expect(composer.audioWanted()).toBe(true);
   });
 
   it("leaves audio off a thorough reply sent without it", async () => {

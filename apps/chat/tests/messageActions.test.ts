@@ -22,7 +22,7 @@ import type {
   UserMessage,
 } from "../src/types";
 import { initConversation } from "../src/ui/conversation";
-import { initMessageActions, type MessageActions } from "../src/ui/messageActions";
+import { initMessageActions, type MessageActions } from "../src/app/messageActions";
 import { initChatSettings } from "../src/ui/settingsDialog";
 import { initToast } from "../src/ui/toast";
 import type * as Tools from "../src/video/tools";

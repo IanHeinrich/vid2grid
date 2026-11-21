@@ -1,25 +1,23 @@
 import "./styles/index.css";
 import { getBalance, listModels, streamChat } from "./api/client";
-import { isVenice } from "./api/venice";
-import { classifyFile } from "./attachments/images";
-import { currentModel, defaultModelId } from "./chat/models";
+import { attachFiles, attachPicked } from "./app/attachFiles";
+import {
+  initMessageActions,
+  type MessageActions,
+  type MessageActionsDeps,
+} from "./app/messageActions";
+import { createModelList, shouldLoadModels, type ModelList } from "./app/modelList";
+import { createChatOpener, type ChatOpener } from "./app/openChat";
+import { persistMessage } from "./app/persistMessage";
+import { toolContext } from "./app/toolContext";
+import { initTurns, type Turns, type TurnsDeps } from "./app/turns";
+import { currentModel } from "./chat/models";
 import { openChatStore } from "./chat/store";
 import { queryElements, type AppElements } from "./dom";
-import { latestCalls } from "./latest";
-import { loadSettings, type GlobalSettings } from "./settings";
-import {
-  addPending,
-  createAppState,
-  setChats,
-  setCurrentChat,
-  setModels,
-  setModelsError,
-  updateChat,
-  upsertMessage,
-  type AppState,
-} from "./state";
+import { loadSettings } from "./settings";
+import { addPending, createAppState, setChats, type AppState } from "./state";
 import { errorText } from "./text";
-import type { ChatMessage, ChatStore, ImageRef, ModelInfo, VideoAttachment } from "./types";
+import type { ChatStore, ImageRef, VideoAttachment } from "./types";
 import { initBackup } from "./ui/backup";
 import { initBalance, type Balance } from "./ui/balance";
 import { initCastPanel, type CastPanel } from "./ui/castPanel";
@@ -29,23 +27,20 @@ import {
   type ChatDrawer,
   type KnowledgeDrawer,
 } from "./ui/chatDrawer";
-import { initComposer, type Composer, type ComposerDeps, type PickedFile } from "./ui/composer";
+import { initComposer, type Composer, type ComposerDeps } from "./ui/composer";
 import { initConnectionTest, type ConnectionTest } from "./ui/connectionTest";
 import { initConversation, type Conversation, type ConversationDeps } from "./ui/conversation";
 import { downloadBlob } from "./ui/download";
+import { listenForDrops } from "./ui/fileDrop";
 import {
   initChatSettings,
   initSettingsDialog,
   type ChatSettingsDeps,
   type ChatSettingsPanel,
   type SettingsDialog,
+  type SettingsDialogDeps,
 } from "./ui/settingsDialog";
 import { initSidebar, type Sidebar, type SidebarDeps } from "./ui/sidebar";
-import {
-  initMessageActions,
-  type MessageActions,
-  type MessageActionsDeps,
-} from "./ui/messageActions";
 import { initVideoPicker, type VideoPicker } from "./ui/knowledgeVideos";
 import { initMemoryPanel, type MemoryPanel } from "./ui/memoryPanel";
 import { storedPickerSettings } from "./ui/modelPicker";
@@ -54,16 +49,10 @@ import { initStudy, type Study, type StudyDeps } from "./ui/study/studyPanel";
 import { initShortcuts } from "./ui/shortcuts";
 import { initStatus, type StatusLine } from "./ui/status";
 import { initToast, type Toast } from "./ui/toast";
-import { initTurns, type Turns, type TurnsDeps } from "./ui/turns";
 import { initVideoCopies, type VideoCopies } from "./ui/videoCopies";
 import { initUsageMeter, type UsageMeter } from "./ui/tokenMeter";
-import { initVideoPanel, toolContext, type VideoPanel, type VideoPanelDeps } from "./ui/videoPanel";
+import { initVideoPanel, type VideoPanel, type VideoPanelDeps } from "./ui/videoPanel";
 import { initWelcome, type Welcome } from "./ui/welcome";
-
-interface DroppedFile {
-  file: File;
-  handle?: Promise<FileSystemHandle | null> | undefined;
-}
 
 interface App {
   state: AppState;
@@ -90,6 +79,8 @@ interface App {
   toast: Toast;
   welcome: Welcome;
   connectionTest: ConnectionTest;
+  opener: ChatOpener;
+  modelList: ModelList;
   refresh(): void;
 }
 
@@ -98,7 +89,7 @@ function surface(app: App, action: string, work: Promise<unknown>): void {
 }
 
 // The balance line shows its own unavailable state, so a failed refresh stays quiet.
-function refreshBalance(app: App): void {
+function refreshBalance(app: Pick<App, "balance">): void {
   app.balance.refresh().catch(() => undefined);
 }
 
@@ -110,7 +101,11 @@ function conversationDeps(app: () => App, store: ChatStore, state: AppState): Co
     onSeek: (seconds, video) => app().video.seek(seconds, video),
     onCue: (seconds) => app().video.cue(seconds),
     onMessageChanged: (message) =>
-      surface(app(), "save the message", persistMessage(app(), message)),
+      surface(
+        app(),
+        "save the message",
+        persistMessage({ state, store, onChanged: () => app().usage.render() }, message),
+      ),
     onEdit: (message, text) => surface(app(), "edit the message", app().turns.edit(message, text)),
     onReplay: () => surface(app(), "replay", app().turns.replay()),
     onKeepGoing: () => surface(app(), "keep going", app().turns.keepGoing()),
@@ -202,6 +197,7 @@ function videoDeps(app: () => App, store: ChatStore, status: StatusLine): VideoP
     copyStatus: (fileKey) => app().copies.status(fileKey),
     loadCopy: (fileKey) => app().copies.load(fileKey),
     onAttached: (file, video) => app().copies.approve(file, video.fileKey),
+    audioWanted: () => app().composer.audioWanted(),
     onCommitted: (file, video, replaced) => {
       app().copies.save(file, video.fileKey);
       if (!replaced) return;
@@ -313,6 +309,14 @@ function composerDeps(
   };
 }
 
+function settingsDialogDeps(app: () => App, copies: VideoCopies): SettingsDialogDeps {
+  return {
+    loadModels: (settings) => app().modelList.load(settings),
+    onSaved: (previous) => app().modelList.onSettingsSaved(previous),
+    onOpen: () => surface(app(), "list the stored videos", copies.renderList()),
+  };
+}
+
 function chatSettingsDeps(store: ChatStore, toast: Toast, onChanged: () => void): ChatSettingsDeps {
   return { store, toast, onChanged, onError: (message) => toast.show(message) };
 }
@@ -395,12 +399,8 @@ function wire(els: AppElements, state: AppState, store: ChatStore, status: Statu
   });
   const chatSettings = initChatSettings(els, state, chatSettingsDeps(store, toast, refresh));
   const sidebar = initSidebar(els, state, sidebarDeps(self, store, status, toast));
-  const settingsDialog = initSettingsDialog(els, state, {
-    loadModels: (settings) => loadModels(app, settings),
-    onSaved: (previous) => onSettingsSaved(app, previous),
-    onOpen: () => surface(app, "list the stored videos", copies.renderList()),
-  });
-  const app: App = {
+  const settingsDialog = initSettingsDialog(els, state, settingsDialogDeps(self, copies));
+  const base: Omit<App, "opener" | "modelList"> = {
     state,
     store,
     status,
@@ -421,7 +421,15 @@ function wire(els: AppElements, state: AppState, store: ChatStore, status: Statu
     ...initFirstRun(els, state, store, self),
     ...initDrawer(els, state, store, toast, { app: self, videoPicker }),
   };
+  const app: App = { ...base, ...initUseCases(base) };
   return app;
+}
+
+function initUseCases(app: Omit<App, "opener" | "modelList">): Pick<App, "opener" | "modelList"> {
+  return {
+    opener: createChatOpener(app),
+    modelList: createModelList({ ...app, listModels, refreshBalance: () => refreshBalance(app) }),
+  };
 }
 
 function onPendingChanged(app: App): void {
@@ -452,179 +460,16 @@ function addOverview(app: App, chatId: string, refs: ImageRef[]): void {
   if (app.state.currentChat?.id === chatId) app.composer.render();
 }
 
-async function persistMessage(app: App, message: ChatMessage): Promise<void> {
-  const chat = app.state.currentChat;
-  if (!chat) return;
-  upsertMessage(app.state, message);
-  app.usage.render();
-  await app.store.putMessage(chat.id, message);
-}
-
-const startOpen = latestCalls();
-let openingChatId: string | undefined;
-
-async function openChat(app: App, chatId: string): Promise<void> {
-  const { state, store } = app;
-  if (state.currentChat?.id === chatId) {
-    // Another click on a chat still being set up leaves that open to finish.
-    if (openingChatId !== chatId) startOpen();
-    return;
-  }
-  const isLatest = startOpen();
-  openingChatId = chatId;
-  app.turns.stop();
-  app.actions.invalidateUndo();
-  const chat = state.chats.find((entry) => entry.id === chatId) ?? (await store.getChat(chatId));
-  if (!chat || !isLatest()) return;
-  const messages = await store.listMessages(chatId);
-  if (!isLatest()) return;
-  setCurrentChat(state, chat, messages);
-  fillChatModel(app);
-  app.conversation.reset(messages);
-  app.conversation.setRunning(state.running);
-  app.status.clear();
-  app.refresh();
-  await app.video.restore();
-  if (isLatest()) app.composer.render();
-}
-
 function openChatSafely(app: App, chatId: string): void {
-  openChat(app, chatId).catch((error: unknown) => {
+  app.opener.open(chatId).catch((error: unknown) => {
     app.status.show(`Could not open the chat: ${errorText(error)}`, "error");
   });
 }
 
 function openFallbackSafely(app: App): void {
-  openFallbackChat(app).catch((error: unknown) => {
+  app.opener.openFallback().catch((error: unknown) => {
     app.status.show(`Could not open a chat: ${errorText(error)}`, "error");
   });
-}
-
-async function openFallbackChat(app: App): Promise<void> {
-  const newest = app.state.chats[0];
-  const chat = newest ?? (await app.sidebar.createChat());
-  await openChat(app, chat.id);
-}
-
-function shouldLoadModels(settings: GlobalSettings): boolean {
-  return settings.baseUrl.trim() !== "" && (settings.apiKey !== "" || !isVenice(settings.baseUrl));
-}
-
-const startModelLoad = latestCalls();
-
-// A newer load owns the model list, so an older one that settles late changes nothing.
-async function loadModels(app: App, settings: GlobalSettings): Promise<readonly ModelInfo[]> {
-  const isLatest = startModelLoad();
-  try {
-    const models = await listModels(settings, { fallbackMaxImages: settings.fallbackMaxImages });
-    if (!isLatest()) return app.state.models;
-    setModels(app.state, models);
-    fillChatModel(app);
-    return models;
-  } catch (error) {
-    if (!isLatest()) return app.state.models;
-    setModelsError(app.state, errorText(error));
-    throw error;
-  } finally {
-    app.refresh();
-  }
-}
-
-function loadModelsInBackground(app: App): void {
-  loadModels(app, app.state.settings).catch((error: unknown) => {
-    app.status.show(`Could not load models: ${errorText(error)}`, "error");
-  });
-}
-
-// A chat made before the models loaded takes the default once there is one, so requests name a model.
-function fillChatModel(app: App): void {
-  const chat = app.state.currentChat;
-  if (!chat || chat.settings.modelId !== "" || app.state.models.length === 0) return;
-  const modelId = defaultModelId(app.state);
-  if (modelId === "") return;
-  updateChat(app.state, app.store, chat.id, (latest) => ({
-    ...latest,
-    settings: { ...latest.settings, modelId: latest.settings.modelId || modelId },
-  })).then(
-    () => app.refresh(),
-    (error: unknown) =>
-      app.status.show(`Could not save the chat's model: ${errorText(error)}`, "error"),
-  );
-}
-
-function onSettingsSaved(app: App, previous: GlobalSettings): void {
-  const { settings } = app.state;
-  const apiChanged =
-    settings.apiKey !== previous.apiKey ||
-    settings.baseUrl !== previous.baseUrl ||
-    settings.fallbackMaxImages !== previous.fallbackMaxImages;
-  if (apiChanged) refreshBalance(app);
-  if (settings.baseUrl === "") setModels(app.state, []);
-  if (apiChanged && shouldLoadModels(settings)) loadModelsInBackground(app);
-  else app.refresh();
-}
-
-function isFileHandle(handle: FileSystemHandle | null | undefined): handle is FileSystemFileHandle {
-  return handle?.kind === "file";
-}
-
-async function handleFiles(app: App, dropped: readonly DroppedFile[]): Promise<void> {
-  if (!app.state.currentChat) return;
-  const ofKind = (kind: ReturnType<typeof classifyFile>) =>
-    dropped.filter(({ file }) => classifyFile(file) === kind);
-  const unsupported = ofKind("unsupported").map(({ file }) => file.name);
-  if (unsupported.length > 0) {
-    app.status.show(`Only videos and images can be attached: ${unsupported.join(", ")}`, "error");
-  }
-  const images = ofKind("image").map(({ file }) => file);
-  if (images.length > 0) await app.composer.addImages(images);
-  const [video] = ofKind("video");
-  if (!video) return;
-  const handle = await video.handle?.catch(() => null);
-  await app.video.attach(video.file, isFileHandle(handle) ? handle : undefined);
-}
-
-function attachPicked(app: App, files: readonly PickedFile[]): Promise<void> {
-  return handleFiles(
-    app,
-    files.map(({ file, handle }) => ({ file, handle: handle && Promise.resolve(handle) })),
-  );
-}
-
-// Handles must be requested while the drop event is dispatching; the items go stale after it.
-function droppedFiles(transfer: DataTransfer): DroppedFile[] {
-  const fromItems = [...transfer.items].flatMap((item): DroppedFile[] => {
-    const file = item.kind === "file" ? item.getAsFile() : null;
-    if (!file) return [];
-    const handle = item.getAsFileSystemHandle?.();
-    return [handle ? { file, handle } : { file }];
-  });
-  return fromItems.length > 0 ? fromItems : [...transfer.files].map((file) => ({ file }));
-}
-
-function listenForDrops(app: App, main: HTMLElement): void {
-  let depth = 0;
-  const carriesFiles = (event: DragEvent) => event.dataTransfer?.types.includes("Files") ?? false;
-  main.addEventListener("dragenter", (event) => {
-    if (!carriesFiles(event)) return;
-    depth += 1;
-    main.classList.add("is-dragover");
-  });
-  main.addEventListener("dragleave", () => {
-    depth = Math.max(0, depth - 1);
-    if (depth === 0) main.classList.remove("is-dragover");
-  });
-  main.addEventListener("drop", (event) => {
-    depth = 0;
-    main.classList.remove("is-dragover");
-    if (event.dataTransfer) {
-      surface(app, "attach the files", handleFiles(app, droppedFiles(event.dataTransfer)));
-    }
-  });
-  // A stray drop anywhere else would make the browser navigate away to the file.
-  for (const type of ["dragover", "drop"]) {
-    document.addEventListener(type, (event) => event.preventDefault());
-  }
 }
 
 async function start(): Promise<void> {
@@ -640,7 +485,7 @@ async function start(): Promise<void> {
     return;
   }
   const app = wire(els, state, store, status);
-  listenForDrops(app, els.main);
+  listenForDrops(els.main, (files) => surface(app, "attach the files", attachFiles(app, files)));
   initShortcuts(els, {
     isRunning: () => state.running || app.conversation.isChecking(),
     stop: () => app.composer.stop(),
@@ -648,7 +493,7 @@ async function start(): Promise<void> {
     chatDrawer: app.chatDrawer,
     knowledge: app.knowledge,
   });
-  if (shouldLoadModels(state.settings)) loadModelsInBackground(app);
+  if (shouldLoadModels(state.settings)) app.modelList.loadInBackground();
   refreshBalance(app);
   openFallbackSafely(app);
 }

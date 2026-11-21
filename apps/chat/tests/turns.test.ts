@@ -40,7 +40,7 @@ import {
   KEEP_GOING_TEXT,
   SUMMARIZING_STATUS,
   type Turns,
-} from "../src/ui/turns";
+} from "../src/app/turns";
 import { resolveSheetResolution } from "../src/video/resolution";
 import { conversationDeps } from "./support/conversationDeps";
 import { model } from "./support/factories";

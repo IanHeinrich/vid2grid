@@ -1,8 +1,4 @@
-import type { ModelCallDeps } from "../api/modelCall";
-import { isVenice } from "../api/venice";
-import type { AppState } from "../state";
 import { errorText } from "../text";
-import type { StreamChat } from "../types";
 
 export interface ModelTaskEls {
   status: HTMLElement;
@@ -15,22 +11,6 @@ export interface ModelTask {
   report(message: string, kind?: "info" | "error"): void;
   // Shows the status only in the chat it is about.
   sync(): void;
-}
-
-export function modelCallDeps(
-  state: AppState,
-  streamChat: StreamChat,
-  modelId: string,
-  signal: AbortSignal,
-): ModelCallDeps {
-  const { baseUrl, apiKey } = state.settings;
-  return {
-    api: { baseUrl, apiKey },
-    streamChat,
-    modelId,
-    veniceParameters: isVenice(baseUrl),
-    signal,
-  };
 }
 
 // One model call at a time per panel, with a status line and a Stop button beside it.

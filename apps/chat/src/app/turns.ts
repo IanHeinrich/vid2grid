@@ -1,6 +1,5 @@
 import { modelVisionProfile } from "@vid2grid/core";
-import { untilAborted } from "../abort";
-import { turnAudio, type AudioStatus, type TurnAudio } from "../audio/turnAudio";
+import { orWhenAborted } from "../abort";
 import {
   runTurn,
   type AnswerNowReason,
@@ -27,6 +26,7 @@ import type {
   AssistantMessage,
   AudioCoverage,
   Chat,
+  ChatMessage,
   ChatStore,
   ImageRef,
   ModelInfo,
@@ -46,12 +46,12 @@ import {
   type ListenContext,
   type ToolContext,
 } from "../video/tools";
-import type { Conversation } from "./conversation";
-import { modelCallDeps } from "./modelTask";
-import type { StatusLine } from "./status";
-import type { Toast } from "./toast";
-import { estimateTokens } from "./tokenMeter";
-import { toolContext } from "./videoPanel";
+import type { StatusLine } from "../ui/status";
+import type { Toast } from "../ui/toast";
+import { estimateTokens } from "../ui/tokenMeter";
+import { modelCallDeps } from "./modelCallDeps";
+import { toolContext } from "./toolContext";
+import { turnAudio, type AudioStatus, type TurnAudio } from "./turnAudio";
 
 export const KEEP_GOING_TEXT = "Keep going: continue investigating from your notes, then answer.";
 const STRIPPED_NOTE =
@@ -85,14 +85,21 @@ export interface Turns {
   answerNow(): void;
 }
 
+export interface TurnView {
+  reset(messages: readonly ChatMessage[]): void;
+  show(message: ChatMessage): void;
+  apply(event: TurnEvent): void;
+  showError(text: string): void;
+  endTurn(): void;
+  clearErrors(): void;
+  setRunning(running: boolean): void;
+}
+
 export interface TurnsDeps {
   store: ChatStore;
   status: StatusLine;
   toast?: Pick<Toast, "show">;
-  conversation: Pick<
-    Conversation,
-    "show" | "apply" | "showError" | "endTurn" | "reset" | "setRunning" | "clearErrors"
-  >;
+  conversation: TurnView;
   video: { renderSceneLog(): void };
   streamChat: StreamChat;
   timeline(): VideoTimeline | undefined;
@@ -236,7 +243,7 @@ function summarize(
     },
     { chat, messages: [...state.messages] },
   );
-  return Promise.race([summarizing, untilAborted(signal).then(() => undefined)]);
+  return orWhenAborted(summarizing, signal, undefined);
 }
 
 // A failed summary only means the request goes out longer, so the turn carries on without one.
@@ -366,7 +373,7 @@ async function runChatTurn(
   };
   const turn = compareWith ? compareTurn(ctx, turnDeps, compareWith) : runTurn(turnDeps);
   // A render in progress cannot be cancelled, so Stop releases the composer without waiting for it.
-  const outcome = await Promise.race([turn, untilAborted(signal).then(() => STOPPED)]);
+  const outcome = await orWhenAborted(turn, signal, STOPPED);
   heard.progress.clear();
   if (state.currentChat?.id === chat.id) showOutcome(ctx, outcome);
 }

@@ -17,7 +17,7 @@ import type { ToolContext } from "../../video/tools";
 import { headerLabel } from "../buttons";
 import { icon, type IconName } from "../icons";
 import { createModelPicker, storedPickerSettings } from "../modelPicker";
-import { modelCallDeps } from "../modelTask";
+import { modelCallDeps } from "../../app/modelCallDeps";
 import {
   changed,
   currentTimeline,

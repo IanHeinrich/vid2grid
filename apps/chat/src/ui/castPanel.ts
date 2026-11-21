@@ -16,7 +16,8 @@ import type {
 } from "../types";
 import { iconButton, seekButton, smallButton } from "./buttons";
 import type { ChatVideo } from "./knowledgeVideos";
-import { createModelTask, modelCallDeps, type ModelTask } from "./modelTask";
+import { modelCallDeps } from "../app/modelCallDeps";
+import { createModelTask, type ModelTask } from "./modelTask";
 import type { Toast, ToastHandle } from "./toast";
 
 export interface CastPanel {
