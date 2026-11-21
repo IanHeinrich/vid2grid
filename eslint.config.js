@@ -11,6 +11,7 @@ export default tseslint.config(
       "apps/python-library/",
       "apps/python-cli/",
       "apps/mcp-server/",
+      "experiments/",
       ".claude/",
     ],
   },
