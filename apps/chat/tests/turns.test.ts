@@ -33,7 +33,7 @@ import type {
   VideoCast,
 } from "../src/types";
 import { initConversation, type Conversation } from "../src/ui/conversation";
-import { storedPickerSettings } from "../src/ui/modelPicker";
+import { storedPickerSettings } from "../src/ui/pickerModel";
 import {
   ANSWERED_NOW_NOTES,
   initTurns,

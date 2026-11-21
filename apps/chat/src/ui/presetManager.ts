@@ -1,24 +1,7 @@
-import { effectiveVideoReferences } from "../chat/prompts";
-import {
-  deletePersona,
-  listPersonas,
-  savePersona,
-  withName,
-  withVideoReferences,
-  type Persona,
-} from "../chat/personas";
+import { deletePersona, listPersonas, savePersona, type Persona } from "../chat/personas";
 import type { AppElements } from "../dom";
-import type { VideoReferences, Voice } from "../types";
+import { listenToPersonaFields, renderPersonaFields, setUnlessFocused } from "./personaFields";
 import type { Toast } from "./toast";
-
-export const VOICE_HINTS: Record<Voice, string> = {
-  analyst: "Plain, direct answers about what the video shows.",
-  character: "Stays in character, as if what the video shows happened in the scene.",
-  narrator: "Tells what happens as third-person prose.",
-};
-
-const VOICES: readonly Voice[] = ["analyst", "character", "narrator"];
-const VIDEO_REFERENCES: readonly VideoReferences[] = ["free", "few", "none"];
 
 export interface PresetManager {
   open(options?: { presetId?: string | undefined; focusName?: boolean }): void;
@@ -123,27 +106,7 @@ function listenToEditor(ctx: PresetManagerContext): void {
     const name = els.nameInput.value.trim();
     edit(ctx, (persona) => ({ ...persona, name: name || persona.name }));
   });
-  els.systemPromptInput.addEventListener("change", () => {
-    const systemPrompt = els.systemPromptInput.value;
-    edit(ctx, (persona) => ({ ...persona, systemPrompt }));
-  });
-  for (const [input, key] of [
-    [els.characterNameInput, "characterName"],
-    [els.userNameInput, "userName"],
-  ] as const) {
-    input.addEventListener("change", () => {
-      const name = input.value;
-      edit(ctx, (persona) => withName(persona, key, name));
-    });
-  }
-  els.voiceSelect.addEventListener("change", () => {
-    const voice = VOICES.find((known) => known === els.voiceSelect.value);
-    if (voice) edit(ctx, (persona) => ({ ...persona, voice }));
-  });
-  els.videoReferencesSelect.addEventListener("change", () => {
-    const references = VIDEO_REFERENCES.find((known) => known === els.videoReferencesSelect.value);
-    if (references) edit(ctx, (persona) => withVideoReferences(persona, references));
-  });
+  listenToPersonaFields(els, (change) => edit(ctx, change));
 }
 
 function edit(ctx: PresetManagerContext, change: (persona: Persona) => Persona): void {
@@ -184,17 +147,7 @@ function listItem(persona: Persona, current: boolean): HTMLLIElement {
   return item;
 }
 
-function setUnlessFocused(input: HTMLInputElement | HTMLTextAreaElement, value: string): void {
-  if (document.activeElement !== input) input.value = value;
-}
-
 function renderEditor(els: AppElements["presetManager"], persona: Persona): void {
   setUnlessFocused(els.nameInput, persona.name);
-  setUnlessFocused(els.systemPromptInput, persona.systemPrompt);
-  setUnlessFocused(els.characterNameInput, persona.characterName ?? "");
-  setUnlessFocused(els.userNameInput, persona.userName ?? "");
-  const voice = persona.voice ?? "analyst";
-  els.voiceSelect.value = voice;
-  els.voiceHint.textContent = VOICE_HINTS[voice];
-  els.videoReferencesSelect.value = effectiveVideoReferences(persona);
+  renderPersonaFields(els, persona);
 }

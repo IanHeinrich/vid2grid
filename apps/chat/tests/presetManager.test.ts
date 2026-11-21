@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { effectiveVideoReferences } from "../src/chat/prompts";
 import { listPersonas, savePersona, type Persona } from "../src/chat/personas";
 import type { AppElements } from "../src/dom";
-import { initPresetManager, VOICE_HINTS, type PresetManager } from "../src/ui/presetManager";
+import { VOICE_HINTS } from "../src/ui/personaFields";
+import { initPresetManager, type PresetManager } from "../src/ui/presetManager";
 import { mountPage, stillToast } from "./support/page";
 
 let els: AppElements;

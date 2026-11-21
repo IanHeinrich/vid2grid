@@ -10,7 +10,7 @@ import {
 } from "../audio/videoAudio";
 import { pinsExceedCap } from "../chat/imageSelection";
 import { chatModelId, currentModel, resolveModel } from "../chat/models";
-import { effortFor, roundsFor } from "../chat/thoroughness";
+import { effortFor, roundsFor, withEffort } from "../chat/thoroughness";
 import type { AppElements } from "../dom";
 import {
   addPending,
@@ -278,13 +278,6 @@ function withThoroughness(settings: ChatSettings, tier: Thoroughness): ChatSetti
   const next = { ...settings };
   if (tier === "normal") delete next.thoroughness;
   else next.thoroughness = tier;
-  return next;
-}
-
-function withEffort(settings: ChatSettings, effort: string): ChatSettings {
-  const next = { ...settings };
-  if (effort === "") delete next.reasoningEffort;
-  else next.reasoningEffort = effort;
   return next;
 }
 

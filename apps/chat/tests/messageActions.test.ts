@@ -23,7 +23,7 @@ import type {
 } from "../src/types";
 import { initConversation } from "../src/ui/conversation";
 import { initMessageActions, type MessageActions } from "../src/app/messageActions";
-import { initChatSettings } from "../src/ui/settingsDialog";
+import { initChatSettings } from "../src/ui/chatSettingsPanel";
 import { initToast } from "../src/ui/toast";
 import type * as Tools from "../src/video/tools";
 import { createToolRunner, type ToolContext } from "../src/video/tools";

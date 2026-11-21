@@ -48,8 +48,8 @@ import {
 } from "../video/tools";
 import type { StatusLine } from "../ui/status";
 import type { Toast } from "../ui/toast";
-import { estimateTokens } from "../ui/tokenMeter";
 import { modelCallDeps } from "./modelCallDeps";
+import { estimateTokens } from "./requestEstimate";
 import { toolContext } from "./toolContext";
 import { turnAudio, type AudioStatus, type TurnAudio } from "./turnAudio";
 

@@ -27,23 +27,25 @@ import {
   type ChatDrawer,
   type KnowledgeDrawer,
 } from "./ui/chatDrawer";
+import {
+  initChatSettings,
+  type ChatSettingsDeps,
+  type ChatSettingsPanel,
+} from "./ui/chatSettingsPanel";
 import { initComposer, type Composer, type ComposerDeps } from "./ui/composer";
 import { initConnectionTest, type ConnectionTest } from "./ui/connectionTest";
 import { initConversation, type Conversation, type ConversationDeps } from "./ui/conversation";
 import { downloadBlob } from "./ui/download";
 import { listenForDrops } from "./ui/fileDrop";
 import {
-  initChatSettings,
   initSettingsDialog,
-  type ChatSettingsDeps,
-  type ChatSettingsPanel,
   type SettingsDialog,
   type SettingsDialogDeps,
 } from "./ui/settingsDialog";
 import { initSidebar, type Sidebar, type SidebarDeps } from "./ui/sidebar";
 import { initVideoPicker, type VideoPicker } from "./ui/knowledgeVideos";
 import { initMemoryPanel, type MemoryPanel } from "./ui/memoryPanel";
-import { storedPickerSettings } from "./ui/modelPicker";
+import { storedPickerSettings } from "./ui/pickerModel";
 import { initSceneLog, type SceneLogPanel } from "./ui/sceneLog";
 import { initStudy, type Study, type StudyDeps } from "./ui/study/studyPanel";
 import { initShortcuts } from "./ui/shortcuts";

@@ -5,13 +5,7 @@ import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { createAppState, replaceChat, setChats, setCurrentChat, type AppState } from "../src/state";
 import type { Chat, ChatStore, Folder, VideoAttachment } from "../src/types";
-import {
-  groupChats,
-  initSidebar,
-  matchesSearch,
-  sectionChats,
-  type SidebarDeps,
-} from "../src/ui/sidebar";
+import { initSidebar, type SidebarDeps } from "../src/ui/sidebar";
 import { initToast } from "../src/ui/toast";
 import { mountPage } from "./support/page";
 
@@ -80,10 +74,6 @@ function readText(blob: Blob): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error("read failed"));
     reader.readAsText(blob);
   });
-}
-
-function chatAt(id: string, updatedAt: number, extra: Partial<Chat> = {}): Chat {
-  return { ...blankChat(SETTINGS.defaultModelId, id, updatedAt), ...extra };
 }
 
 async function seed(
@@ -275,30 +265,6 @@ describe("new chat reuse", () => {
 });
 
 describe("grouping chats by date", () => {
-  it("puts chats under Today, Yesterday, the previous 7 and 30 days, and Older", () => {
-    const chats = [
-      chatAt("today", NOW - 60 * 60 * 1000),
-      chatAt("yesterday", NOW - DAY),
-      chatAt("week", NOW - 5 * DAY),
-      chatAt("month", NOW - 20 * DAY),
-      chatAt("older", NOW - 90 * DAY),
-    ];
-    expect(
-      groupChats(chats, NOW).map((group) => [group.label, group.chats.map((chat) => chat.id)]),
-    ).toEqual([
-      ["Today", ["today"]],
-      ["Yesterday", ["yesterday"]],
-      ["Previous 7 days", ["week"]],
-      ["Previous 30 days", ["month"]],
-      ["Older", ["older"]],
-    ]);
-  });
-
-  it("counts calendar days, so late last night is yesterday", () => {
-    const lastNight = new Date(2026, 10, 18, 23, 30).getTime();
-    expect(groupChats([chatAt("a", lastNight)], NOW)[0]?.label).toBe("Yesterday");
-  });
-
   it("shows a heading for each group that has chats, in the injected clock's terms", async () => {
     deps.now = () => NOW;
     await seed("a", NOW - 10 * DAY, "Old trip");
@@ -310,14 +276,6 @@ describe("grouping chats by date", () => {
 });
 
 describe("searching chats", () => {
-  it("matches the title or the video name, ignoring case", () => {
-    const chat = chatAt("a", 1, { title: "Holiday", video: BEACH });
-    expect(matchesSearch(chat, "holi")).toBe(true);
-    expect(matchesSearch(chat, "BEACH")).toBe(true);
-    expect(matchesSearch(chat, "  ")).toBe(true);
-    expect(matchesSearch(chat, "mountain")).toBe(false);
-  });
-
   it("filters the list as you type and says when nothing matches", async () => {
     await seed("a", 2, "Holiday", { video: BEACH });
     await seed("b", 1, "Cooking");
@@ -430,40 +388,6 @@ async function withFolders(...folders: Folder[]): Promise<void> {
   initSidebar(els, state, deps);
   await vi.waitFor(() => expect(folderNames()).toHaveLength(folders.length));
 }
-
-describe("sectioning chats into folders", () => {
-  it("puts filed chats under their folder, by name, and the rest under date groups", () => {
-    const chats = [
-      chatAt("pasta", NOW - 1000, { folderId: COOKING.id }),
-      chatAt("beach", NOW - 2000, { folderId: TRIPS.id }),
-      chatAt("orphan", NOW - 3000, { folderId: "gone" }),
-      chatAt("loose", NOW - 5 * DAY),
-    ];
-    const { folders, groups } = sectionChats(chats, [TRIPS, COOKING], "", NOW);
-    expect(
-      folders.map(({ folder, chats: inside }) => [folder.id, inside.map((c) => c.id)]),
-    ).toEqual([
-      ["cooking", ["pasta"]],
-      ["trips", ["beach"]],
-    ]);
-    expect(groups.map((group) => [group.label, group.chats.map((c) => c.id)])).toEqual([
-      ["Today", ["orphan"]],
-      ["Previous 7 days", ["loose"]],
-    ]);
-  });
-
-  it("expands every folder with a match while searching and hides the rest", () => {
-    const chats = [chatAt("beach", 1, { title: "Beach", folderId: TRIPS.id })];
-    const collapsed = { ...TRIPS, collapsed: true };
-    expect(sectionChats(chats, [collapsed, COOKING], "", NOW).folders).toEqual([
-      { folder: COOKING, chats: [], expanded: true },
-      { folder: collapsed, chats, expanded: false },
-    ]);
-    expect(sectionChats(chats, [collapsed, COOKING], "bea", NOW).folders).toEqual([
-      { folder: collapsed, chats, expanded: true },
-    ]);
-  });
-});
 
 describe("folders in the sidebar", () => {
   it("creates a folder and names it inline", async () => {

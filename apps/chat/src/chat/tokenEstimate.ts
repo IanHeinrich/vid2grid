@@ -1,8 +1,13 @@
+import { addUsage } from "../api/usage";
 import { imagesOf } from "../imageRefs";
-import type { ChatMessage, ChatRequest, WireMessage } from "../types";
+import type { ChatMessage, ChatRequest, TokenUsage, WireMessage } from "../types";
 
 const CHARS_PER_TOKEN = 4;
 export const FALLBACK_IMAGE_TOKENS = 1500;
+const WARN_SHARE = 0.7;
+const DANGER_SHARE = 0.9;
+
+export type ContextLevel = "ok" | "warn" | "danger";
 
 function wireText(message: WireMessage): string {
   switch (message.role) {
@@ -63,4 +68,40 @@ export function estimateRequestTokens(
   return (
     Math.ceil(characters / CHARS_PER_TOKEN) + images.reduce((sum, url) => sum + imageCost(url), 0)
   );
+}
+
+function trimmed(value: number, digits: number): string {
+  return value.toFixed(digits).replace(/\.0+$/, "");
+}
+
+export function formatTokens(count: number): string {
+  if (count < 1000) return String(Math.round(count));
+  if (count < 10_000) return `${trimmed(count / 1000, 1)}k`;
+  if (count < 999_500) return `${Math.round(count / 1000)}k`;
+  if (count < 10_000_000) return `${trimmed(count / 1_000_000, 1)}M`;
+  return `${Math.round(count / 1_000_000)}M`;
+}
+
+export function formatCost(usd: number): string {
+  return usd < 0.01 ? "< $0.01" : `$${usd.toFixed(2)}`;
+}
+
+export function usageTotals(messages: readonly ChatMessage[]): TokenUsage | undefined {
+  return messages.reduce<TokenUsage | undefined>(
+    (total, message) => (message.role === "assistant" ? addUsage(total, message.usage) : total),
+    undefined,
+  );
+}
+
+export function replyUsageText(messages: readonly ChatMessage[]): string {
+  const usage = usageTotals(messages);
+  return usage
+    ? `${formatTokens(usage.promptTokens)} in / ${formatTokens(usage.completionTokens)} out`
+    : "";
+}
+
+export function contextLevel(used: number, window: number | undefined): ContextLevel {
+  if (window === undefined || window <= 0) return "ok";
+  const share = used / window;
+  return share > DANGER_SHARE ? "danger" : share > WARN_SHARE ? "warn" : "ok";
 }
