@@ -64,7 +64,7 @@ function queryChatSettings() {
       voiceSelect: byId("voiceSelect", HTMLSelectElement),
       voiceHint: byId("voiceHint", HTMLElement),
       videoReferencesSelect: byId("videoReferencesSelect", HTMLSelectElement),
-      roleplayNames: byId("roleplayNames", HTMLDetailsElement),
+      characterNames: byId("characterNames", HTMLDetailsElement),
       promptPreview: byId("promptPreview", HTMLElement),
       personaSelect: byId("personaSelect", HTMLSelectElement),
       savePersonaButton: byId("savePersonaButton", HTMLButtonElement),

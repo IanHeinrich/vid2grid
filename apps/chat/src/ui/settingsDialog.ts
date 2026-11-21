@@ -355,7 +355,7 @@ function listenToPersona(ctx: ChatSettingsContext): void {
   }
   panel.voiceSelect.addEventListener("change", () => {
     const voice = VOICES.find((known) => known === panel.voiceSelect.value);
-    if (voice === "character") panel.roleplayNames.open = true;
+    if (voice === "character") panel.characterNames.open = true;
     if (voice) change(ctx, (settings) => ({ ...settings, voice }));
   });
   panel.videoReferencesSelect.addEventListener("change", () => {
@@ -566,17 +566,17 @@ function renderPersona(ctx: ChatSettingsContext, settings: ChatSettings): void {
   panel.voiceSelect.value = voice;
   panel.voiceHint.textContent = VOICE_HINTS[voice];
   panel.videoReferencesSelect.value = effectiveVideoReferences(settings);
-  renderRoleplayNames(ctx, settings);
+  renderCharacterNames(ctx, settings);
   renderPreview(panel);
   renderPresets(ctx);
 }
 
 // Set only when the chat changes, so saving another field never folds it under the user.
-function renderRoleplayNames(ctx: ChatSettingsContext, settings: ChatSettings): void {
+function renderCharacterNames(ctx: ChatSettingsContext, settings: ChatSettings): void {
   const chatId = ctx.state.currentChat?.id;
   if (chatId === ctx.renderedChatId) return;
   ctx.renderedChatId = chatId;
-  ctx.els.chatSettings.roleplayNames.open =
+  ctx.els.chatSettings.characterNames.open =
     settings.characterName !== undefined ||
     settings.userName !== undefined ||
     settings.voice === "character";

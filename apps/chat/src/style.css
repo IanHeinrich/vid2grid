@@ -714,17 +714,17 @@ kbd {
   gap: 0.75rem;
 }
 
-.roleplay-names {
+.character-names {
   font-size: 0.875rem;
 }
 
-.roleplay-names summary {
+.character-names summary {
   color: var(--text);
   font-weight: 500;
   cursor: pointer;
 }
 
-.roleplay-names p {
+.character-names p {
   margin: 0.5rem 0;
 }
 

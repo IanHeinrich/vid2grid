@@ -550,10 +550,10 @@ describe("Earlier images", () => {
   });
 });
 
-describe("Roleplay names", () => {
+describe("Character names", () => {
   it("starts folded for a chat without names", async () => {
     await openPersona();
-    expect(els.chatSettings.roleplayNames.open).toBe(false);
+    expect(els.chatSettings.characterNames.open).toBe(false);
   });
 
   it("opens when the voice is set to In character", async () => {
@@ -561,7 +561,7 @@ describe("Roleplay names", () => {
     const panel = els.chatSettings;
     panel.voiceSelect.value = "character";
     panel.voiceSelect.dispatchEvent(new Event("change"));
-    expect(panel.roleplayNames.open).toBe(true);
+    expect(panel.characterNames.open).toBe(true);
   });
 
   it("starts open for a chat with a name set", async () => {
@@ -573,7 +573,7 @@ describe("Roleplay names", () => {
     replaceChat(state, named);
     setCurrentChat(state, named, []);
     initChatSettings(els, state, { store, toast: toast(), onChanged: vi.fn(), onError: vi.fn() });
-    expect(els.chatSettings.roleplayNames.open).toBe(true);
+    expect(els.chatSettings.characterNames.open).toBe(true);
   });
 });
 

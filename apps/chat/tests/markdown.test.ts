@@ -23,7 +23,7 @@ describe("paragraphs and line breaks", () => {
 });
 
 describe("emphasis", () => {
-  it("renders *text* and _text_ as roleplay actions", () => {
+  it("renders *text* and _text_ as actions", () => {
     expect(render("*waves* and _smiles_")).toBe(
       '<p><em class="md-action">waves</em> and <em class="md-action">smiles</em></p>',
     );
