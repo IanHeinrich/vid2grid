@@ -22,7 +22,7 @@ import {
   type ZoomPlan,
 } from "../../video/study";
 import type { ToolContext } from "../../video/tools";
-import type { ChatVideo } from "../knowledgeVideos";
+import type { ChatVideo } from "../video/knowledgeVideos";
 import type { MenuHandle } from "../menu";
 import type { ModelPicker } from "../modelPicker";
 import type { StatusLine } from "../status";

@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 import type { ImageStore } from "../../src/types";
-import type { ConversationDeps } from "../../src/ui/conversation";
+import type { ConversationDeps } from "../../src/ui/conversation/conversation";
 
 export function conversationDeps(
   store: ImageStore,

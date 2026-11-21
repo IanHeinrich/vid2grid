@@ -1,9 +1,9 @@
-import type { TurnEvent } from "../chat/agentLoop";
-import { formatTokens } from "../chat/tokenEstimate";
-import { plural } from "../text";
-import { formatSpan, formatTimestamp } from "../time";
-import type { AssistantMessage, ImageRef, ToolCall, ToolMessage } from "../types";
-import { seekButton } from "./buttons";
+import type { TurnEvent } from "../../chat/agentLoop";
+import { formatTokens } from "../../chat/tokenEstimate";
+import { plural } from "../../text";
+import { formatSpan, formatTimestamp } from "../../time";
+import type { AssistantMessage, ImageRef, ToolCall, ToolMessage } from "../../types";
+import { seekButton } from "../buttons";
 
 const MAX_LISTED_MOMENTS = 4;
 export const STALL_SECONDS = 90;

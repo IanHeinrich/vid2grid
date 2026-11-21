@@ -45,7 +45,7 @@ import { iconButton, pinToggle } from "./buttons";
 import { attachMenu } from "./menu";
 import type { StatusLine } from "./status";
 import { overviewText, videoSummary } from "./video/overviewText";
-import type { VideoPanel } from "./videoPanel";
+import type { VideoPanel } from "./video/videoPanel";
 
 const MAX_INPUT_HEIGHT_PX = 240;
 const AUDIO_KEY = "vid2grid-chat-audio";

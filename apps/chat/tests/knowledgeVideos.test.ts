@@ -4,7 +4,7 @@ import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { createAppState, setCurrentChat, type AppState } from "../src/state";
 import type { ChatMessage, VideoAttachment } from "../src/types";
-import { chatVideos, initVideoPicker } from "../src/ui/knowledgeVideos";
+import { chatVideos, initVideoPicker } from "../src/ui/video/knowledgeVideos";
 import { mountPage } from "./support/page";
 
 function video(name: string): VideoAttachment {

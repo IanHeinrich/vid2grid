@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ChatMessage, TurnReceipt } from "../src/types";
-import { durationText, receiptParts, renderReceipt } from "../src/ui/receipt";
+import { durationText, receiptParts, renderReceipt } from "../src/ui/conversation/receipt";
 
 const receipt: TurnReceipt = { rounds: 1, imagesSent: 0, durationMs: 15400, unseenCitations: [] };
 

@@ -21,7 +21,7 @@ import type {
   StreamChat,
   UserMessage,
 } from "../src/types";
-import { initConversation } from "../src/ui/conversation";
+import { initConversation } from "../src/ui/conversation/conversation";
 import { initMessageActions, type MessageActions } from "../src/app/messageActions";
 import { initChatSettings } from "../src/ui/chatSettingsPanel";
 import { initToast } from "../src/ui/toast";

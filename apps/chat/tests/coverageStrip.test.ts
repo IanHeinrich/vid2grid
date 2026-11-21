@@ -6,7 +6,7 @@ import {
   densityShade,
   densityText,
   seenShare,
-} from "../src/ui/coverageStrip";
+} from "../src/ui/video/coverageStrip";
 
 function sheet(id: string, call: string, start: number, end: number, frameCount: number): ImageRef {
   return {

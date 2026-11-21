@@ -2,13 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEEP_MAX_ROUNDS,
   DEFAULT_MAX_ROUNDS,
-  LOOP_SENTENCE_REPEATS,
-  LOOP_WINDOW_SENTENCES,
-  REASONING_LIMIT_CHARS,
-  reasoningLimit,
-  reasoningLoopWatch,
   runTurn,
-  stripToolMarkup,
   type TurnDeps,
   type TurnEvent,
 } from "../src/chat/agentLoop";
@@ -320,61 +314,6 @@ describe("runTurn deep dives and timelines", () => {
     const { deps, requests } = setup([events({ type: "text", delta: "Seen." })]);
     await runTurn(deps);
     expect(contextOf(requests[0])).toBeUndefined();
-  });
-});
-
-describe("stripToolMarkup", () => {
-  it("strips DeepSeek DSML calls, fullwidth or ASCII bars, with or without a closing tag", () => {
-    const leaked =
-      'Let me check.\n\n<｜DSML｜calls> <｜DSML｜invoke name="look"> <｜DSML｜parameter name="start">60</｜DSML｜parameter> </｜DSML｜invoke> </｜DSML｜calls>';
-    expect(stripToolMarkup(leaked)).toEqual({ text: "Let me check.", stripped: true });
-    const ascii = 'Before.\n<|DSML|function_calls>\n<|DSML|invoke name="frame">';
-    expect(stripToolMarkup(ascii)).toEqual({ text: "Before.", stripped: true });
-    expect(stripToolMarkup("A < ｜ DSML ｜ calls >x</ ｜ DSML ｜ calls > B").text).toBe("A  B");
-  });
-
-  it("strips stray DSML tags", () => {
-    expect(stripToolMarkup("Answer.</｜DSML｜invoke><｜DSML｜parameter>")).toEqual({
-      text: "Answer.",
-      stripped: true,
-    });
-  });
-
-  it("strips DeepSeek native tool call tokens", () => {
-    const leaked =
-      "Two dogs.<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>look\n{}<｜tool▁call▁end｜><｜tool▁calls▁end｜>";
-    expect(stripToolMarkup(leaked)).toEqual({ text: "Two dogs.", stripped: true });
-    expect(stripToolMarkup("Ok.<｜tool▁sep｜>").text).toBe("Ok.");
-  });
-
-  it("strips tool_call and function_calls blocks", () => {
-    expect(stripToolMarkup('<tool_call>{"name": "look"}</tool_call>Seen.').text).toBe("Seen.");
-    expect(
-      stripToolMarkup('Seen.<function_calls><invoke name="look"></invoke></function_calls>').text,
-    ).toBe("Seen.");
-    expect(stripToolMarkup('Seen.\n<tool_call>{"name": "look"').text).toBe("Seen.");
-  });
-
-  it("strips <|tool_call|>-style tags and blocks", () => {
-    expect(stripToolMarkup('Seen.<|tool_call|>[{"name": "look"}]<|/tool_call|>').text).toBe(
-      "Seen.",
-    );
-    expect(stripToolMarkup("Seen.<|tool_call_begin|>look:0<|tool_call_end|>").text).toBe("Seen.");
-    expect(stripToolMarkup("<|tool_calls_section_begin|>Seen.").text).toBe("Seen.");
-  });
-
-  it("keeps the text around markup in the middle", () => {
-    const leaked =
-      'First part.\n\n<｜DSML｜calls><｜DSML｜invoke name="look"></｜DSML｜invoke></｜DSML｜calls>\n\nSecond part.';
-    expect(stripToolMarkup(leaked)).toEqual({
-      text: "First part.\n\nSecond part.",
-      stripped: true,
-    });
-  });
-
-  it("leaves ordinary text, including its whitespace, untouched", () => {
-    const text = "  A | B <b>bold</b> and x < y > z.\n\n\n";
-    expect(stripToolMarkup(text)).toEqual({ text, stripped: false });
   });
 });
 
@@ -919,68 +858,6 @@ function waitForAbort(signal: AbortSignal): Promise<never> {
     else signal.addEventListener("abort", () => reject(abortError()), { once: true });
   });
 }
-
-describe("reasoningLoopWatch", () => {
-  it("trips once a long sentence comes back the fourth time, whatever its case and spacing", () => {
-    const looping = reasoningLoopWatch(REASONING_LIMIT_CHARS);
-    expect(looping("Maybe the dog is chasing the ball. Or not. ")).toBe(false);
-    expect(looping("maybe  the dog is chasing the ball!\nOr not.")).toBe(false);
-    expect(looping("MAYBE the dog is chasing the ball. ")).toBe(false);
-    expect(looping(" Maybe the dog is chasing")).toBe(false);
-    expect(looping(" the ball? ")).toBe(true);
-    expect(LOOP_SENTENCE_REPEATS).toBe(4);
-  });
-
-  it("trips on two or three sentences cycling", () => {
-    const looping = reasoningLoopWatch(REASONING_LIMIT_CHARS);
-    const cycle =
-      "So the ball must be under the bench. But the bench looks empty in this frame. Let me check the bench again. ";
-    const trips = Array.from({ length: LOOP_SENTENCE_REPEATS }, () => looping(cycle));
-    expect(trips).toEqual([false, false, false, true]);
-  });
-
-  it("lets filler repeat now and then across a long honest trace", () => {
-    const looping = reasoningLoopWatch(REASONING_LIMIT_CHARS);
-    const filler = "But wait, let me double-check that. ";
-    const stretch = (from: number) =>
-      Array.from({ length: LOOP_WINDOW_SENTENCES }, (_, index) => {
-        const frame = from + index;
-        return `Frame ${frame} shows the dog ${frame % 2 === 0 ? "near" : "away from"} the water. `;
-      }).join("");
-    const trace = [filler, stretch(1), filler, stretch(41), filler, stretch(81), filler];
-    expect(trace.map(looping)).toEqual(trace.map(() => false));
-  });
-
-  it("does not trip on a per-frame checklist", () => {
-    const looping = reasoningLoopWatch(REASONING_LIMIT_CHARS);
-    const checklist = Array.from(
-      { length: 30 },
-      (_, index) => `- Frame at 0:${String(index).padStart(2, "0")}: check the dog and the ball.\n`,
-    );
-    expect(checklist.some(looping)).toBe(false);
-  });
-
-  it("splits sentences that arrive across many small deltas", () => {
-    const looping = reasoningLoopWatch(REASONING_LIMIT_CHARS);
-    const text = "Maybe the dog is chasing the ball across the sand. ".repeat(4);
-    const results = [...text].map(looping);
-    expect(results.indexOf(true)).toBe(text.length - 2);
-  });
-
-  it("ignores short sentences repeating and trips past the size limit", () => {
-    const short = reasoningLoopWatch(REASONING_LIMIT_CHARS);
-    expect(["Hmm. ", "Hmm. ", "Hmm. ", "Hmm. "].some(short)).toBe(false);
-    const long = reasoningLoopWatch(10);
-    expect(long("0123456789")).toBe(false);
-    expect(long("x")).toBe(true);
-  });
-
-  it("allows higher tiers more reasoning", () => {
-    expect(reasoningLimit("normal")).toBe(REASONING_LIMIT_CHARS);
-    expect(reasoningLimit("thorough")).toBeGreaterThan(reasoningLimit("normal"));
-    expect(reasoningLimit("exhaustive")).toBeGreaterThan(reasoningLimit("thorough"));
-  });
-});
 
 describe("runTurn reasoning loop guard", () => {
   const reasoner: ModelInfo = { ...model, reasoningEffortOptions: ["none", "low", "high"] };

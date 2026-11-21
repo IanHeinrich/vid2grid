@@ -3,8 +3,8 @@ import {
   type CitationMatch,
   type CitationOptions,
   type TimestampMatch,
-} from "../time";
-import { seekButton } from "./buttons";
+} from "../../time";
+import { seekButton } from "../buttons";
 import "./markdown.css";
 
 export interface MarkdownOptions {

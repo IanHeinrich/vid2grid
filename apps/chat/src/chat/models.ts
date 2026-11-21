@@ -1,4 +1,4 @@
-import { unknownModel } from "../api/client";
+import { unknownModel } from "../api/modelCatalog";
 import type { GlobalSettings } from "../settings";
 import type { Chat, ModelInfo } from "../types";
 

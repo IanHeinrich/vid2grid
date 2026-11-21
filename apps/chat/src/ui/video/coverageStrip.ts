@@ -1,6 +1,6 @@
-import { seenSpans, type SeenSpan } from "../chat/coverage";
-import { formatSpan, formatTimestamp } from "../time";
-import type { ChatMessage } from "../types";
+import { seenSpans, type SeenSpan } from "../../chat/coverage";
+import { formatSpan, formatTimestamp } from "../../time";
+import type { ChatMessage } from "../../types";
 
 // Shade runs on a log scale: an overview's sparse frames are faint, a close look is solid.
 const SPARSE_FPS = 0.02;

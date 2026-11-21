@@ -1,6 +1,6 @@
-import type { AppElements } from "../dom";
-import { clamp } from "../spans";
-import { formatSpan } from "../time";
+import type { AppElements } from "../../dom";
+import { clamp } from "../../spans";
+import { formatSpan } from "../../time";
 
 const STORAGE_KEY = "vid2grid-chat-mini-player";
 const FALLBACK_FRAME_SECONDS = 1 / 30;

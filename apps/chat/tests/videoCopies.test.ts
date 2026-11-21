@@ -5,7 +5,7 @@ import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { createAppState, setPendingVideo, type AppState } from "../src/state";
 import type { ChatStore } from "../src/types";
-import { formatBytes, initVideoCopies, type VideoStorage } from "../src/ui/videoCopies";
+import { formatBytes, initVideoCopies, type VideoStorage } from "../src/ui/video/videoCopies";
 import { mountPage } from "./support/page";
 
 let els: AppElements;

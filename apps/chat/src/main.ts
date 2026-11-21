@@ -34,7 +34,11 @@ import {
 } from "./ui/chatSettingsPanel";
 import { initComposer, type Composer, type ComposerDeps } from "./ui/composer";
 import { initConnectionTest, type ConnectionTest } from "./ui/connectionTest";
-import { initConversation, type Conversation, type ConversationDeps } from "./ui/conversation";
+import {
+  initConversation,
+  type Conversation,
+  type ConversationDeps,
+} from "./ui/conversation/conversation";
 import { downloadBlob } from "./ui/download";
 import { listenForDrops } from "./ui/fileDrop";
 import {
@@ -43,7 +47,7 @@ import {
   type SettingsDialogDeps,
 } from "./ui/settingsDialog";
 import { initSidebar, type Sidebar, type SidebarDeps } from "./ui/sidebar";
-import { initVideoPicker, type VideoPicker } from "./ui/knowledgeVideos";
+import { initVideoPicker, type VideoPicker } from "./ui/video/knowledgeVideos";
 import { initMemoryPanel, type MemoryPanel } from "./ui/memoryPanel";
 import { storedPickerSettings } from "./ui/pickerModel";
 import { initSceneLog, type SceneLogPanel } from "./ui/sceneLog";
@@ -51,9 +55,9 @@ import { initStudy, type Study, type StudyDeps } from "./ui/study/studyPanel";
 import { initShortcuts } from "./ui/shortcuts";
 import { initStatus, type StatusLine } from "./ui/status";
 import { initToast, type Toast } from "./ui/toast";
-import { initVideoCopies, type VideoCopies } from "./ui/videoCopies";
+import { initVideoCopies, type VideoCopies } from "./ui/video/videoCopies";
 import { initUsageMeter, type UsageMeter } from "./ui/tokenMeter";
-import { initVideoPanel, type VideoPanel, type VideoPanelDeps } from "./ui/videoPanel";
+import { initVideoPanel, type VideoPanel, type VideoPanelDeps } from "./ui/video/videoPanel";
 import { initWelcome, type Welcome } from "./ui/welcome";
 
 interface App {

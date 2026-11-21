@@ -1,9 +1,9 @@
 import { computeOptimalGrid, GUTTER_PX, type GridLayout } from "@vid2grid/core";
-import type { AppElements } from "../dom";
-import { formatTimestamp } from "../time";
-import type { ImageRef, ImageStore } from "../types";
+import type { AppElements } from "../../dom";
+import { formatTimestamp } from "../../time";
+import type { ImageRef, ImageStore } from "../../types";
 import { imageCaption, sheetCellTimes } from "./captions";
-import { setPinState } from "./buttons";
+import { setPinState } from "../buttons";
 
 const MAX_ZOOM = 6;
 const ZOOM_STEP = 1.25;

@@ -2,7 +2,7 @@ import { classifyFile } from "../attachments/images";
 import type { AppState } from "../state";
 import type { Composer, PickedFile } from "../ui/composer";
 import type { StatusLine } from "../ui/status";
-import type { VideoPanel } from "../ui/videoPanel";
+import type { VideoPanel } from "../ui/video/videoPanel";
 
 export interface DroppedFile {
   file: File;

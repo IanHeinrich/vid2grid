@@ -15,7 +15,7 @@ import type {
   VideoCast,
 } from "../types";
 import { editKeys, iconButton, seekButton, smallButton } from "./buttons";
-import type { ChatVideo } from "./knowledgeVideos";
+import type { ChatVideo } from "./video/knowledgeVideos";
 import { modelCallDeps } from "../app/modelCallDeps";
 import { createModelTask, type ModelTask } from "./modelTask";
 import { offerUndo, type Toast, type ToastHandle } from "./toast";

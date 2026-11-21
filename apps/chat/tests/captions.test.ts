@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ImageRef } from "../src/types";
-import { imageCaption, sheetCellTimes, type SheetSource } from "../src/ui/captions";
+import { imageCaption, sheetCellTimes, type SheetSource } from "../src/ui/conversation/captions";
 
 function sheet(call: string, startSeconds: number, endSeconds: number, frameCount: number) {
   const source: SheetSource = {

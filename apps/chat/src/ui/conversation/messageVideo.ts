@@ -1,4 +1,4 @@
-import type { ChatMessage, VideoAttachment } from "../types";
+import type { ChatMessage, VideoAttachment } from "../../types";
 
 // The video a message is about: the latest one attached at or before it. The chat's latest
 // attachment stands for its current video, since a reattach of a changed file adds no message.

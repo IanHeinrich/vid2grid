@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { renderMarkdown } from "../src/ui/markdown";
+import { renderMarkdown } from "../src/ui/conversation/markdown";
 
 function render(text: string, onSeek: (seconds: number) => void = () => undefined): string {
   const container = document.createElement("div");

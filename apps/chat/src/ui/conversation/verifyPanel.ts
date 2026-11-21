@@ -1,5 +1,5 @@
-import type { ClaimCheck, ClaimVerdict } from "../types";
-import { seekButton, smallButton } from "./buttons";
+import type { ClaimCheck, ClaimVerdict } from "../../types";
+import { seekButton, smallButton } from "../buttons";
 
 const MARKS: Record<ClaimVerdict, { mark: string; label: string }> = {
   confirmed: { mark: "✓", label: "Confirmed" },

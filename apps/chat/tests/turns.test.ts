@@ -32,7 +32,7 @@ import type {
   VideoAudio,
   VideoCast,
 } from "../src/types";
-import { initConversation, type Conversation } from "../src/ui/conversation";
+import { initConversation, type Conversation } from "../src/ui/conversation/conversation";
 import { storedPickerSettings } from "../src/ui/pickerModel";
 import {
   ANSWERED_NOW_NOTES,

@@ -18,7 +18,7 @@ import {
   withLoopPoint,
   type MiniPlayer,
   type MiniPlayerDeps,
-} from "../src/ui/miniPlayer";
+} from "../src/ui/video/miniPlayer";
 import { mountPage } from "./support/page";
 
 const VIEWPORT = { width: 1000, height: 800 };

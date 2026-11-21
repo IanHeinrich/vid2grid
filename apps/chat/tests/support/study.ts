@@ -20,7 +20,7 @@ import type {
   VideoAttachment,
   VideoTimeline,
 } from "../../src/types";
-import type { ChatVideo } from "../../src/ui/knowledgeVideos";
+import type { ChatVideo } from "../../src/ui/video/knowledgeVideos";
 import { initStudy, type Study } from "../../src/ui/study/studyPanel";
 import { zoomOfferText } from "../../src/ui/study/studyProgress";
 import { resolveSheetResolution } from "../../src/video/resolution";

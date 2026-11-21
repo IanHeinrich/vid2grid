@@ -1,6 +1,6 @@
-import { plural } from "../text";
-import { findTimestamps, formatSpan } from "../time";
-import type { ImageRef, ImageSource } from "../types";
+import { plural } from "../../text";
+import { findTimestamps, formatSpan } from "../../time";
+import type { ImageRef, ImageSource } from "../../types";
 
 export type SheetSource = Extract<ImageSource, { kind: "sheet" }>;
 
