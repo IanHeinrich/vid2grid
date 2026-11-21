@@ -25,6 +25,15 @@ describe("formatTimestamp", () => {
     expect(formatTimestamp(102.47, true)).toBe("1:42.4");
     expect(formatTimestamp(3725, true)).toBe("1:02:05.0");
   });
+
+  it("prints the tenth a value is written with", () => {
+    expect(formatTimestamp(1.2, true)).toBe("0:01.2");
+    expect(formatTimestamp(3.4, true)).toBe("0:03.4");
+    expect(formatTimestamp(65.3, true)).toBe("1:05.3");
+    for (let i = 0; i < 6000; i++) {
+      expect(formatTimestamp(i / 10, true).endsWith(`.${i % 10}`)).toBe(true);
+    }
+  });
 });
 
 describe("formatSpan", () => {

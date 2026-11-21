@@ -581,6 +581,47 @@ describe("closing the Move to menu", () => {
   });
 });
 
+describe("closing the Move to menu on a press or focus elsewhere", () => {
+  it("moves the chat when a click blurs the option to nothing first, as Safari does", async () => {
+    await seed("a", 1, "Beach");
+    await withFolders(TRIPS);
+    const option = moveOption("a", "Trips");
+    option.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: null }));
+    // A browser drops the click on an option removed between mousedown and mouseup.
+    expect(option.isConnected).toBe(true);
+    option.click();
+    await vi.waitFor(() => expect(titlesIn(folderFor("trips"))).toEqual(["Beach"]));
+  });
+
+  it("closes the Move to menu on a press outside it or focus moving out", async () => {
+    await seed("a", 1, "Beach");
+    await seed("b", 2, "Park");
+    await withFolders(TRIPS);
+    moveOption("a", "Trips");
+    document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    expect(itemFor("a").querySelector(".chat-move-menu")).toBeNull();
+    const option = moveOption("a", "Trips");
+    const elsewhere = itemFor("b").querySelector(".chat-open");
+    option.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: elsewhere }));
+    expect(itemFor("a").querySelector(".chat-move-menu")).toBeNull();
+  });
+});
+
+describe("closing the Move to menu on a re-render", () => {
+  it("stops listening for outside presses once the list is redrawn", async () => {
+    await seed("a", 1, "Beach");
+    await withFolders(TRIPS);
+    const added = vi.spyOn(document, "addEventListener");
+    moveOption("a", "Trips");
+    const options = added.mock.calls.find(([type]) => type === "pointerdown")?.[2];
+    added.mockRestore();
+    const signal = typeof options === "object" ? options.signal : undefined;
+    expect(signal?.aborted).toBe(false);
+    els.sidebar.searchInput.dispatchEvent(new Event("input"));
+    expect(signal?.aborted).toBe(true);
+  });
+});
+
 describe("folder actions", () => {
   it("renames a folder inline", async () => {
     await withFolders(TRIPS);

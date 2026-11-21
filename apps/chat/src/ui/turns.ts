@@ -222,7 +222,7 @@ async function touchChat(
   }));
   if (!updated) return undefined;
   ctx.deps.onChatChanged();
-  return { ...updated, sceneLog: [...updated.sceneLog] };
+  return updated;
 }
 
 function summarize(
@@ -436,7 +436,6 @@ async function compareTurn(
 function onTurnEvent(ctx: TurnsContext, chat: Chat, event: TurnEvent, progress: AudioStatus): void {
   if (event.type === "toolDone") progress.clear();
   if (event.type === "note") {
-    chat.sceneLog.push(event.note);
     addNote(ctx, chat.id, event.note).catch((error: unknown) => {
       ctx.deps.status.show(`Could not save the note: ${errorText(error)}`, "error");
     });

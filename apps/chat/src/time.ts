@@ -1,11 +1,12 @@
 import type { SceneNote } from "./types";
 
 export function formatTimestamp(seconds: number, tenths = false): string {
-  const clamped = Math.max(0, seconds);
-  const whole = Math.floor(clamped);
+  // Whole tenths first: 1.2 - 1 is 0.19999999999999996, which would floor to the tenth below.
+  const tenthsTotal = Math.floor(Math.max(0, seconds) * 10 + 1e-6);
+  const whole = Math.floor(tenthsTotal / 10);
   const hours = Math.floor(whole / 3600);
   const minutes = Math.floor((whole % 3600) / 60);
-  const fraction = tenths ? `.${Math.floor((clamped - whole) * 10)}` : "";
+  const fraction = tenths ? `.${tenthsTotal % 10}` : "";
   const secs = `${String(whole % 60).padStart(2, "0")}${fraction}`;
   return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${secs}` : `${minutes}:${secs}`;
 }

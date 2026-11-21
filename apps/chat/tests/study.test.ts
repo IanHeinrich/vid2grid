@@ -476,7 +476,7 @@ describe("runStudy requests", () => {
   });
 
   it("reuses cached sheets on a second study", async () => {
-    const first = studySetup();
+    const first = studySetup({ replies: [...REPLIES, ...REPLIES] });
     await runStudy(first.deps);
     await runStudy({ ...first.deps, timeline: { ...first.deps.timeline, nextWindow: 0 } });
     expect(first.render).toHaveBeenCalledTimes(3);
@@ -525,6 +525,43 @@ describe("runStudy stopping", () => {
     await expect(runStudy(deps)).rejects.toThrow("Study window 2 of 3 (0:45 to 1:30) failed: boom");
     expect(saved).toHaveLength(1);
     expect(saved[0]?.nextWindow).toBe(1);
+  });
+
+  it("fails a window whose reply is empty, so a resume studies it again", async () => {
+    const { deps, saved } = studySetup({ replies: [REPLIES[0] ?? "", " \n"] });
+    await expect(runStudy(deps)).rejects.toThrow(
+      "Study window 2 of 3 (0:45 to 1:30) failed: The reply had nothing for this window.",
+    );
+    expect(saved).toHaveLength(1);
+    expect(saved[0]?.nextWindow).toBe(1);
+  });
+});
+
+describe("runStudy entries outside the window", () => {
+  it("clamps entries to the window and drops those outside it", async () => {
+    const { deps, saved } = studySetup({
+      replies: [
+        "[0:00-0:50] A man walks in.\n[1:40-1:50] He leaves.\n[0:44] He turns.",
+        ...REPLIES.slice(1),
+      ],
+    });
+    await runStudy(deps);
+    expect(saved[0]?.entries).toEqual([
+      { startSeconds: 0, endSeconds: 45, text: "A man walks in." },
+      { startSeconds: 44, endSeconds: 44, text: "He turns." },
+    ]);
+  });
+
+  it("fails a window whose entries all lie outside it", async () => {
+    const { deps, saved } = studySetup({ replies: ["[1:40-1:50] He leaves."] });
+    await expect(runStudy(deps)).rejects.toThrow("The reply had nothing for this window.");
+    expect(saved).toHaveLength(0);
+  });
+
+  it("fails a window whose reply flags only moments outside it", async () => {
+    const { deps, saved } = studySetup({ replies: ["UNCLEAR [1:40-1:50] a blur"] });
+    await expect(runStudy(deps)).rejects.toThrow("The reply had nothing for this window.");
+    expect(saved).toHaveLength(0);
   });
 });
 
@@ -629,6 +666,18 @@ describe("parseStudyReply unclear moments", () => {
         { startSeconds: 60, endSeconds: 62, reason: "something falls maybe a hat" },
         { startSeconds: 100, endSeconds: 105, reason: "a fast cut" },
       ],
+    });
+  });
+
+  it("drops UNCLEAR spans lying wholly outside the window, with their continuation lines", () => {
+    const reply = "UNCLEAR [0:10-0:20] before it\nstill before\nUNCLEAR [1:45] at its end";
+    expect(parseStudyReply(reply, RANGE)).toEqual({
+      entries: [],
+      unclear: [{ startSeconds: 105, endSeconds: 105, reason: "at its end" }],
+    });
+    expect(parseStudyReply("UNCLEAR [0:10-0:20] before it", RANGE)).toEqual({
+      entries: [],
+      unclear: [],
     });
   });
 

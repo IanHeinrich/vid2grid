@@ -194,6 +194,38 @@ describe("scene log editing", () => {
   });
 });
 
+describe("scene log edit keys and focus", () => {
+  it("does not save on the Enter that confirms an IME composition", async () => {
+    await openChat([]);
+    panel();
+    els.sceneLog.addButton.click();
+    const text = els.sceneLog.list.querySelector<HTMLInputElement>(".note-text-input");
+    if (!text) throw new Error("No editor");
+    text.value = "the boat";
+    text.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", isComposing: true }));
+    expect(els.sceneLog.list.querySelector(".note-text-input")).toBe(text);
+    expect(await savedLog()).toEqual([]);
+  });
+
+  it("returns focus to the Add button after Save or Cancel", async () => {
+    await openChat(notes);
+    panel();
+    items()[0]?.querySelector<HTMLButtonElement>(".note-edit")?.click();
+    const cancel = [...els.sceneLog.list.querySelectorAll("button")].find(
+      (el) => el.textContent === "Cancel",
+    );
+    cancel?.click();
+    expect(document.activeElement).toBe(els.sceneLog.addButton);
+    els.sceneLog.addButton.click();
+    const text = els.sceneLog.list.querySelector<HTMLInputElement>(".note-text-input");
+    if (!text) throw new Error("No editor");
+    text.value = "the boat leaves";
+    text.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await vi.waitFor(() => expect(texts()).toContain(" the boat leaves"));
+    expect(document.activeElement).toBe(els.sceneLog.addButton);
+  });
+});
+
 describe("scene log model", () => {
   it("condenses with the default model for a chat that has no model of its own", async () => {
     state = createAppState({ ...DEFAULT_SETTINGS, defaultModelId: "default-model" });

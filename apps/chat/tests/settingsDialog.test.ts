@@ -415,6 +415,41 @@ describe("chat settings across chats", () => {
   });
 });
 
+describe("chat settings across a switch that keeps focus", () => {
+  it("writes the new chat's values over a focused field when the chat switches", async () => {
+    const store = createMemoryStore();
+    const first = blankChat("m", "chat", 1);
+    const blank = blankChat("m", "other", 2);
+    const second = { ...blank, settings: { ...blank.settings, systemPrompt: "Be brief." } };
+    for (const entry of [first, second]) {
+      await store.putChat(entry);
+      replaceChat(state, entry);
+    }
+    setCurrentChat(state, first, []);
+    const panel = initChatSettings(els, state, {
+      store,
+      toast: toast(),
+      onChanged: vi.fn(),
+      onError: vi.fn(),
+    });
+    const { systemPromptInput, maxRoundsInput } = els.chatSettings;
+    systemPromptInput.focus();
+    systemPromptInput.value = "Typed for the first chat";
+    setCurrentChat(state, second, []);
+    panel.render();
+    expect(systemPromptInput.value).toBe("Be brief.");
+    systemPromptInput.dispatchEvent(new Event("change"));
+    maxRoundsInput.focus();
+    maxRoundsInput.value = "12";
+    setCurrentChat(state, first, []);
+    panel.render();
+    expect(maxRoundsInput.value).toBe("");
+    await vi.waitFor(async () =>
+      expect((await store.getChat("other"))?.settings.systemPrompt).toBe("Be brief."),
+    );
+  });
+});
+
 describe("Chat settings model", () => {
   it("saves the picked model to the chat and shows it on the trigger", async () => {
     const store = createMemoryStore();

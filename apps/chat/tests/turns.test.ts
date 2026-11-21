@@ -628,3 +628,41 @@ describe("audio across replays", () => {
     expect(lastTurnDeps()?.audioCoverage?.text).toBe("not analysed yet");
   });
 });
+
+describe("notes recorded mid-turn", () => {
+  async function* noteCall(): AsyncGenerator<StreamEvent> {
+    await Promise.resolve();
+    yield {
+      type: "toolCalls",
+      calls: [{ id: "n1", name: "note", arguments: '{"t":75,"text":"wave hits"}' }],
+    };
+    yield { type: "done", finishReason: "tool_calls" };
+  }
+
+  function contextSent(call: number): string | undefined {
+    const request: ChatRequest | undefined = streamChat.mock.calls[call]?.[1];
+    const found = request?.messages.find(
+      (m) => typeof m.content === "string" && m.content.startsWith("Context for this reply"),
+    );
+    return typeof found?.content === "string" ? found.content : undefined;
+  }
+
+  it("sends the same context block in the rounds after a note, and saves the note", async () => {
+    streamChat.mockImplementationOnce(() => noteCall());
+    await seedWithVideo([]);
+    await turns().run(() => Promise.resolve({ message: U1 }));
+    expect(streamChat).toHaveBeenCalledTimes(2);
+    expect(contextSent(1)).toBe(contextSent(0));
+    expect((await store.getChat("chat"))?.sceneLog).toEqual([
+      { timeSeconds: 75, text: "wave hits" },
+    ]);
+  });
+});
+
+describe("the model a turn sends", () => {
+  it("names the default model when the chat names none and no model list loaded", async () => {
+    await seed([], { settings: { ...blankChat(MODEL, "chat", 1).settings, modelId: "" } });
+    await turns().run(() => Promise.resolve({ message: U1 }));
+    expect(streamChat.mock.calls[0]?.[1].model).toBe(MODEL);
+  });
+});

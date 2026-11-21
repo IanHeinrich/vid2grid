@@ -691,6 +691,23 @@ describe("runTurn notes mid-turn", () => {
     expect(contextOf(requests[1])).toBe(first);
     expect(contextOf(requests[2])).toBe(first);
   });
+
+  it("keeps the context block when the caller adds the note to its own chat", async () => {
+    const note = { timeSeconds: 75, text: "wave hits" };
+    const callerChat: Chat = { ...chat, sceneLog: [{ timeSeconds: 12, text: "dog runs" }] };
+    const { deps, requests } = setup(
+      [events({ type: "toolCalls", calls: [lookCall] }), events({ type: "text", delta: "Noted." })],
+      {
+        chat: callerChat,
+        runTool: lookRunner({ text: "Noted.", images: [], note }),
+        onEvent: (event) => {
+          if (event.type === "note") callerChat.sceneLog.push(event.note);
+        },
+      },
+    );
+    await runTurn(deps);
+    expect(contextOf(requests[1])).toBe(contextOf(requests[0]));
+  });
 });
 
 describe("runTurn across rounds", () => {
@@ -863,6 +880,34 @@ describe("runTurn stops and errors", () => {
     expect(await runTurn(deps)).toEqual({ status: "error", error: "connection reset" });
     expect(persisted).toEqual([expect.objectContaining({ role: "assistant", text: "The dog" })]);
     expect(emitted.at(-1)).toEqual({ type: "assistantDone", message: persisted[0] });
+  });
+});
+
+describe("runTurn stopped before anything arrived", () => {
+  it("saves nothing when aborted before any text or tool call arrived", async () => {
+    const { deps, persisted } = setup([
+      async function* (signal, controller) {
+        await Promise.resolve();
+        yield* [];
+        controller.abort();
+        if (signal.aborted) throw abortError();
+      },
+    ]);
+    expect(await runTurn(deps)).toEqual({ status: "stopped" });
+    expect(persisted).toEqual([]);
+  });
+
+  it("keeps the reasoning streamed so far when stopped mid-thought", async () => {
+    const { deps, persisted } = setup([
+      async function* (signal, controller) {
+        await Promise.resolve();
+        yield { type: "reasoning", delta: "The dog is" };
+        controller.abort();
+        if (signal.aborted) throw abortError();
+      },
+    ]);
+    expect(await runTurn(deps)).toEqual({ status: "stopped" });
+    expect(persisted).toEqual([expect.objectContaining({ text: "", reasoning: "The dog is" })]);
   });
 });
 

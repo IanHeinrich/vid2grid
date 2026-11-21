@@ -396,6 +396,14 @@ describe("switching replies", () => {
     expect(shownAnswers().at(-1)).toBe("older reply");
   });
 
+  it("keeps the shown reply stored when saving the switched user message fails", async () => {
+    const putMessage = store.putMessage.bind(store);
+    store.putMessage = (chatId, message) =>
+      message.id === "U3" ? Promise.reject(new Error("Quota")) : putMessage(chatId, message);
+    await expect(setup().switchReply(swiped, 0)).rejects.toThrow("Quota");
+    expect(ids(await store.listMessages("chat"))).toContain("A3");
+  });
+
   it("drops a pending message-delete undo, which would restore into the old replies", async () => {
     const actions = setup();
     await actions.remove(U2);

@@ -192,7 +192,7 @@ export async function runTurn(deps: TurnDeps): Promise<TurnOutcome> {
   const now = deps.now ?? Date.now;
   const turn: Turn = {
     deps,
-    chat: deps.chat,
+    chat: { ...deps.chat, sceneLog: [...deps.chat.sceneLog] },
     messages: [...deps.messages],
     maxRounds,
     thoroughness,
@@ -208,7 +208,7 @@ export async function runTurn(deps: TurnDeps): Promise<TurnOutcome> {
       const settled = settleReply(reply, ending, { round, maxRounds, answeredNow });
       const { outcome } = settled;
       const message = outcome ? withReceipt(turn, settled.message, round) : settled.message;
-      if (ending.kind !== "failed" || message.text.length > 0) {
+      if (worthSaving(message, ending)) {
         turn.messages.push(message);
         await deps.persist(message);
       }
@@ -224,6 +224,13 @@ export async function runTurn(deps: TurnDeps): Promise<TurnOutcome> {
     if (deps.signal.aborted || isAbortError(error)) return STOPPED;
     return errorOutcome(error);
   }
+}
+
+function worthSaving(message: AssistantMessage, ending: StreamEnding): boolean {
+  if (message.text.length > 0) return true;
+  if (ending.kind === "failed") return false;
+  if (ending.kind !== "aborted") return true;
+  return message.toolCalls.length > 0 || (message.reasoning ?? "") !== "";
 }
 
 function answerNowWanted({ deps }: Turn): boolean {

@@ -561,6 +561,22 @@ describe("reattaching", () => {
   });
 });
 
+describe("picking a file from the Reattach input", () => {
+  it("reports a file that could not be attached", async () => {
+    panel({
+      onAttached: () => {
+        throw new Error("quota");
+      },
+    });
+    const input = els.video.reattachInput;
+    Object.defineProperty(input, "files", { value: [video("beach.mp4")], configurable: true });
+    input.dispatchEvent(new Event("change"));
+    await vi.waitFor(() =>
+      expect(spies.status.show).toHaveBeenCalledWith("Could not attach beach.mp4: quota", "error"),
+    );
+  });
+});
+
 describe("cueing the mini-player", () => {
   it("cues a moment without playing, for a player behind the lightbox", async () => {
     const play = vi
@@ -712,6 +728,24 @@ describe("timestamps from an earlier video", () => {
     videos.seek(7, attachmentFor(video("one.mp4", 1)));
     await vi.waitFor(() => expect(spies.status.show).toHaveBeenCalledWith(MISSING));
     expect(els.video.miniPlayer.hidden).toBe(true);
+  });
+});
+
+describe("timestamps from an earlier video that cannot be opened", () => {
+  it("reports an earlier video that could not be opened", async () => {
+    const first = video("one.mp4", 1);
+    const videos = panel({ loadCopy: () => Promise.resolve(first) });
+    await attachAndSend(videos, video("two.mp4", 2));
+    URL.createObjectURL = vi.fn(() => {
+      throw new Error("out of memory");
+    });
+    videos.seek(7, attachmentFor(first));
+    await vi.waitFor(() =>
+      expect(spies.status.show).toHaveBeenCalledWith(
+        "Could not open one.mp4: out of memory",
+        "error",
+      ),
+    );
   });
 });
 

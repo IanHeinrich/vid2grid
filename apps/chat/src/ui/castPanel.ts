@@ -187,6 +187,8 @@ function finishEdit(ctx: CastContext, saved: CastCard | null): void {
   const editing = ctx.editing;
   ctx.editing = null;
   render(ctx);
+  // The rebuilt list dropped the focused control; leaving focus on the body escapes the drawer.
+  ctx.els.addButton.focus();
   if (!saved || editing === null) return;
   saveCast(ctx, editing.fileKey, (cards) =>
     cards.some((card) => card.id === saved.id)
@@ -331,9 +333,13 @@ function editItem(ctx: CastContext, card: CastCard | null): HTMLLIElement {
     const saved = readCard(ctx, card, name, description, time);
     if (saved) finishEdit(ctx, saved);
   };
+  for (const input of [name, time]) {
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.isComposing) save();
+    });
+  }
   item.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && event.target !== description) save();
-    if (event.key !== "Escape") return;
+    if (event.key !== "Escape" || event.isComposing) return;
     event.preventDefault();
     finishEdit(ctx, null);
   });

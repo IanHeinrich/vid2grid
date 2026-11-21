@@ -289,15 +289,17 @@ export function runStudy(deps: StudyDeps): Promise<VideoTimeline> {
     name: "Study window",
     steps: plan.windows,
     first: deps.timeline.nextWindow,
-    study: (range) =>
-      studyRange(deps, {
+    study: async (range) => {
+      const studied = await studyRange(deps, {
         range,
         frameCount: plan.framesPerWindow,
         perSheet: plan.perSheet,
         call: "study",
         system: STUDY_SYSTEM_PROMPT,
         notes: [],
-      }),
+      });
+      return studied && insideWindow(studied, range);
+    },
     apply: (timeline, _range, studied, index) => {
       const unclear = [...(timeline.unclear ?? []), ...studied.unclear];
       const usage = addUsage(timeline.usage, studied.usage);
@@ -311,6 +313,15 @@ export function runStudy(deps: StudyDeps): Promise<VideoTimeline> {
       };
     },
   });
+}
+
+// A window with nothing in it would read as studied, leaving a hole that resume never fills.
+function insideWindow(studied: StudiedWindow, range: StudyWindow): StudiedWindow {
+  const entries = clampedInside(studied.entries, range);
+  if (entries.length === 0 && studied.unclear.length === 0) {
+    throw new Error("The reply had nothing for this window.");
+  }
+  return { ...studied, entries };
 }
 
 export interface ZoomDeps extends Omit<StudyDeps, "plan"> {
@@ -370,13 +381,10 @@ function applyZoom(
 ): VideoTimeline {
   const usage = addUsage(timeline.usage, studied.usage);
   const withUsage = { ...timeline, updatedAt: Date.now(), ...(usage !== undefined && { usage }) };
-  const zoomed = studied.entries
-    .filter((entry) => touchesInside(entry, zoom))
-    .map((entry): TimelineEntry => {
-      const startSeconds = clamp(entry.startSeconds, zoom.startSeconds, zoom.endSeconds);
-      const endSeconds = clamp(entry.endSeconds, startSeconds, zoom.endSeconds);
-      return { ...entry, startSeconds, endSeconds, zoomed: true };
-    });
+  const zoomed = clampedInside(studied.entries, zoom).map((entry): TimelineEntry => ({
+    ...entry,
+    zoomed: true,
+  }));
   if (zoomed.length === 0) return withUsage;
   const mostlyInside = (entry: TimelineEntry) =>
     overlapSeconds(entry, zoom) >= (entry.endSeconds - entry.startSeconds) / 2;
@@ -387,9 +395,19 @@ function applyZoom(
 }
 
 // A moment counts when it lies in the zoom; a longer entry only when it runs into it.
-function touchesInside(entry: TimelineEntry, zoom: StudyWindow): boolean {
+function touchesInside(entry: StudyWindow, zoom: StudyWindow): boolean {
   const overlap = overlapSeconds(entry, zoom);
   return overlap > 0 || (overlap === 0 && entry.startSeconds === entry.endSeconds);
+}
+
+function clampedInside(entries: readonly TimelineEntry[], span: StudyWindow): TimelineEntry[] {
+  return entries
+    .filter((entry) => touchesInside(entry, span))
+    .map((entry) => {
+      const startSeconds = clamp(entry.startSeconds, span.startSeconds, span.endSeconds);
+      const endSeconds = clamp(entry.endSeconds, startSeconds, span.endSeconds);
+      return { ...entry, startSeconds, endSeconds };
+    });
 }
 
 // The part of a span the zoom covered is marked; any part outside it stays flagged.
@@ -533,6 +551,7 @@ export function parseStudyReply(reply: string, range: StudyWindow): StudyReply {
   const entries: TimelineEntry[] = [];
   const unclear: UnclearSpan[] = [];
   let extend: ((text: string) => void) | undefined;
+  let flaggedAny = false;
   for (const line of reply.split(/\r?\n/)) {
     const text = line.trim();
     if (text === "") continue;
@@ -542,6 +561,7 @@ export function parseStudyReply(reply: string, range: StudyWindow): StudyReply {
       extend?.(text);
       continue;
     }
+    flaggedAny ||= flagged !== null;
     const start = clockSeconds(match.slice(1, 4));
     const end = match[5] === undefined ? start : clockSeconds(match.slice(4, 7));
     const body = (match[7] ?? "").trim();
@@ -551,6 +571,8 @@ export function parseStudyReply(reply: string, range: StudyWindow): StudyReply {
       extend = (more) => {
         entry.text = `${entry.text} ${more}`.trim();
       };
+    } else if (!touchesInside({ startSeconds: start, endSeconds: end }, range)) {
+      extend = undefined;
     } else {
       const startSeconds = clamp(start, range.startSeconds, range.endSeconds);
       const span: UnclearSpan = {
@@ -566,7 +588,7 @@ export function parseStudyReply(reply: string, range: StudyWindow): StudyReply {
   }
   const usable = entries.filter((entry) => entry.text !== "");
   const whole = reply.trim();
-  if (usable.length > 0 || unclear.length > 0 || whole === "") return { entries: usable, unclear };
+  if (usable.length > 0 || flaggedAny || whole === "") return { entries: usable, unclear };
   return {
     entries: [{ startSeconds: range.startSeconds, endSeconds: range.endSeconds, text: whole }],
     unclear,

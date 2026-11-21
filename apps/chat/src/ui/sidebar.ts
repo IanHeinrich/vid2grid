@@ -85,6 +85,7 @@ interface SidebarContext {
   // Bumped by every local folder change, so a store read that began before it is dropped.
   foldersVersion: number;
   draggingId: string | null;
+  closeMoveMenu: (() => void) | null;
 }
 
 interface RenameTarget {
@@ -110,6 +111,7 @@ export function initSidebar(
     folders: [],
     foldersVersion: 0,
     draggingId: null,
+    closeMoveMenu: null,
   };
   const createChat = async (): Promise<Chat> => {
     const chat = blankChat(defaultModelId(state), newId(ctx), now(ctx));
@@ -252,6 +254,7 @@ export function sectionChats(
 // A background re-render would throw away the title being typed, so it waits for the rename.
 function renderList(ctx: SidebarContext): void {
   if (ctx.renamingId !== null) return;
+  ctx.closeMoveMenu?.();
   const { chatList, searchInput } = ctx.els;
   const query = searchInput.value;
   const { folders, groups } = sectionChats(ctx.state.chats, ctx.folders, query, now(ctx));
@@ -430,10 +433,14 @@ function moveControl(ctx: SidebarContext, chat: Chat): HTMLDivElement {
   const wrap = document.createElement("div");
   wrap.className = "chat-move";
   let menu: HTMLDivElement | null = null;
+  let outside: AbortController | null = null;
   const close = (refocus: boolean) => {
     // Removing the focused menu fires focusout, which calls close again.
     const open = menu;
     menu = null;
+    if (open) ctx.closeMoveMenu = null;
+    outside?.abort();
+    outside = null;
     open?.remove();
     button.setAttribute("aria-expanded", "false");
     if (refocus) button.focus();
@@ -453,14 +460,17 @@ function moveControl(ctx: SidebarContext, chat: Chat): HTMLDivElement {
     }
     menu = moveMenu(ctx, chat, choose);
     wrap.append(menu);
+    outside = closeOnOutsidePress(wrap, () => close(false));
+    ctx.closeMoveMenu = () => close(false);
     button.setAttribute("aria-expanded", "true");
     menu.querySelector<HTMLButtonElement>("[aria-checked='true']")?.focus();
   });
   button.setAttribute("aria-haspopup", "menu");
   button.setAttribute("aria-expanded", "false");
+  // Safari and Firefox on macOS do not focus a clicked button, so a click blurs to nothing.
   wrap.addEventListener("focusout", (event) => {
-    if (event.relatedTarget instanceof Node && wrap.contains(event.relatedTarget)) return;
-    close(false);
+    const next = event.relatedTarget;
+    if (next instanceof Node && !wrap.contains(next)) close(false);
   });
   wrap.addEventListener("keydown", (event) => {
     if (event.key !== "Escape" || !menu) return;
@@ -470,6 +480,15 @@ function moveControl(ctx: SidebarContext, chat: Chat): HTMLDivElement {
   });
   wrap.append(button);
   return wrap;
+}
+
+function closeOnOutsidePress(wrap: HTMLElement, close: () => void): AbortController {
+  const listening = new AbortController();
+  const onPress = (event: Event) => {
+    if (!(event.target instanceof Node) || !wrap.contains(event.target)) close();
+  };
+  document.addEventListener("pointerdown", onPress, { capture: true, signal: listening.signal });
+  return listening;
 }
 
 function moveMenu(

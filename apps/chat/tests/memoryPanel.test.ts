@@ -104,6 +104,27 @@ describe("memory panel", () => {
     els.toast.action.click();
     await vi.waitFor(async () => expect(await savedStory()).toEqual(STORY));
   });
+
+  it("writes the new chat's summary over a focused field when the chat switches", async () => {
+    await openChat({ storySoFar: STORY });
+    const memory = panel();
+    const { storyInput } = els.memory;
+    storyInput.focus();
+    storyInput.value = "Typed for the first chat";
+    const other: Chat = {
+      ...blankChat("model", "other", 2),
+      storySoFar: { ...STORY, text: "A storm rolls in." },
+    };
+    await store.putChat(other);
+    replaceChat(state, other);
+    setCurrentChat(state, other, []);
+    memory.render();
+    expect(storyInput.value).toBe("A storm rolls in.");
+    storyInput.dispatchEvent(new Event("change"));
+    await vi.waitFor(async () =>
+      expect((await store.getChat("other"))?.storySoFar?.text).toBe("A storm rolls in."),
+    );
+  });
 });
 
 describe("memory panel summary", () => {
