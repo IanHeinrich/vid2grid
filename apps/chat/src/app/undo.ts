@@ -3,7 +3,7 @@ import type { Toast, ToastHandle } from "../ui/shared/toast";
 
 export interface UndoOffer {
   undo(): void | Promise<void>;
-  // False once the chat or video the change belongs to is no longer in front, so Undo does nothing.
+  // False once Undo can no longer apply (for example the chat is gone), so it does nothing.
   stillValid?: () => boolean;
   expired?: () => void;
   failed?: (error: unknown) => void;
