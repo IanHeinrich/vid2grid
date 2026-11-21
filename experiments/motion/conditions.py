@@ -19,6 +19,7 @@ from vid2grid import (
 from motion import (
     DOWNSCALE,
     LUMA,
+    V2_MIN_SHIFT_PX,
     Point,
     Rgb,
     blobs,
@@ -30,10 +31,22 @@ from motion import (
     quantise,
     shift_words,
     shifts_to_last,
+    track_v2,
     undo_shift,
+)
+from overlays import (
+    GhostWindow,
+    Path2,
+    PathWindow,
+    fit_inside,
+    ghost_windows,
+    path_windows,
+    window_ends,
 )
 
 LONGEST_EDGE = 1024
+SHEET_EDGE = 2048
+LARGE_CELLS = 4
 JPEG_QUALITY = 90
 TRAIL_GHOSTS = 6
 ONION_PREVIOUS = 7
@@ -56,6 +69,10 @@ BLOB_THRESHOLD = 40.0
 # At the motion downscale a ball covers about 250 pixels; this drops codec specks.
 BLOB_MIN_AREA = 30
 MIN_PATH_PX = 10
+# Neither red nor blue, which the synthetic questions use to name the balls.
+TIME_RAMP = [(255, 225, 0), (40, 200, 90), (160, 60, 210)]
+GHOST_TINT = 0.45
+TICK_SECONDS = 0.25
 NATIVE_FPS = {"native_1fps": 1.0, "native_8fps": 8.0, "native_24fps": 24.0}
 
 
@@ -64,6 +81,7 @@ class Rendered:
     images: list[Path]
     track: str
     video_fps: float | None = None
+    notes: str = ""
 
 
 # Real footage is scaled to the synthetic clips' width and thinned to a frame budget, with the
@@ -253,6 +271,137 @@ def lines_image(frames: list[Rgb], fps: float) -> Image.Image:
     return with_strip(panels, strip)
 
 
+def time_colour(fraction: float) -> tuple[int, int, int]:
+    position = min(1.0, max(0.0, fraction)) * (len(TIME_RAMP) - 1)
+    low = min(int(position), len(TIME_RAMP) - 2)
+    f = position - low
+    pairs = zip(TIME_RAMP[low], TIME_RAMP[low + 1], strict=True)
+    r, g, b = (round(lo + (hi - lo) * f) for lo, hi in pairs)
+    return r, g, b
+
+
+def span_label(start: float, end: float) -> str:
+    return f"{start:.1f}-{end:.1f} s"
+
+
+def point_at(path: Path2, t: float) -> tuple[float, float]:
+    times = [p[0] for p in path]
+    return float(np.interp(t, times, [p[1] for p in path])), float(
+        np.interp(t, times, [p[2] for p in path])
+    )
+
+
+def draw_timed_path(draw: ImageDraw.ImageDraw, path: Path2, start: float, span: float) -> None:
+    points = [(x, y) for _, x, y in path]
+    draw.line(points, fill=OUTLINE, width=5, joint="curve")
+    for (t, x0, y0), (_, x1, y1) in pairwise(path):
+        draw.line([(x0, y0), (x1, y1)], fill=time_colour((t - start) / span), width=3)
+    first, last = path[0][0], path[-1][0]
+    ticks = np.arange(np.ceil(first / TICK_SECONDS) * TICK_SECONDS, last, TICK_SECONDS)
+    for t in ticks:
+        x, y = point_at(path, float(t))
+        draw.ellipse((x - 4, y - 4, x + 4, y + 4), fill=time_colour((t - start) / span))
+        draw.ellipse((x - 4, y - 4, x + 4, y + 4), outline=OUTLINE, width=1)
+    tip = np.array(points[-1])
+    previous = next((np.array(p) for p in reversed(points[:-1]) if np.hypot(*(tip - p)) > 3), None)
+    if previous is None:
+        return
+    direction = (tip - previous) / np.hypot(*(tip - previous))
+    normal = np.array([-direction[1], direction[0]])
+    head = [
+        tip + direction * 4,
+        tip - direction * 13 + normal * 7,
+        tip - direction * 13 - normal * 7,
+    ]
+    draw.polygon([tuple(v) for v in head], fill=TIME_RAMP[-1], outline=OUTLINE, width=2)
+
+
+def lines_panel(window: PathWindow) -> Image.Image:
+    height, width = window.final.shape[:2]
+    overlay = Image.fromarray(window.final)
+    draw = ImageDraw.Draw(overlay)
+    shrunk = False
+    for mover in window.movers:
+        fitted, moved = fit_inside(mover, width, height)
+        shrunk |= moved
+        draw_timed_path(draw, fitted, window.start, max(window.end - window.start, 1e-6))
+    found = f"{len(window.movers)} movers" + (", shrunk to fit" if shrunk else "")
+    corner_label(overlay, f"paths {span_label(window.start, window.end)}: {found}")
+    legend = f"yellow early, purple late, dots every {TICK_SECONDS:g} s; {window.camera}"
+    return with_strip(overlay, text_strip(width, legend))
+
+
+def ghosts_panel(window: GhostWindow) -> Image.Image:
+    out = window.final.astype(np.float32)
+    for index, (_, image, mask) in enumerate(window.ghosts):
+        tint = np.array(time_colour(index / max(1, len(window.ghosts) - 1)), dtype=np.float32)
+        tinted = (1 - GHOST_TINT) * image.astype(np.float32) + GHOST_TINT * tint
+        out[mask] = tinted[mask]
+    shown = Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
+    span = span_label(window.start, window.end)
+    if window.skipped:
+        corner_label(shown, f"ghosts {span}: skipped, too much moved")
+        legend = window.camera
+    else:
+        corner_label(shown, f"ghosts {span}")
+        times = ", ".join(f"{t:.1f}s" for t, _, _ in window.ghosts)
+        legend = f"ghosts at {times} (yellow, green, purple); {window.camera}"
+    return with_strip(shown, text_strip(window.final.shape[1], legend))
+
+
+def stacked(top: Image.Image, bottom: Image.Image) -> Image.Image:
+    canvas = Image.new("RGB", (top.width, top.height + GAP + bottom.height), (255, 255, 255))
+    canvas.paste(top, (0, 0))
+    canvas.paste(bottom, (0, top.height + GAP))
+    return canvas
+
+
+def plain_frame(frame: Rgb, seconds: float) -> Image.Image:
+    image = Image.fromarray(frame)
+    corner_label(image, f"frame at {seconds:.1f} s")
+    return image
+
+
+def save_full(images: list[Image.Image], out_dir: Path, stem: str) -> list[Path]:
+    paths = []
+    for number, image in enumerate(images, start=1):
+        path = out_dir / f"{stem}_{number:02d}.jpg"
+        image.convert("RGB").save(path, quality=JPEG_QUALITY)
+        paths.append(path)
+    return paths
+
+
+def skipped_note(windows: list[GhostWindow]) -> str:
+    skipped = [span_label(w.start, w.end) for w in windows if w.skipped]
+    if not skipped:
+        return ""
+    return (
+        f"No ghosts are drawn for {', '.join(skipped)}: more than 15% of the frame moved "
+        "after cancelling the camera, so ghosts would cover the picture."
+    )
+
+
+def render_window_frames(clip_path: Path, out_dir: Path) -> Rendered:
+    frames, fps = decode(clip_path)
+    images = [plain_frame(frame, t) for t, frame in window_ends(frames, fps)]
+    return Rendered(save_full(images, out_dir, "frame"), "")
+
+
+def render_lines_pairs(clip_path: Path, out_dir: Path) -> Rendered:
+    frames, fps = decode(clip_path)
+    panels = [
+        stacked(plain_frame(w.final, w.end), lines_panel(w)) for w in path_windows(frames, fps)
+    ]
+    return Rendered(save_full(panels, out_dir, "lines"), "")
+
+
+def render_ghost_pairs(clip_path: Path, out_dir: Path) -> Rendered:
+    frames, fps = decode(clip_path)
+    found = ghost_windows(frames, fps)
+    panels = [stacked(plain_frame(w.final, w.end), ghosts_panel(w)) for w in found]
+    return Rendered(save_full(panels, out_dir, "ghosts"), "", notes=skipped_note(found))
+
+
 def onion_image(frames: list[Rgb], fps: float) -> Image.Image:
     last = len(frames) - 1
     indices = [*evenly(ONION_PREVIOUS, last, last // (ONION_PREVIOUS + 1)), last]
@@ -333,15 +482,29 @@ def track1(frames: list[Rgb], fps: float) -> str:
     return f"motion per {step:g} s from 0:00.0: {''.join(str(d) for d in digits)}"
 
 
+def step_header(frames: list[Rgb], fps: float) -> list[str]:
+    step = step_seconds(frames, fps)
+    return [] if step == TRACK_STEP_SECONDS else [f"(each step is {step:g} s, not 0.5 s)"]
+
+
 def track3x3(frames: list[Rgb], fps: float, camera: bool) -> str:
     lines = []
     for t, a, b in track_steps(frames, fps):
         step = motion_step(frames[a], frames[b], align=camera)
         bg = f"bg {shift_words(*step.shift)} " if camera else ""
         lines.append(f"[{stamp(t)}] {bg}{grid_digits(step.grid)}")
-    step = step_seconds(frames, fps)
-    header = [] if step == TRACK_STEP_SECONDS else [f"(each step is {step:g} s, not 0.5 s)"]
-    return "\n".join(header + lines)
+    return "\n".join(step_header(frames, fps) + lines)
+
+
+# Both variants cancel the camera before measuring; only the camera one reports the shift.
+def track3x3_v2(frames: list[Rgb], fps: float, camera: bool) -> str:
+    steps = track_steps(frames, fps)
+    measured = track_v2([(frames[a], frames[b]) for _, a, b in steps])
+    lines = []
+    for (t, _, _), (shift, digits) in zip(steps, measured, strict=True):
+        bg = f"bg {shift_words(*shift, min_px=V2_MIN_SHIFT_PX)} " if camera else ""
+        lines.append(f"[{stamp(t)}] {bg}{digits}")
+    return "\n".join(step_header(frames, fps) + lines)
 
 
 def one_per_second(clip_path: Path, edge: int) -> tuple[dict[str, object], int]:
@@ -354,11 +517,14 @@ def one_per_second(clip_path: Path, edge: int) -> tuple[dict[str, object], int]:
     return options, frame_count
 
 
-def grid_sheets(clip_path: Path, out_dir: Path) -> list[Path]:
-    options, frame_count = one_per_second(clip_path, LONGEST_EDGE)
+def grid_sheets(
+    clip_path: Path, out_dir: Path, edge: int = LONGEST_EDGE, max_cells: int | None = None
+) -> list[Path]:
+    options, frame_count = one_per_second(clip_path, edge)
     # One sheet sized to the frame count, so a 5 s clip gets five large cells, not a sparse 4x4.
+    per_sheet = frame_count if max_cells is None else min(frame_count, max_cells)
     result = render_from_options(
-        clip_path, out_dir / "sheets", {**options, "framesPerGrid": frame_count}
+        clip_path, out_dir / "sheets", {**options, "framesPerGrid": per_sheet}
     )
     return [Path(sheet.path) for sheet in result.sheets]
 
@@ -394,6 +560,20 @@ def render_frames(clip_path: Path, out_dir: Path) -> Rendered:
 
 def render_grid(clip_path: Path, out_dir: Path) -> Rendered:
     return Rendered(grid_sheets(clip_path, out_dir), "")
+
+
+def sheets_at(edge: int, max_cells: int | None = None) -> Callable[[Path, Path], Rendered]:
+    def render(clip_path: Path, out_dir: Path) -> Rendered:
+        return Rendered(grid_sheets(clip_path, out_dir, edge, max_cells), "")
+
+    return render
+
+
+def render_grid_with_lines(clip_path: Path, out_dir: Path) -> Rendered:
+    frames, fps = decode(clip_path)
+    panels = [lines_panel(w) for w in path_windows(frames, fps)]
+    sheets = grid_sheets(clip_path, out_dir, SHEET_EDGE)
+    return Rendered([*sheets, *save_full(panels, out_dir, "lines")], "")
 
 
 def render_burst(clip_path: Path, out_dir: Path) -> Rendered:
@@ -451,6 +631,14 @@ CONDITIONS: dict[str, Callable[[Path, Path], Rendered]] = {
     "grid_track1": with_track(track1),
     "grid_track3x3": with_track(lambda f, fps: track3x3(f, fps, camera=False)),
     "grid_track3x3_cam": with_track(lambda f, fps: track3x3(f, fps, camera=True)),
+    "grid_2048": sheets_at(SHEET_EDGE),
+    "grid_2048_large": sheets_at(SHEET_EDGE, LARGE_CELLS),
+    "grid_track3x3_v2": with_track(lambda f, fps: track3x3_v2(f, fps, camera=False)),
+    "grid_track3x3_cam_v2": with_track(lambda f, fps: track3x3_v2(f, fps, camera=True)),
+    "window_frames": render_window_frames,
+    "trail_lines_v2": render_lines_pairs,
+    "trail_ghosts_v2": render_ghost_pairs,
+    "grid_2048_lines": render_grid_with_lines,
     **{name: native_video(fps) for name, fps in NATIVE_FPS.items()},
 }
 
@@ -460,11 +648,16 @@ def render(condition: str, clip_path: Path, out_dir: Path) -> Rendered:
     if meta_path.is_file():
         meta = json.loads(meta_path.read_text())
         images = [out_dir / name for name in meta["images"]]
-        return Rendered(images, meta["track"], meta.get("video_fps"))
+        return Rendered(images, meta["track"], meta.get("video_fps"), meta.get("notes", ""))
     out_dir.mkdir(parents=True, exist_ok=True)
     rendered = CONDITIONS[condition](clip_path, out_dir)
     images = [path.relative_to(out_dir).as_posix() for path in rendered.images]
-    meta = {"images": images, "track": rendered.track, "video_fps": rendered.video_fps}
+    meta = {
+        "images": images,
+        "track": rendered.track,
+        "video_fps": rendered.video_fps,
+        "notes": rendered.notes,
+    }
     meta_path.write_text(json.dumps(meta, indent=2))
     if rendered.track:
         (out_dir / "track.txt").write_text(rendered.track + "\n")

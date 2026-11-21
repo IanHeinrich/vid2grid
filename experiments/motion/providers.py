@@ -54,6 +54,7 @@ NOT_VISION = (
 GEMINI_NATIVE_URL = "https://generativelanguage.googleapis.com/v1beta"
 # Gemini 3 treats medium video like low (about 70 tokens a frame); high is about 280.
 NATIVE_MEDIA_RESOLUTION = "MEDIA_RESOLUTION_HIGH"
+ULTRA_HIGH = "MEDIA_RESOLUTION_ULTRA_HIGH"
 THINKING_BUDGETS = {"none": 0, "minimal": 512, "low": 1024, "medium": 8192, "high": 24576}
 
 
@@ -279,6 +280,59 @@ def complete_native_video(
             http,
             f"/models/{model}:generateContent",
             lambda t: native_video_payload(model, prompt, video, fps, max_tokens, extra or {}, t),
+            "gemini native",
+            key,
+        )
+    return _native_reply(data, model)
+
+
+def native_images_payload(
+    model: str,
+    prompt: str,
+    images: list[bytes],
+    levels: list[str | None],
+    max_tokens: int,
+    extra: dict[str, Any],
+    temperature: bool = True,
+) -> dict[str, Any]:
+    parts: list[dict[str, Any]] = [{"text": prompt}]
+    for image, level in zip(images, levels, strict=True):
+        part: dict[str, Any] = {
+            "inlineData": {"mimeType": "image/jpeg", "data": base64.b64encode(image).decode()}
+        }
+        if level:
+            part["mediaResolution"] = {"level": level}
+        parts.append(part)
+    config: dict[str, Any] = {"maxOutputTokens": max_tokens}
+    if temperature:
+        config["temperature"] = 0
+    thinking = thinking_config(model, extra)
+    if thinking:
+        config["thinkingConfig"] = thinking
+    return {"contents": [{"role": "user", "parts": parts}], "generationConfig": config}
+
+
+def complete_native_images(
+    model: str,
+    prompt: str,
+    images: list[bytes],
+    levels: list[str | None],
+    *,
+    max_tokens: int,
+    extra: dict[str, Any] | None = None,
+) -> Reply:
+    key = require_key(PROVIDERS["gemini"])
+    with httpx.Client(
+        base_url=GEMINI_NATIVE_URL,
+        headers={"x-goog-api-key": key},
+        timeout=httpx.Timeout(180, connect=20),
+    ) as http:
+        data = _post(
+            http,
+            f"/models/{model}:generateContent",
+            lambda t: native_images_payload(
+                model, prompt, images, levels, max_tokens, extra or {}, t
+            ),
             "gemini native",
             key,
         )

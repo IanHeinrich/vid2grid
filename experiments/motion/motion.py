@@ -14,6 +14,11 @@ ENERGY_FLOOR = 0.25
 # peak. In cycles per pixel at the motion downscale.
 SHIFT_LOW_PASS = 0.05
 MIN_OVERLAP = 0.3
+NOISE_Z = 3.0
+V2_POOL = 2
+CELL_K = 3.0
+V2_FLOOR = 0.5
+V2_MIN_SHIFT_PX = 12
 
 
 def downscale(rgb: Rgb, factor: int = DOWNSCALE) -> NDArray[np.float32]:
@@ -145,8 +150,61 @@ def shift_words(dx: int, dy: int, min_px: int = 4) -> str:
     return " ".join(parts) or "none"
 
 
-def grid_digits(grid: NDArray[np.float32]) -> str:
-    return "|".join("".join(str(d) for d in row) for row in quantise(grid))
+def grid_digits(grid: NDArray[np.float32], floor: float = ENERGY_FLOOR) -> str:
+    return "|".join("".join(str(d) for d in row) for row in quantise(grid, floor))
+
+
+def robust_spread(values: NDArray[np.floating]) -> float:
+    """Median absolute deviation scaled to match a normal distribution's sigma."""
+    return float(1.4826 * np.median(np.abs(values - np.median(values))))
+
+
+# Gain and offset per channel, so flicker and exposure drift do not read as motion.
+def match_brightness(
+    image: NDArray[np.float32], reference: NDArray[np.float32], valid: NDArray[np.bool_]
+) -> NDArray[np.float32]:
+    out = np.empty_like(image)
+    for c in range(image.shape[2]):
+        src, ref = image[..., c][valid], reference[..., c][valid]
+        gain = ref.std() / max(float(src.std()), 1e-6)
+        out[..., c] = (image[..., c] - src.mean()) * gain + ref.mean()
+    return out
+
+
+def pool(values: NDArray[np.float32], factor: int) -> NDArray[np.float32]:
+    h = values.shape[0] // factor * factor
+    w = values.shape[1] // factor * factor
+    return values[:h, :w].reshape(h // factor, factor, w // factor, factor).mean(axis=(1, 3))
+
+
+def motion_step_v2(earlier: Rgb, later: Rgb) -> MotionStep:
+    a = downscale(earlier)
+    b = downscale(later)
+    dx, dy = best_shift(a @ LUMA, b @ LUMA)
+    shifted, valid = undo_shift(b, dx, dy)
+    if not valid.any():
+        return MotionStep((dx * DOWNSCALE, dy * DOWNSCALE), np.zeros((3, 3), np.float32), 0.0)
+    signed = a - match_brightness(shifted, a, valid)
+    sigma = robust_spread(signed[valid])
+    excess = np.maximum(np.abs(signed).mean(axis=2) - NOISE_Z * sigma, 0).astype(np.float32)
+    # Pooling after the per-pixel cut keeps small objects while averaging out stray specks.
+    pooled = pool(np.where(valid, excess, 0), V2_POOL)
+    pooled_valid = pool(valid.astype(np.float32), V2_POOL) == 1
+    overall = float(pooled[pooled_valid].mean()) if pooled_valid.any() else 0.0
+    grid = region_energy(pooled, pooled_valid)
+    return MotionStep((dx * DOWNSCALE, dy * DOWNSCALE), grid, overall)
+
+
+# The clip's own quiet cells set the bar, so steady noise or texture residue stays at 0.
+def adaptive_floor(grids: list[NDArray[np.float32]]) -> float:
+    values = np.concatenate([g.ravel() for g in grids]) if grids else np.zeros(1)
+    return max(V2_FLOOR, float(np.median(values)) + CELL_K * robust_spread(values))
+
+
+def track_v2(pairs: list[tuple[Rgb, Rgb]]) -> list[tuple[tuple[int, int], str]]:
+    steps = [motion_step_v2(earlier, later) for earlier, later in pairs]
+    floor = adaptive_floor([step.grid for step in steps])
+    return [(step.shift, grid_digits(step.grid, floor)) for step in steps]
 
 
 Point = tuple[float, float]

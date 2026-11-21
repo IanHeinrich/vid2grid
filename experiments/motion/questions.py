@@ -66,6 +66,26 @@ TRACK3X3 = (
     "digits for the top, middle and bottom rows of the frame, each left to right, giving "
     "motion from 0 (none) to 9 (most)."
 )
+WINDOWS = (
+    "a few separate images spread over the clip, in time order, each covering about one second "
+    "of video"
+)
+PATHS = (
+    "the frame at the end of that second with a thin line for each of up to 3 moving things, "
+    "tracing its path over that second after removing camera motion, coloured from yellow "
+    "(early) through green to purple (late), with dots every 0.25 s and an arrowhead where it "
+    "ended. The strip under each gives how the camera moved"
+)
+GHOSTS = (
+    "the frame at the end of that second with faint tinted ghosts of moving things at up to 3 "
+    "earlier moments in that second, aligned to cancel camera motion: yellow earliest, then "
+    "green, then purple. The strip under each gives the ghost times and how the camera moved"
+)
+ROBUST = (
+    "The digits count only things moving within the scene: camera movement and shake, "
+    "brightness changes and steady noise are removed first, and 0 means nothing rose above "
+    "the clip's own noise level."
+)
 
 LEGENDS = {
     "single_frame": "one still frame from the middle of the clip.",
@@ -107,6 +127,34 @@ LEGENDS = {
         "which way the whole background shifted across the frame in that step (camera "
         "motion), and the digits measure the motion left after cancelling that shift."
     ),
+    "grid_2048": f"{GRID}.",
+    "grid_2048_large": (
+        "a series of contact sheets of frames sampled at one per second, at most 4 frames to a "
+        "sheet, in time order across the sheets and in reading order within each, each stamped "
+        "with its time in seconds at top left and its sample number at top right."
+    ),
+    "grid_track3x3_v2": f"{GRID}, and a text motion track. {TRACK3X3} {ROBUST}",
+    "grid_track3x3_cam_v2": (
+        f"{GRID}, and a text motion track. {TRACK3X3} {ROBUST} Each line also gives 'bg', how "
+        "far and which way the whole background shifted across the frame in that step "
+        "(camera motion), or none."
+    ),
+    "window_frames": (
+        "a few separate still frames spread over the clip, in time order, each stamped with its "
+        "time."
+    ),
+    "trail_lines_v2": (
+        f"{WINDOWS}. Each stacks two panels: on top, the frame at the end of that second as it "
+        f"is; below, {PATHS}."
+    ),
+    "trail_ghosts_v2": (
+        f"{WINDOWS}. Each stacks two panels: on top, the frame at the end of that second as it "
+        f"is; below, {GHOSTS}."
+    ),
+    "grid_2048_lines": (
+        f"{GRID}, followed by path images at a few moments spread over the clip, each covering "
+        f"about one second and showing {PATHS}."
+    ),
     **{
         f"native_{fps}fps": (
             f"the video clip itself, which you see sampled at {fps} frames per second."
@@ -125,14 +173,16 @@ def legend_for(condition: str, clip: dict[str, Any]) -> str:
     return legend
 
 
-def prompt(condition: str, clip: dict[str, Any], track: str) -> str:
+def prompt(condition: str, clip: dict[str, Any], track: str, notes: str = "") -> str:
     if "question" in clip:
-        return benchmark_prompt(condition, clip, track)
+        return benchmark_prompt(condition, clip, track, notes)
     truth = clip["truth"]
     legend = LEGENDS[condition]
     lines = ["You are shown material made from a short video clip (about 5 seconds)."]
     if legend:
         lines.append(f"It is {legend}")
+    if notes:
+        lines.append(notes)
     if track:
         lines += ["", "Motion track:", track]
     lines += ["", "Answer every question by picking exactly one of its options."]
@@ -145,12 +195,14 @@ def prompt(condition: str, clip: dict[str, Any], track: str) -> str:
     return "\n".join(lines)
 
 
-def benchmark_prompt(condition: str, clip: dict[str, Any], track: str) -> str:
+def benchmark_prompt(condition: str, clip: dict[str, Any], track: str, notes: str = "") -> str:
     legend = legend_for(condition, clip)
     seconds = round(float(clip["seconds"]))
     lines = [f"You are shown material made from a video clip (about {seconds} seconds)."]
     if legend:
         lines.append(f"It is {legend}")
+    if notes:
+        lines.append(notes)
     if track:
         lines += ["", "Motion track:", track]
     lines += ["", "Answer this multiple-choice question about the video.", "", clip["question"]]

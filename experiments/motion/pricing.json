@@ -1,5 +1,5 @@
 {
-  "_note": "USD per 1M input and output tokens. Venice prices are copied from its /models model_spec on 2026-11-21. Gemini and OpenAI prices are estimates from memory and from Venice's listed prices (Venice passes OpenAI prices through and lists Gemini at about 1.25x Google's); check them before a large run. reasoning marks models that think by default, which raises the output estimate and max_tokens. image_tokens_per_mpx, where set, is measured from a real response and overrides the per-provider image formula. video_frame_tokens, where set, is the measured cost of one sampled video frame on Gemini's native endpoint; otherwise 280 is assumed, Gemini's documented cost at high media resolution.",
+  "_note": "USD per 1M input and output tokens. Venice prices are copied from its /models model_spec on 2026-11-21. Gemini and OpenAI prices are estimates from memory and from Venice's listed prices (Venice passes OpenAI prices through and lists Gemini at about 1.25x Google's); check them before a large run. reasoning marks models that think by default, which raises the output estimate and max_tokens. image_tokens_per_mpx, where set, is measured from a real response and overrides the per-provider image formula. video_frame_tokens, where set, is the measured cost of one sampled video frame on Gemini's native endpoint; otherwise 280 is assumed, Gemini's documented cost at high media resolution. image_patch_multiplier and image_patch_cap, where set, use OpenAI's 32 px patch count (measured: gpt-5-mini bills a 2048 px square at about 4900 tokens, so no cap). Round two sends Claude through Venice without Venice's own system prompt, which added about 2700 input tokens per request in round one.",
   "venice": {
     "mistral-small-3-2-24b-instruct": {
       "input": 0.09375,
@@ -26,7 +26,13 @@
     "claude-sonnet-5-5": {
       "input": 2.0,
       "output": 10.0,
-      "estimate": false
+      "estimate": false,
+      "image_tokens_per_mpx": 1333,
+      "extra": {
+        "venice_parameters": {
+          "include_venice_system_prompt": false
+        }
+      }
     },
     "gemini-3-1-pro-preview": {
       "input": 2.5,
@@ -86,7 +92,9 @@
     "gpt-4.1-mini": {
       "input": 0.4,
       "output": 1.6,
-      "estimate": true
+      "estimate": true,
+      "image_patch_multiplier": 1.62,
+      "image_patch_cap": 1536
     },
     "gpt-5-mini": {
       "input": 0.25,
@@ -95,7 +103,8 @@
       "reasoning": true,
       "extra": {
         "reasoning_effort": "low"
-      }
+      },
+      "image_patch_multiplier": 1.2
     },
     "gpt-6-luna": {
       "input": 0.1,

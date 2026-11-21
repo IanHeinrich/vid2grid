@@ -1,3 +1,5 @@
+from itertools import pairwise
+
 import numpy as np
 
 from motion import (
@@ -10,6 +12,7 @@ from motion import (
     region_energy,
     shift_words,
     shifts_to_last,
+    track_v2,
 )
 
 
@@ -108,3 +111,45 @@ def test_shifts_to_last_chains_neighbouring_shifts() -> None:
     scene = texture(90, 260)
     greys = [scene[:, 10 * k : 10 * k + 160] for k in range(6)]
     assert shifts_to_last(greys) == [(50, 0), (40, 0), (30, 0), (20, 0), (10, 0), (0, 0)]
+
+
+def noisy(frame: np.ndarray, seed: int, gain: float = 1.0) -> np.ndarray:
+    noise = np.random.default_rng(seed).normal(0, 8, frame.shape)
+    return rgb(frame * gain + noise)
+
+
+def smooth_texture(h: int, w: int, seed: int = 1) -> np.ndarray:
+    coarse = texture(h // 8, w // 8, seed)
+    return np.kron(coarse, np.ones((8, 8), dtype=np.float32)) * 0.6 + 50
+
+
+def test_v2_static_noisy_flickering_clip_shows_no_motion() -> None:
+    scene = smooth_texture(180, 320)
+    frames = [noisy(scene, seed, gain=1.15 if seed % 2 else 0.9) for seed in range(7)]
+    track = track_v2(list(pairwise(frames)))
+    assert all(digits == "000|000|000" for _, digits in track)
+    assert all(shift == (0, 0) for shift, _ in track)
+
+
+def test_v2_pan_gives_camera_shift_and_quiet_cells() -> None:
+    scene = smooth_texture(180, 480)
+    frames = [noisy(scene[:, 16 * k : 16 * k + 320], seed=k) for k in range(7)]
+    track = track_v2(list(pairwise(frames)))
+    assert all(shift == (-16, 0) for shift, _ in track)
+    assert all(digits == "000|000|000" for _, digits in track)
+
+
+def test_v2_moving_object_lights_only_its_cells() -> None:
+    scene = smooth_texture(180, 320)
+    frames = []
+    for k in range(7):
+        frame = scene.copy()
+        x = 220 + 12 * k
+        frame[20:44, x : x + 24] = 250
+        frames.append(noisy(frame, seed=k))
+    track = track_v2(list(pairwise(frames)))
+    for _, digits in track:
+        top, middle, bottom = digits.split("|")
+        assert top[2] != "0"
+        assert top[:2] == "00"
+        assert middle == bottom == "000"

@@ -7,6 +7,7 @@ dependencies = [
     "av>=14,<20",
     "httpx>=0.27",
     "numpy>=1.26",
+    "opencv-python-headless>=5.1.0.95",
     "Pillow>=10.1",
     "pyarrow>=26.0.1",
     "vid2grid",

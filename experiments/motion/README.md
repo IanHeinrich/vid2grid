@@ -18,6 +18,7 @@ library from `../../apps/python-library` for the real sheets.
 | `make_tempcompass.py` | Picks 90 TempCompass questions (30 each for direction, speed and order) and writes `clips/tempcompass_manifest.json`.                                     |
 | `motion.py`           | The shared maths: downscaling, phase-correlation shift, per-region energy and 0 to 9 digits.                                                              |
 | `conditions.py`       | Turns a clip into the images and text a model sees under each condition.                                                                                  |
+| `overlays.py`         | Round two's point tracker (OpenCV), camera estimate, cut detection and ghost masks for the refined overlays.                                              |
 | `questions.py`        | The questions, the one-line legend for each condition, and the prompt.                                                                                    |
 | `providers.py`        | OpenAI-compatible chat completions for Venice, Gemini and OpenAI.                                                                                         |
 | `run.py`              | Renders, estimates, sends and caches. Writes `out/renders/`, `out/cache/` and `out/ledger.jsonl`.                                                         |
@@ -81,6 +82,19 @@ the four longest paths and draws none when it finds none.
 | `grid_track3x3`       | `grid_1fps` plus a 3x3 grid of motion digits per 0.5 s, such as `[0:01.5] 000\|072\|010`.                                                                                                        |
 | `grid_track3x3_cam`   | As above, plus the background shift per step, with the digits measured after cancelling it.                                                                                                      |
 
+Round two adds these, leaving the ones above unchanged:
+
+| Condition              | What the model gets                                                                                                                                                         |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `grid_2048`            | `grid_1fps` at 2048 px instead of 1024. On Gemini, images over 1024 px go through the native endpoint at ultra-high media resolution, since the default bills about 1100 tokens whatever the size. |
+| `grid_2048_large`      | The same frames at 2048 px, at most 4 to a sheet, so more sheets with larger cells.                                                                                          |
+| `grid_track3x3_v2`     | `grid_1fps` plus a noise-robust 3x3 track: camera shift removed, brightness matched per channel, a per-pixel noise cut and a per-clip floor from the clip's quiet cells.      |
+| `grid_track3x3_cam_v2` | As above, plus the background shift per step.                                                                                                                                |
+| `window_frames`        | The plain frames that end each overlay window, the control for the two pair conditions below.                                                                               |
+| `trail_lines_v2`       | Per window of about 1 s (2 to 4 spread over the clip, never across a cut), the plain frame stacked over tracked path lines, sent at full size.                               |
+| `trail_ghosts_v2`      | As above with up to 3 camera-aligned tinted ghosts; a window where more than 15% of the frame moved gets no ghosts, and the prompt says so.                                  |
+| `grid_2048_lines`      | `grid_2048` plus one path-line panel per window.                                                                                                                             |
+
 `native_1fps`, `native_8fps` and `native_24fps` send the clip itself to
 Gemini's native `generateContent` endpoint, with `videoMetadata.fps` set on the
 video part, as a baseline for how close the image conditions get to real video
@@ -132,12 +146,18 @@ printed or written to disk.
 - A real run needs a price for the model in `pricing.json`, and refuses to
   start without one.
 - Before each request it adds a worst-case estimate (input padded by half, plus
-  the full `max_tokens` of output) to the provider's ledger total, and stops if
-  that would pass `--budget-usd` (4 dollars per provider by default).
+  the full `max_tokens` of output) to the provider's ledger total for the
+  current `--round`, and stops if that would pass `--budget-usd`. Each ledger
+  line carries its round tag (untagged lines are round one), and `run.py`
+  holds each round's per-provider caps; a round without caps defaults to 4
+  dollars per provider.
 - Every paid response is appended to `out/ledger.jsonl` with its token usage
   and cost, and the running total is printed after each request.
 - Every response is cached in `out/cache/`, keyed by provider, model,
-  condition, clip and prompt, so a rerun never pays twice.
+  condition, clip, prompt and the bytes of the images sent, so a rerun never
+  pays twice and a changed renderer never reuses an old answer. Round one's
+  answers, keyed without the images, are still found for round one's
+  conditions.
 
 ## Results
 

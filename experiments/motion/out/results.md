@@ -1,5 +1,20 @@
 # Motion view experiment results
 
+## Spend per round
+
+Ledger lines without a round tag are round one; 2-overlays is the overlay test.
+
+| round | provider | spent |
+| --- | --- | --- |
+| 1 | gemini | $4.9172 |
+| 1 | openai | $2.5662 |
+| 1 | venice | $4.5234 |
+| 2 | gemini | $1.5578 |
+| 2 | openai | $0.6716 |
+| 2 | venice | $1.6575 |
+| 2-overlays | gemini | $0.4765 |
+| 2-overlays | openai | $0.3483 |
+
 ## synthetic
 
 3191 responses over 48 clips.
@@ -457,7 +472,7 @@ Over-counting is the likely sign of ghosts or blended copies read as extra passe
 
 ## hard
 
-1034 responses over 22 clips.
+1122 responses over 22 clips.
 
 ### Accuracy per model and condition
 
@@ -474,6 +489,8 @@ Over-counting is the likely sign of ghosts or blended copies read as extra passe
 | gemini/gemini-3.1-flash-lite | grid_track1 | 78% (78/100) | +29 pts | 0 |
 | gemini/gemini-3.1-flash-lite | grid_track3x3 | 77% (77/100) | +28 pts | 0 |
 | gemini/gemini-3.1-flash-lite | grid_track3x3_cam | 78% (78/100) | +29 pts | 0 |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_v2 | 80% (80/100) | +31 pts | 0 |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_cam_v2 | 87% (87/100) | +38 pts | 0 |
 | gemini/gemini-3.1-flash-lite | native_1fps | 67% (67/100) | +18 pts | 0 |
 | gemini/gemini-3.1-flash-lite | native_8fps | 73% (73/100) | +24 pts | 0 |
 | gemini/gemini-3.1-flash-lite | native_24fps | 62% (62/100) | +13 pts | 0 |
@@ -498,7 +515,9 @@ Over-counting is the likely sign of ghosts or blended copies read as extra passe
 | openai/gpt-5-mini | diff_pair | 78% (78/100) | +16 pts | 0 |
 | openai/gpt-5-mini | grid_track1 | 82% (82/100) | +20 pts | 0 |
 | openai/gpt-5-mini | grid_track3x3 | 77% (77/100) | +15 pts | 0 |
-| openai/gpt-5-mini | grid_track3x3_cam | 68% (68/100) | +6 pts | 0 |
+| openai/gpt-5-mini | grid_track3x3_cam | 71% (71/100) | +9 pts | 0 |
+| openai/gpt-5-mini | grid_track3x3_v2 | 83% (83/100) | +21 pts | 0 |
+| openai/gpt-5-mini | grid_track3x3_cam_v2 | 89% (89/100) | +27 pts | 0 |
 | venice/qwen3-vl-235b-a22b | single_frame | 34% (34/100) | +0 pts | 0 |
 | venice/qwen3-vl-235b-a22b | grid_1fps | 77% (77/100) | +43 pts | 0 |
 | venice/qwen3-vl-235b-a22b | burst | 79% (79/100) | +45 pts | 0 |
@@ -526,6 +545,8 @@ Over-counting is the likely sign of ghosts or blended copies read as extra passe
 | gemini/gemini-3.1-flash-lite | grid_track1 | 77% (17/22) | 72% (13/18) | 100% (22/22) | 86% (19/22) | 75% (6/8) | 25% (1/4) | 0% (0/4) |
 | gemini/gemini-3.1-flash-lite | grid_track3x3 | 82% (18/22) | 67% (12/18) | 95% (21/22) | 91% (20/22) | 75% (6/8) | 0% (0/4) | 0% (0/4) |
 | gemini/gemini-3.1-flash-lite | grid_track3x3_cam | 68% (15/22) | 78% (14/18) | 100% (22/22) | 86% (19/22) | 75% (6/8) | 50% (2/4) | 0% (0/4) |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_v2 | 82% (18/22) | 83% (15/18) | 91% (20/22) | 91% (20/22) | 75% (6/8) | 25% (1/4) | 0% (0/4) |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_cam_v2 | 95% (21/22) | 89% (16/18) | 95% (21/22) | 95% (21/22) | 88% (7/8) | 25% (1/4) | 0% (0/4) |
 | gemini/gemini-3.1-flash-lite | native_1fps | 27% (6/22) | 72% (13/18) | 100% (22/22) | 82% (18/22) | 100% (8/8) | 0% (0/4) | 0% (0/4) |
 | gemini/gemini-3.1-flash-lite | native_8fps | 32% (7/22) | 89% (16/18) | 95% (21/22) | 86% (19/22) | 100% (8/8) | 50% (2/4) | 0% (0/4) |
 | gemini/gemini-3.1-flash-lite | native_24fps | 41% (9/22) | 56% (10/18) | 100% (22/22) | 68% (15/22) | 62% (5/8) | 0% (0/4) | 25% (1/4) |
@@ -550,7 +571,9 @@ Over-counting is the likely sign of ghosts or blended copies read as extra passe
 | openai/gpt-5-mini | diff_pair | 77% (17/22) | 61% (11/18) | 100% (22/22) | 77% (17/22) | 100% (8/8) | 75% (3/4) | 0% (0/4) |
 | openai/gpt-5-mini | grid_track1 | 77% (17/22) | 83% (15/18) | 100% (22/22) | 91% (20/22) | 75% (6/8) | 50% (2/4) | 0% (0/4) |
 | openai/gpt-5-mini | grid_track3x3 | 55% (12/22) | 72% (13/18) | 100% (22/22) | 86% (19/22) | 100% (8/8) | 75% (3/4) | 0% (0/4) |
-| openai/gpt-5-mini | grid_track3x3_cam | 27% (6/22) | 67% (12/18) | 100% (22/22) | 82% (18/22) | 88% (7/8) | 75% (3/4) | 0% (0/4) |
+| openai/gpt-5-mini | grid_track3x3_cam | 41% (9/22) | 67% (12/18) | 100% (22/22) | 82% (18/22) | 88% (7/8) | 75% (3/4) | 0% (0/4) |
+| openai/gpt-5-mini | grid_track3x3_v2 | 77% (17/22) | 89% (16/18) | 86% (19/22) | 95% (21/22) | 100% (8/8) | 50% (2/4) | 0% (0/4) |
+| openai/gpt-5-mini | grid_track3x3_cam_v2 | 95% (21/22) | 83% (15/18) | 95% (21/22) | 95% (21/22) | 100% (8/8) | 75% (3/4) | 0% (0/4) |
 | venice/qwen3-vl-235b-a22b | single_frame | 82% (18/22) | 22% (4/18) | 18% (4/22) | 36% (8/22) | 0% (0/8) | 0% (0/4) | 0% (0/4) |
 | venice/qwen3-vl-235b-a22b | grid_1fps | 82% (18/22) | 61% (11/18) | 100% (22/22) | 82% (18/22) | 62% (5/8) | 75% (3/4) | 0% (0/4) |
 | venice/qwen3-vl-235b-a22b | burst | 82% (18/22) | 67% (12/18) | 100% (22/22) | 82% (18/22) | 50% (4/8) | 75% (3/4) | 50% (2/4) |
@@ -580,6 +603,8 @@ Share of direction answers on a reversed copy that are the flip of the answer on
 | gemini/gemini-3.1-flash-lite | grid_track1 | 82% (18/22) |
 | gemini/gemini-3.1-flash-lite | grid_track3x3 | 77% (17/22) |
 | gemini/gemini-3.1-flash-lite | grid_track3x3_cam | 55% (12/22) |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_v2 | 82% (18/22) |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_cam_v2 | 86% (19/22) |
 | gemini/gemini-3.1-flash-lite | native_1fps | 64% (14/22) |
 | gemini/gemini-3.1-flash-lite | native_8fps | 82% (18/22) |
 | gemini/gemini-3.1-flash-lite | native_24fps | 50% (11/22) |
@@ -604,7 +629,9 @@ Share of direction answers on a reversed copy that are the flip of the answer on
 | openai/gpt-5-mini | diff_pair | 82% (18/22) |
 | openai/gpt-5-mini | grid_track1 | 82% (18/22) |
 | openai/gpt-5-mini | grid_track3x3 | 68% (15/22) |
-| openai/gpt-5-mini | grid_track3x3_cam | 64% (14/22) |
+| openai/gpt-5-mini | grid_track3x3_cam | 55% (12/22) |
+| openai/gpt-5-mini | grid_track3x3_v2 | 91% (20/22) |
+| openai/gpt-5-mini | grid_track3x3_cam_v2 | 86% (19/22) |
 | venice/qwen3-vl-235b-a22b | single_frame | 100% (22/22) |
 | venice/qwen3-vl-235b-a22b | grid_1fps | 73% (16/22) |
 | venice/qwen3-vl-235b-a22b | burst | 82% (18/22) |
@@ -634,6 +661,8 @@ On hard static clips the camera shakes, so the right answer to moved is yes; obj
 | gemini/gemini-3.1-flash-lite | grid_track1 | 100% (2/2) | 100% (2/2) | 50% (1/2) |
 | gemini/gemini-3.1-flash-lite | grid_track3x3 | 50% (1/2) | 50% (1/2) | 50% (1/2) |
 | gemini/gemini-3.1-flash-lite | grid_track3x3_cam | 100% (2/2) | 100% (2/2) | 50% (1/2) |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_v2 | 50% (1/2) | 50% (1/2) | 50% (1/2) |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_cam_v2 | 50% (1/2) | 50% (1/2) | 50% (1/2) |
 | gemini/gemini-3.1-flash-lite | native_1fps | 100% (2/2) | 100% (2/2) | 0% (0/2) |
 | gemini/gemini-3.1-flash-lite | native_8fps | 50% (1/2) | 50% (1/2) | 0% (0/2) |
 | gemini/gemini-3.1-flash-lite | native_24fps | 100% (2/2) | 100% (2/2) | 0% (0/2) |
@@ -659,6 +688,8 @@ On hard static clips the camera shakes, so the right answer to moved is yes; obj
 | openai/gpt-5-mini | grid_track1 | 100% (2/2) | 100% (2/2) | 0% (0/2) |
 | openai/gpt-5-mini | grid_track3x3 | 100% (2/2) | 100% (2/2) | 0% (0/2) |
 | openai/gpt-5-mini | grid_track3x3_cam | 100% (2/2) | 100% (2/2) | 50% (1/2) |
+| openai/gpt-5-mini | grid_track3x3_v2 | 50% (1/2) | 50% (1/2) | 50% (1/2) |
+| openai/gpt-5-mini | grid_track3x3_cam_v2 | 50% (1/2) | 50% (1/2) | 50% (1/2) |
 | venice/qwen3-vl-235b-a22b | single_frame | 0% (0/2) | 0% (0/2) | 0% (0/2) |
 | venice/qwen3-vl-235b-a22b | grid_1fps | 100% (2/2) | 100% (2/2) | 100% (2/2) |
 | venice/qwen3-vl-235b-a22b | burst | 100% (2/2) | 100% (2/2) | 100% (2/2) |
@@ -688,6 +719,8 @@ Over-counting is the likely sign of ghosts or blended copies read as extra passe
 | gemini/gemini-3.1-flash-lite | grid_track1 | 0% (0/4) | 100% (4/4) | 2.00 |
 | gemini/gemini-3.1-flash-lite | grid_track3x3 | 0% (0/4) | 100% (4/4) | 2.00 |
 | gemini/gemini-3.1-flash-lite | grid_track3x3_cam | 0% (0/4) | 100% (4/4) | 2.50 |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_v2 | 0% (0/4) | 100% (4/4) | 2.00 |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_cam_v2 | 0% (0/4) | 100% (4/4) | 2.25 |
 | gemini/gemini-3.1-flash-lite | native_1fps | 0% (0/4) | 100% (4/4) | 1.75 |
 | gemini/gemini-3.1-flash-lite | native_8fps | 0% (0/4) | 100% (4/4) | 1.25 |
 | gemini/gemini-3.1-flash-lite | native_24fps | 25% (1/4) | 50% (2/4) | 1.00 |
@@ -713,6 +746,8 @@ Over-counting is the likely sign of ghosts or blended copies read as extra passe
 | openai/gpt-5-mini | grid_track1 | 0% (0/4) | 100% (4/4) | 2.50 |
 | openai/gpt-5-mini | grid_track3x3 | 0% (0/4) | 100% (4/4) | 2.50 |
 | openai/gpt-5-mini | grid_track3x3_cam | 0% (0/4) | 100% (4/4) | 2.25 |
+| openai/gpt-5-mini | grid_track3x3_v2 | 0% (0/4) | 100% (4/4) | 2.25 |
+| openai/gpt-5-mini | grid_track3x3_cam_v2 | 0% (0/4) | 100% (4/4) | 2.25 |
 | venice/qwen3-vl-235b-a22b | single_frame | 0% (0/4) | 100% (4/4) | 2.50 |
 | venice/qwen3-vl-235b-a22b | grid_1fps | 0% (0/4) | 100% (4/4) | 1.50 |
 | venice/qwen3-vl-235b-a22b | burst | 0% (0/4) | 50% (2/4) | 0.50 |
@@ -740,6 +775,8 @@ Over-counting is the likely sign of ghosts or blended copies read as extra passe
 | gemini/gemini-3.1-flash-lite | grid_track1 | $0.0127 | 78 | $0.00016 |
 | gemini/gemini-3.1-flash-lite | grid_track3x3 | $0.0138 | 77 | $0.00018 |
 | gemini/gemini-3.1-flash-lite | grid_track3x3_cam | $0.0143 | 78 | $0.00018 |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_v2 | $0.0248 | 80 | $0.00031 |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_cam_v2 | $0.0252 | 87 | $0.00029 |
 | gemini/gemini-3.1-flash-lite | native_1fps | $0.0130 | 67 | $0.00019 |
 | gemini/gemini-3.1-flash-lite | native_8fps | $0.0637 | 73 | $0.00087 |
 | gemini/gemini-3.1-flash-lite | native_24fps | $0.1798 | 62 | $0.00290 |
@@ -764,7 +801,9 @@ Over-counting is the likely sign of ghosts or blended copies read as extra passe
 | openai/gpt-5-mini | diff_pair | $0.0169 | 78 | $0.00022 |
 | openai/gpt-5-mini | grid_track1 | $0.0201 | 82 | $0.00024 |
 | openai/gpt-5-mini | grid_track3x3 | $0.0246 | 77 | $0.00032 |
-| openai/gpt-5-mini | grid_track3x3_cam | $0.0677 | 68 | $0.00100 |
+| openai/gpt-5-mini | grid_track3x3_cam | $0.0677 | 71 | $0.00095 |
+| openai/gpt-5-mini | grid_track3x3_v2 | $0.0250 | 83 | $0.00030 |
+| openai/gpt-5-mini | grid_track3x3_cam_v2 | $0.0246 | 89 | $0.00028 |
 | venice/qwen3-vl-235b-a22b | single_frame | $0.0110 | 34 | $0.00032 |
 | venice/qwen3-vl-235b-a22b | grid_1fps | $0.0149 | 77 | $0.00019 |
 | venice/qwen3-vl-235b-a22b | burst | $0.0148 | 79 | $0.00019 |
@@ -779,12 +818,15 @@ Over-counting is the likely sign of ghosts or blended copies read as extra passe
 
 ## tempcompass
 
-4453 responses over 90 clips.
+6341 responses over 90 clips.
 
 ### Accuracy per model and condition
 
 | model | condition | accuracy | gain over single_frame | unparsed |
 | --- | --- | --- | --- | --- |
+| gemini/gemini-3-flash-preview | frames_1fps | 80% (72/90) | - | 0 |
+| gemini/gemini-3-flash-preview | grid_2048 | 86% (77/90) | - | 0 |
+| gemini/gemini-3-flash-preview | native_1fps | 76% (68/90) | - | 0 |
 | gemini/gemini-3.1-flash-lite | single_frame | 64% (58/90) | +0 pts | 0 |
 | gemini/gemini-3.1-flash-lite | grid_1fps | 67% (60/90) | +2 pts | 0 |
 | gemini/gemini-3.1-flash-lite | burst | 66% (59/90) | +1 pts | 0 |
@@ -797,6 +839,14 @@ Over-counting is the likely sign of ghosts or blended copies read as extra passe
 | gemini/gemini-3.1-flash-lite | grid_track1 | 66% (59/90) | +1 pts | 0 |
 | gemini/gemini-3.1-flash-lite | grid_track3x3 | 67% (60/90) | +2 pts | 0 |
 | gemini/gemini-3.1-flash-lite | grid_track3x3_cam | 66% (59/90) | +1 pts | 0 |
+| gemini/gemini-3.1-flash-lite | grid_2048 | 60% (54/90) | -4 pts | 0 |
+| gemini/gemini-3.1-flash-lite | grid_2048_large | 74% (67/90) | +10 pts | 0 |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_v2 | 67% (60/90) | +2 pts | 0 |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_cam_v2 | 58% (52/90) | -7 pts | 0 |
+| gemini/gemini-3.1-flash-lite | window_frames | 66% (59/90) | +1 pts | 0 |
+| gemini/gemini-3.1-flash-lite | trail_lines_v2 | 69% (62/90) | +4 pts | 0 |
+| gemini/gemini-3.1-flash-lite | trail_ghosts_v2 | 64% (58/90) | +0 pts | 0 |
+| gemini/gemini-3.1-flash-lite | grid_2048_lines | 68% (61/90) | +3 pts | 0 |
 | gemini/gemini-3.1-flash-lite | native_1fps | 83% (75/90) | +19 pts | 0 |
 | gemini/gemini-3.1-flash-lite | native_8fps | 76% (68/90) | +11 pts | 0 |
 | openai/gpt-4.1-mini | single_frame | 43% (39/90) | +0 pts | 0 |
@@ -823,6 +873,17 @@ Over-counting is the likely sign of ghosts or blended copies read as extra passe
 | openai/gpt-5-mini | grid_track1 | 61% (55/90) | +11 pts | 0 |
 | openai/gpt-5-mini | grid_track3x3 | 64% (58/90) | +14 pts | 0 |
 | openai/gpt-5-mini | grid_track3x3_cam | 61% (55/90) | +11 pts | 0 |
+| openai/gpt-5-mini | grid_2048 | 64% (58/90) | +14 pts | 0 |
+| openai/gpt-5-mini | grid_2048_large | 63% (57/90) | +13 pts | 0 |
+| openai/gpt-5-mini | grid_track3x3_v2 | 54% (49/90) | +4 pts | 0 |
+| openai/gpt-5-mini | grid_track3x3_cam_v2 | 61% (55/90) | +11 pts | 0 |
+| openai/gpt-5-mini | window_frames | 62% (56/90) | +12 pts | 0 |
+| openai/gpt-5-mini | trail_lines_v2 | 69% (62/90) | +19 pts | 0 |
+| openai/gpt-5-mini | trail_ghosts_v2 | 64% (58/90) | +14 pts | 0 |
+| openai/gpt-5-mini | grid_2048_lines | 61% (55/90) | +11 pts | 0 |
+| venice/claude-sonnet-5-5 | grid_1fps | 84% (37/44) | - | 0 |
+| venice/claude-sonnet-5-5 | frames_1fps | 82% (36/44) | - | 0 |
+| venice/claude-sonnet-5-5 | grid_2048 | 84% (76/90) | - | 0 |
 | venice/qwen3-vl-235b-a22b | single_frame | 48% (43/90) | +0 pts | 0 |
 | venice/qwen3-vl-235b-a22b | grid_1fps | 64% (58/90) | +17 pts | 0 |
 | venice/qwen3-vl-235b-a22b | burst | 61% (55/90) | +13 pts | 0 |
@@ -840,6 +901,9 @@ Over-counting is the likely sign of ghosts or blended copies read as extra passe
 
 | model | condition | tc_direction | tc_speed | tc_order |
 | --- | --- | --- | --- | --- |
+| gemini/gemini-3-flash-preview | frames_1fps | 77% (23/30) | 77% (23/30) | 87% (26/30) |
+| gemini/gemini-3-flash-preview | grid_2048 | 80% (24/30) | 83% (25/30) | 93% (28/30) |
+| gemini/gemini-3-flash-preview | native_1fps | 70% (21/30) | 67% (20/30) | 90% (27/30) |
 | gemini/gemini-3.1-flash-lite | single_frame | 63% (19/30) | 77% (23/30) | 53% (16/30) |
 | gemini/gemini-3.1-flash-lite | grid_1fps | 70% (21/30) | 57% (17/30) | 73% (22/30) |
 | gemini/gemini-3.1-flash-lite | burst | 60% (18/30) | 57% (17/30) | 80% (24/30) |
@@ -852,6 +916,14 @@ Over-counting is the likely sign of ghosts or blended copies read as extra passe
 | gemini/gemini-3.1-flash-lite | grid_track1 | 63% (19/30) | 60% (18/30) | 73% (22/30) |
 | gemini/gemini-3.1-flash-lite | grid_track3x3 | 70% (21/30) | 57% (17/30) | 73% (22/30) |
 | gemini/gemini-3.1-flash-lite | grid_track3x3_cam | 57% (17/30) | 63% (19/30) | 77% (23/30) |
+| gemini/gemini-3.1-flash-lite | grid_2048 | 70% (21/30) | 50% (15/30) | 60% (18/30) |
+| gemini/gemini-3.1-flash-lite | grid_2048_large | 77% (23/30) | 63% (19/30) | 83% (25/30) |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_v2 | 67% (20/30) | 60% (18/30) | 73% (22/30) |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_cam_v2 | 50% (15/30) | 50% (15/30) | 73% (22/30) |
+| gemini/gemini-3.1-flash-lite | window_frames | 60% (18/30) | 63% (19/30) | 73% (22/30) |
+| gemini/gemini-3.1-flash-lite | trail_lines_v2 | 70% (21/30) | 60% (18/30) | 77% (23/30) |
+| gemini/gemini-3.1-flash-lite | trail_ghosts_v2 | 60% (18/30) | 63% (19/30) | 70% (21/30) |
+| gemini/gemini-3.1-flash-lite | grid_2048_lines | 77% (23/30) | 60% (18/30) | 67% (20/30) |
 | gemini/gemini-3.1-flash-lite | native_1fps | 67% (20/30) | 83% (25/30) | 100% (30/30) |
 | gemini/gemini-3.1-flash-lite | native_8fps | 63% (19/30) | 73% (22/30) | 90% (27/30) |
 | openai/gpt-4.1-mini | single_frame | 47% (14/30) | 47% (14/30) | 37% (11/30) |
@@ -878,6 +950,17 @@ Over-counting is the likely sign of ghosts or blended copies read as extra passe
 | openai/gpt-5-mini | grid_track1 | 60% (18/30) | 50% (15/30) | 73% (22/30) |
 | openai/gpt-5-mini | grid_track3x3 | 63% (19/30) | 60% (18/30) | 70% (21/30) |
 | openai/gpt-5-mini | grid_track3x3_cam | 63% (19/30) | 47% (14/30) | 73% (22/30) |
+| openai/gpt-5-mini | grid_2048 | 57% (17/30) | 67% (20/30) | 70% (21/30) |
+| openai/gpt-5-mini | grid_2048_large | 63% (19/30) | 53% (16/30) | 73% (22/30) |
+| openai/gpt-5-mini | grid_track3x3_v2 | 43% (13/30) | 50% (15/30) | 70% (21/30) |
+| openai/gpt-5-mini | grid_track3x3_cam_v2 | 63% (19/30) | 50% (15/30) | 70% (21/30) |
+| openai/gpt-5-mini | window_frames | 53% (16/30) | 57% (17/30) | 77% (23/30) |
+| openai/gpt-5-mini | trail_lines_v2 | 67% (20/30) | 57% (17/30) | 83% (25/30) |
+| openai/gpt-5-mini | trail_ghosts_v2 | 60% (18/30) | 57% (17/30) | 77% (23/30) |
+| openai/gpt-5-mini | grid_2048_lines | 60% (18/30) | 50% (15/30) | 73% (22/30) |
+| venice/claude-sonnet-5-5 | grid_1fps | 79% (11/14) | 88% (15/17) | 85% (11/13) |
+| venice/claude-sonnet-5-5 | frames_1fps | 71% (10/14) | 88% (15/17) | 85% (11/13) |
+| venice/claude-sonnet-5-5 | grid_2048 | 80% (24/30) | 87% (26/30) | 87% (26/30) |
 | venice/qwen3-vl-235b-a22b | single_frame | 47% (14/30) | 50% (15/30) | 47% (14/30) |
 | venice/qwen3-vl-235b-a22b | grid_1fps | 63% (19/30) | 63% (19/30) | 67% (20/30) |
 | venice/qwen3-vl-235b-a22b | burst | 57% (17/30) | 60% (18/30) | 67% (20/30) |
@@ -905,6 +988,9 @@ Chance is the mean of 1 / number of options over the questions in each dimension
 
 | model | condition | spent | correct | per correct |
 | --- | --- | --- | --- | --- |
+| gemini/gemini-3-flash-preview | frames_1fps | $0.6984 | 72 | $0.00970 |
+| gemini/gemini-3-flash-preview | grid_2048 | $0.2552 | 77 | $0.00331 |
+| gemini/gemini-3-flash-preview | native_1fps | $0.2117 | 68 | $0.00311 |
 | gemini/gemini-3.1-flash-lite | single_frame | $0.0424 | 58 | $0.00073 |
 | gemini/gemini-3.1-flash-lite | grid_1fps | $0.0433 | 60 | $0.00072 |
 | gemini/gemini-3.1-flash-lite | burst | $0.0438 | 59 | $0.00074 |
@@ -917,6 +1003,14 @@ Chance is the mean of 1 / number of options over the questions in each dimension
 | gemini/gemini-3.1-flash-lite | grid_track1 | $0.0450 | 59 | $0.00076 |
 | gemini/gemini-3.1-flash-lite | grid_track3x3 | $0.0516 | 60 | $0.00086 |
 | gemini/gemini-3.1-flash-lite | grid_track3x3_cam | $0.0535 | 59 | $0.00091 |
+| gemini/gemini-3.1-flash-lite | grid_2048 | $0.0685 | 54 | $0.00127 |
+| gemini/gemini-3.1-flash-lite | grid_2048_large | $0.1650 | 67 | $0.00246 |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_v2 | $0.0524 | 60 | $0.00087 |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_cam_v2 | $0.0540 | 52 | $0.00104 |
+| gemini/gemini-3.1-flash-lite | window_frames | $0.0978 | 59 | $0.00166 |
+| gemini/gemini-3.1-flash-lite | trail_lines_v2 | $0.1136 | 62 | $0.00183 |
+| gemini/gemini-3.1-flash-lite | trail_ghosts_v2 | $0.1142 | 58 | $0.00197 |
+| gemini/gemini-3.1-flash-lite | grid_2048_lines | $0.1508 | 61 | $0.00247 |
 | gemini/gemini-3.1-flash-lite | native_1fps | $0.0868 | 75 | $0.00116 |
 | gemini/gemini-3.1-flash-lite | native_8fps | $0.5663 | 68 | $0.00833 |
 | openai/gpt-4.1-mini | single_frame | $0.0192 | 39 | $0.00049 |
@@ -943,6 +1037,17 @@ Chance is the mean of 1 / number of options over the questions in each dimension
 | openai/gpt-5-mini | grid_track1 | $0.0533 | 55 | $0.00097 |
 | openai/gpt-5-mini | grid_track3x3 | $0.0770 | 58 | $0.00133 |
 | openai/gpt-5-mini | grid_track3x3_cam | $0.0764 | 55 | $0.00139 |
+| openai/gpt-5-mini | grid_2048 | $0.1294 | 58 | $0.00223 |
+| openai/gpt-5-mini | grid_2048_large | $0.3422 | 57 | $0.00600 |
+| openai/gpt-5-mini | grid_track3x3_v2 | $0.0714 | 49 | $0.00146 |
+| openai/gpt-5-mini | grid_track3x3_cam_v2 | $0.0763 | 55 | $0.00139 |
+| openai/gpt-5-mini | window_frames | $0.0423 | 56 | $0.00076 |
+| openai/gpt-5-mini | trail_lines_v2 | $0.0705 | 62 | $0.00114 |
+| openai/gpt-5-mini | trail_ghosts_v2 | $0.0786 | 58 | $0.00136 |
+| openai/gpt-5-mini | grid_2048_lines | $0.1569 | 55 | $0.00285 |
+| venice/claude-sonnet-5-5 | grid_1fps | $0.2073 | 37 | $0.00560 |
+| venice/claude-sonnet-5-5 | frames_1fps | $0.3967 | 36 | $0.01102 |
+| venice/claude-sonnet-5-5 | grid_2048 | $1.0203 | 76 | $0.01343 |
 | venice/qwen3-vl-235b-a22b | single_frame | $0.0391 | 43 | $0.00091 |
 | venice/qwen3-vl-235b-a22b | grid_1fps | $0.0546 | 58 | $0.00094 |
 | venice/qwen3-vl-235b-a22b | burst | $0.0545 | 55 | $0.00099 |
@@ -955,3 +1060,182 @@ Chance is the mean of 1 / number of options over the questions in each dimension
 | venice/qwen3-vl-235b-a22b | grid_track1 | $0.0559 | 53 | $0.00105 |
 | venice/qwen3-vl-235b-a22b | grid_track3x3 | $0.0617 | 50 | $0.00123 |
 | venice/qwen3-vl-235b-a22b | grid_track3x3_cam | $0.0635 | 50 | $0.00127 |
+
+# Round two
+
+Conditions marked (r2) are new in round two; the rest are round one's, reused from the cache where identical. Tokens are the mean prompt tokens per request as billed.
+
+## tempcompass, round two view
+
+| model | condition | accuracy | tokens | per correct |
+| --- | --- | --- | --- | --- |
+| gemini/gemini-3-flash-preview | frames_1fps | 80% (72/90) | 11630 | $0.00970 |
+| gemini/gemini-3-flash-preview | grid_2048 (r2) | 86% (77/90) | 2341 | $0.00331 |
+| gemini/gemini-3-flash-preview | native_1fps | 76% (68/90) | 3191 | $0.00311 |
+| gemini/gemini-3.1-flash-lite | single_frame | 64% (58/90) | 1194 | $0.00073 |
+| gemini/gemini-3.1-flash-lite | grid_1fps | 67% (60/90) | 1221 | $0.00072 |
+| gemini/gemini-3.1-flash-lite | frames_1fps | 77% (69/90) | 11630 | $0.00424 |
+| gemini/gemini-3.1-flash-lite | grid_track3x3 | 67% (60/90) | 1600 | $0.00086 |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_cam | 66% (59/90) | 1694 | $0.00091 |
+| gemini/gemini-3.1-flash-lite | grid_2048 (r2) | 60% (54/90) | 2341 | $0.00127 |
+| gemini/gemini-3.1-flash-lite | grid_2048_large (r2) | 74% (67/90) | 6623 | $0.00246 |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_v2 (r2) | 67% (60/90) | 1639 | $0.00087 |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_cam_v2 (r2) | 58% (52/90) | 1710 | $0.00104 |
+| gemini/gemini-3.1-flash-lite | window_frames (r2) | 66% (59/90) | 3625 | $0.00166 |
+| gemini/gemini-3.1-flash-lite | trail_lines_v2 (r2) | 69% (62/90) | 4347 | $0.00183 |
+| gemini/gemini-3.1-flash-lite | trail_ghosts_v2 (r2) | 64% (58/90) | 4355 | $0.00197 |
+| gemini/gemini-3.1-flash-lite | grid_2048_lines (r2) | 68% (61/90) | 5883 | $0.00247 |
+| gemini/gemini-3.1-flash-lite | native_1fps | 83% (75/90) | 3191 | $0.00116 |
+| openai/gpt-4.1-mini | single_frame | 43% (39/90) | 510 | $0.00049 |
+| openai/gpt-4.1-mini | grid_1fps | 54% (49/90) | 1790 | $0.00133 |
+| openai/gpt-4.1-mini | frames_1fps | 62% (56/90) | 6378 | $0.00412 |
+| openai/gpt-4.1-mini | grid_track3x3 | 59% (53/90) | 2066 | $0.00142 |
+| openai/gpt-4.1-mini | grid_track3x3_cam | 59% (53/90) | 2156 | $0.00148 |
+| openai/gpt-5-mini | single_frame | 50% (45/90) | 402 | $0.00059 |
+| openai/gpt-5-mini | grid_1fps | 64% (58/90) | 1359 | $0.00082 |
+| openai/gpt-5-mini | frames_1fps | 68% (61/90) | 4754 | $0.00203 |
+| openai/gpt-5-mini | grid_track3x3 | 64% (58/90) | 1635 | $0.00133 |
+| openai/gpt-5-mini | grid_track3x3_cam | 61% (55/90) | 1725 | $0.00139 |
+| openai/gpt-5-mini | grid_2048 (r2) | 64% (58/90) | 5046 | $0.00223 |
+| openai/gpt-5-mini | grid_2048_large (r2) | 63% (57/90) | 14560 | $0.00600 |
+| openai/gpt-5-mini | grid_track3x3_v2 (r2) | 54% (49/90) | 1673 | $0.00146 |
+| openai/gpt-5-mini | grid_track3x3_cam_v2 (r2) | 61% (55/90) | 1740 | $0.00139 |
+| openai/gpt-5-mini | window_frames (r2) | 62% (56/90) | 1053 | $0.00076 |
+| openai/gpt-5-mini | trail_lines_v2 (r2) | 69% (62/90) | 2188 | $0.00114 |
+| openai/gpt-5-mini | trail_ghosts_v2 (r2) | 64% (58/90) | 2196 | $0.00136 |
+| openai/gpt-5-mini | grid_2048_lines (r2) | 61% (55/90) | 6176 | $0.00285 |
+| venice/claude-sonnet-5-5 | grid_1fps | 84% (37/44) | 1557 | $0.00560 |
+| venice/claude-sonnet-5-5 | frames_1fps | 82% (36/44) | 3859 | $0.01102 |
+| venice/claude-sonnet-5-5 | grid_2048 (r2) | 84% (76/90) | 4949 | $0.01343 |
+| venice/qwen3-vl-235b-a22b | single_frame | 48% (43/90) | 2007 | $0.00091 |
+| venice/qwen3-vl-235b-a22b | grid_1fps | 64% (58/90) | 2824 | $0.00094 |
+| venice/qwen3-vl-235b-a22b | frames_1fps | 61% (27/44) | 4484 | $0.00156 |
+| venice/qwen3-vl-235b-a22b | grid_track3x3 | 56% (50/90) | 3201 | $0.00123 |
+| venice/qwen3-vl-235b-a22b | grid_track3x3_cam | 56% (50/90) | 3295 | $0.00127 |
+
+## hard, round two view
+
+| model | condition | accuracy | tokens | per correct |
+| --- | --- | --- | --- | --- |
+| gemini/gemini-3.1-flash-lite | grid_1fps | 80% (80/100) | 1333 | $0.00015 |
+| gemini/gemini-3.1-flash-lite | grid_track3x3 | 77% (77/100) | 1606 | $0.00018 |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_cam | 78% (78/100) | 1702 | $0.00018 |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_v2 (r2) | 80% (80/100) | 1645 | $0.00031 |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_cam_v2 (r2) | 87% (87/100) | 1702 | $0.00029 |
+| openai/gpt-4.1-mini | grid_1fps | 62% (62/100) | 1899 | $0.00029 |
+| openai/gpt-4.1-mini | grid_track3x3 | 62% (62/100) | 2101 | $0.00032 |
+| openai/gpt-4.1-mini | grid_track3x3_cam | 70% (70/100) | 2195 | $0.00029 |
+| openai/gpt-5-mini | grid_1fps | 81% (81/100) | 1468 | $0.00022 |
+| openai/gpt-5-mini | grid_track3x3 | 77% (77/100) | 1670 | $0.00032 |
+| openai/gpt-5-mini | grid_track3x3_cam | 71% (71/100) | 1763 | $0.00095 |
+| openai/gpt-5-mini | grid_track3x3_v2 (r2) | 83% (83/100) | 1708 | $0.00030 |
+| openai/gpt-5-mini | grid_track3x3_cam_v2 (r2) | 89% (89/100) | 1763 | $0.00028 |
+| venice/qwen3-vl-235b-a22b | grid_1fps | 77% (77/100) | 2930 | $0.00019 |
+| venice/qwen3-vl-235b-a22b | grid_track3x3 | 76% (76/100) | 3202 | $0.00021 |
+| venice/qwen3-vl-235b-a22b | grid_track3x3_cam | 70% (70/100) | 3298 | $0.00024 |
+
+## tempcompass by group
+
+Reversed direction clips are the only direction clips that test vision rather than language priors. Joined order clips are two videos played one after the other. Direction is also split by whether the question or its options mention the camera.
+
+| model | condition | reversed direction | direction, camera | direction, object | joined order | other | all |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| gemini/gemini-3-flash-preview | frames_1fps | 60% (9/15) | 78% (7/9) | 76% (16/21) | 84% (16/19) | 84% (47/56) | 80% (72/90) |
+| gemini/gemini-3-flash-preview | grid_2048 | 67% (10/15) | 67% (6/9) | 86% (18/21) | 95% (18/19) | 88% (49/56) | 86% (77/90) |
+| gemini/gemini-3-flash-preview | native_1fps | 53% (8/15) | 67% (6/9) | 71% (15/21) | 100% (19/19) | 73% (41/56) | 76% (68/90) |
+| gemini/gemini-3.1-flash-lite | single_frame | 40% (6/15) | 67% (6/9) | 62% (13/21) | 53% (10/19) | 75% (42/56) | 64% (58/90) |
+| gemini/gemini-3.1-flash-lite | grid_1fps | 60% (9/15) | 56% (5/9) | 76% (16/21) | 84% (16/19) | 62% (35/56) | 67% (60/90) |
+| gemini/gemini-3.1-flash-lite | burst | 53% (8/15) | 56% (5/9) | 62% (13/21) | 89% (17/19) | 61% (34/56) | 66% (59/90) |
+| gemini/gemini-3.1-flash-lite | frames_1fps | 60% (9/15) | 67% (6/9) | 62% (13/21) | 95% (18/19) | 75% (42/56) | 77% (69/90) |
+| gemini/gemini-3.1-flash-lite | trail_pair | 53% (8/15) | 44% (4/9) | 71% (15/21) | 32% (6/19) | 62% (35/56) | 54% (49/90) |
+| gemini/gemini-3.1-flash-lite | trail_pair_nolegend | 40% (6/15) | 67% (6/9) | 62% (13/21) | 32% (6/19) | 71% (40/56) | 58% (52/90) |
+| gemini/gemini-3.1-flash-lite | trail_lines | 40% (6/15) | 56% (5/9) | 57% (12/21) | 42% (8/19) | 62% (35/56) | 54% (49/90) |
+| gemini/gemini-3.1-flash-lite | onion_pair | 40% (6/15) | 44% (4/9) | 52% (11/21) | 37% (7/19) | 57% (32/56) | 50% (45/90) |
+| gemini/gemini-3.1-flash-lite | diff_pair | 33% (5/15) | 67% (6/9) | 43% (9/21) | 26% (5/19) | 54% (30/56) | 44% (40/90) |
+| gemini/gemini-3.1-flash-lite | grid_track1 | 60% (9/15) | 67% (6/9) | 62% (13/21) | 79% (15/19) | 62% (35/56) | 66% (59/90) |
+| gemini/gemini-3.1-flash-lite | grid_track3x3 | 67% (10/15) | 78% (7/9) | 67% (14/21) | 79% (15/19) | 62% (35/56) | 67% (60/90) |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_cam | 47% (7/15) | 56% (5/9) | 57% (12/21) | 79% (15/19) | 66% (37/56) | 66% (59/90) |
+| gemini/gemini-3.1-flash-lite | grid_2048 | 53% (8/15) | 78% (7/9) | 67% (14/21) | 63% (12/19) | 61% (34/56) | 60% (54/90) |
+| gemini/gemini-3.1-flash-lite | grid_2048_large | 53% (8/15) | 78% (7/9) | 76% (16/21) | 89% (17/19) | 75% (42/56) | 74% (67/90) |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_v2 | 53% (8/15) | 67% (6/9) | 67% (14/21) | 79% (15/19) | 66% (37/56) | 67% (60/90) |
+| gemini/gemini-3.1-flash-lite | grid_track3x3_cam_v2 | 40% (6/15) | 22% (2/9) | 62% (13/21) | 79% (15/19) | 55% (31/56) | 58% (52/90) |
+| gemini/gemini-3.1-flash-lite | window_frames | 47% (7/15) | 78% (7/9) | 52% (11/21) | 74% (14/19) | 68% (38/56) | 66% (59/90) |
+| gemini/gemini-3.1-flash-lite | trail_lines_v2 | 73% (11/15) | 67% (6/9) | 71% (15/21) | 79% (15/19) | 64% (36/56) | 69% (62/90) |
+| gemini/gemini-3.1-flash-lite | trail_ghosts_v2 | 53% (8/15) | 44% (4/9) | 67% (14/21) | 84% (16/19) | 61% (34/56) | 64% (58/90) |
+| gemini/gemini-3.1-flash-lite | grid_2048_lines | 67% (10/15) | 78% (7/9) | 76% (16/21) | 63% (12/19) | 70% (39/56) | 68% (61/90) |
+| gemini/gemini-3.1-flash-lite | native_1fps | 53% (8/15) | 89% (8/9) | 57% (12/21) | 100% (19/19) | 86% (48/56) | 83% (75/90) |
+| gemini/gemini-3.1-flash-lite | native_8fps | 67% (10/15) | 78% (7/9) | 57% (12/21) | 100% (19/19) | 70% (39/56) | 76% (68/90) |
+| openai/gpt-4.1-mini | single_frame | 33% (5/15) | 56% (5/9) | 43% (9/21) | 42% (8/19) | 46% (26/56) | 43% (39/90) |
+| openai/gpt-4.1-mini | grid_1fps | 47% (7/15) | 56% (5/9) | 52% (11/21) | 63% (12/19) | 54% (30/56) | 54% (49/90) |
+| openai/gpt-4.1-mini | burst | 60% (9/15) | 67% (6/9) | 67% (14/21) | 53% (10/19) | 52% (29/56) | 53% (48/90) |
+| openai/gpt-4.1-mini | frames_1fps | 73% (11/15) | 56% (5/9) | 71% (15/21) | 63% (12/19) | 59% (33/56) | 62% (56/90) |
+| openai/gpt-4.1-mini | trail_pair | 60% (9/15) | 67% (6/9) | 67% (14/21) | 21% (4/19) | 41% (23/56) | 40% (36/90) |
+| openai/gpt-4.1-mini | trail_pair_nolegend | 53% (8/15) | 78% (7/9) | 52% (11/21) | 21% (4/19) | 43% (24/56) | 40% (36/90) |
+| openai/gpt-4.1-mini | trail_lines | 47% (7/15) | 44% (4/9) | 52% (11/21) | 21% (4/19) | 48% (27/56) | 42% (38/90) |
+| openai/gpt-4.1-mini | onion_pair | 47% (7/15) | 56% (5/9) | 48% (10/21) | 16% (3/19) | 45% (25/56) | 39% (35/90) |
+| openai/gpt-4.1-mini | diff_pair | 33% (5/15) | 56% (5/9) | 52% (11/21) | 26% (5/19) | 51% (28/55) | 43% (38/89) |
+| openai/gpt-4.1-mini | grid_track1 | 40% (6/15) | 67% (6/9) | 52% (11/21) | 63% (12/19) | 48% (27/56) | 50% (45/90) |
+| openai/gpt-4.1-mini | grid_track3x3 | 40% (6/15) | 56% (5/9) | 62% (13/21) | 58% (11/19) | 64% (36/56) | 59% (53/90) |
+| openai/gpt-4.1-mini | grid_track3x3_cam | 47% (7/15) | 56% (5/9) | 62% (13/21) | 68% (13/19) | 59% (33/56) | 59% (53/90) |
+| openai/gpt-5-mini | single_frame | 40% (6/15) | 67% (6/9) | 57% (12/21) | 32% (6/19) | 59% (33/56) | 50% (45/90) |
+| openai/gpt-5-mini | grid_1fps | 53% (8/15) | 56% (5/9) | 67% (14/21) | 74% (14/19) | 64% (36/56) | 64% (58/90) |
+| openai/gpt-5-mini | burst | 47% (7/15) | 33% (3/9) | 67% (14/21) | 74% (14/19) | 64% (36/56) | 63% (57/90) |
+| openai/gpt-5-mini | frames_1fps | 73% (11/15) | 89% (8/9) | 71% (15/21) | 79% (15/19) | 62% (35/56) | 68% (61/90) |
+| openai/gpt-5-mini | trail_pair | 33% (5/15) | 56% (5/9) | 43% (9/21) | 26% (5/19) | 55% (31/56) | 46% (41/90) |
+| openai/gpt-5-mini | trail_pair_nolegend | 33% (5/15) | 67% (6/9) | 29% (6/21) | 32% (6/19) | 48% (27/56) | 42% (38/90) |
+| openai/gpt-5-mini | trail_lines | 47% (7/15) | 78% (7/9) | 38% (8/21) | 32% (6/19) | 45% (25/56) | 42% (38/90) |
+| openai/gpt-5-mini | onion_pair | 40% (6/15) | 44% (4/9) | 52% (11/21) | 26% (5/19) | 48% (27/56) | 42% (38/90) |
+| openai/gpt-5-mini | diff_pair | 27% (4/15) | 56% (5/9) | 52% (11/21) | 26% (5/19) | 48% (27/56) | 40% (36/90) |
+| openai/gpt-5-mini | grid_track1 | 47% (7/15) | 67% (6/9) | 57% (12/21) | 68% (13/19) | 62% (35/56) | 61% (55/90) |
+| openai/gpt-5-mini | grid_track3x3 | 40% (6/15) | 67% (6/9) | 62% (13/21) | 74% (14/19) | 68% (38/56) | 64% (58/90) |
+| openai/gpt-5-mini | grid_track3x3_cam | 47% (7/15) | 67% (6/9) | 62% (13/21) | 74% (14/19) | 61% (34/56) | 61% (55/90) |
+| openai/gpt-5-mini | grid_2048 | 47% (7/15) | 78% (7/9) | 48% (10/21) | 58% (11/19) | 71% (40/56) | 64% (58/90) |
+| openai/gpt-5-mini | grid_2048_large | 47% (7/15) | 67% (6/9) | 62% (13/21) | 68% (13/19) | 66% (37/56) | 63% (57/90) |
+| openai/gpt-5-mini | grid_track3x3_v2 | 27% (4/15) | 33% (3/9) | 48% (10/21) | 63% (12/19) | 59% (33/56) | 54% (49/90) |
+| openai/gpt-5-mini | grid_track3x3_cam_v2 | 53% (8/15) | 44% (4/9) | 71% (15/21) | 68% (13/19) | 61% (34/56) | 61% (55/90) |
+| openai/gpt-5-mini | window_frames | 47% (7/15) | 56% (5/9) | 52% (11/21) | 79% (15/19) | 61% (34/56) | 62% (56/90) |
+| openai/gpt-5-mini | trail_lines_v2 | 67% (10/15) | 67% (6/9) | 67% (14/21) | 79% (15/19) | 66% (37/56) | 69% (62/90) |
+| openai/gpt-5-mini | trail_ghosts_v2 | 47% (7/15) | 67% (6/9) | 57% (12/21) | 74% (14/19) | 66% (37/56) | 64% (58/90) |
+| openai/gpt-5-mini | grid_2048_lines | 60% (9/15) | 67% (6/9) | 57% (12/21) | 68% (13/19) | 59% (33/56) | 61% (55/90) |
+| venice/claude-sonnet-5-5 | grid_1fps | 57% (4/7) | 100% (1/1) | 77% (10/13) | 88% (7/8) | 90% (26/29) | 84% (37/44) |
+| venice/claude-sonnet-5-5 | frames_1fps | 57% (4/7) | 0% (0/1) | 77% (10/13) | 75% (6/8) | 90% (26/29) | 82% (36/44) |
+| venice/claude-sonnet-5-5 | grid_2048 | 73% (11/15) | 78% (7/9) | 81% (17/21) | 95% (18/19) | 84% (47/56) | 84% (76/90) |
+| venice/qwen3-vl-235b-a22b | single_frame | 33% (5/15) | 44% (4/9) | 48% (10/21) | 53% (10/19) | 50% (28/56) | 48% (43/90) |
+| venice/qwen3-vl-235b-a22b | grid_1fps | 47% (7/15) | 67% (6/9) | 62% (13/21) | 68% (13/19) | 68% (38/56) | 64% (58/90) |
+| venice/qwen3-vl-235b-a22b | burst | 40% (6/15) | 44% (4/9) | 62% (13/21) | 68% (13/19) | 64% (36/56) | 61% (55/90) |
+| venice/qwen3-vl-235b-a22b | frames_1fps | 29% (2/7) | 100% (1/1) | 62% (8/13) | 50% (4/8) | 72% (21/29) | 61% (27/44) |
+| venice/qwen3-vl-235b-a22b | trail_pair | 40% (6/15) | 11% (1/9) | 52% (11/21) | 26% (5/19) | 46% (26/56) | 41% (37/90) |
+| venice/qwen3-vl-235b-a22b | trail_pair_nolegend | 40% (6/15) | 11% (1/9) | 57% (12/21) | 26% (5/19) | 52% (29/56) | 44% (40/90) |
+| venice/qwen3-vl-235b-a22b | trail_lines | 40% (6/15) | 11% (1/9) | 52% (11/21) | 26% (5/19) | 45% (25/56) | 40% (36/90) |
+| venice/qwen3-vl-235b-a22b | onion_pair | 40% (6/15) | 22% (2/9) | 57% (12/21) | 16% (3/19) | 52% (29/56) | 42% (38/90) |
+| venice/qwen3-vl-235b-a22b | diff_pair | 27% (4/15) | 33% (3/9) | 43% (9/21) | 32% (6/19) | 43% (24/56) | 38% (34/90) |
+| venice/qwen3-vl-235b-a22b | grid_track1 | 40% (6/15) | 56% (5/9) | 62% (13/21) | 68% (13/19) | 61% (34/56) | 59% (53/90) |
+| venice/qwen3-vl-235b-a22b | grid_track3x3 | 27% (4/15) | 56% (5/9) | 48% (10/21) | 68% (13/19) | 59% (33/56) | 56% (50/90) |
+| venice/qwen3-vl-235b-a22b | grid_track3x3_cam | 27% (4/15) | 33% (3/9) | 57% (12/21) | 68% (13/19) | 59% (33/56) | 56% (50/90) |
+
+## tempcompass pooled across models
+
+Answers from gemini/gemini-3.1-flash-lite and openai/gpt-5-mini summed, only on clips both answered for that condition.
+
+| model | condition | reversed direction | direction, camera | direction, object | joined order | other | all |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| pooled | single_frame | 40% (12/30) | 67% (12/18) | 60% (25/42) | 42% (16/38) | 67% (75/112) | 57% (103/180) |
+| pooled | grid_1fps | 57% (17/30) | 56% (10/18) | 71% (30/42) | 79% (30/38) | 63% (71/112) | 66% (118/180) |
+| pooled | burst | 50% (15/30) | 44% (8/18) | 64% (27/42) | 82% (31/38) | 62% (70/112) | 64% (116/180) |
+| pooled | frames_1fps | 67% (20/30) | 78% (14/18) | 67% (28/42) | 87% (33/38) | 69% (77/112) | 72% (130/180) |
+| pooled | trail_pair | 43% (13/30) | 50% (9/18) | 57% (24/42) | 29% (11/38) | 59% (66/112) | 50% (90/180) |
+| pooled | trail_pair_nolegend | 37% (11/30) | 67% (12/18) | 45% (19/42) | 32% (12/38) | 60% (67/112) | 50% (90/180) |
+| pooled | trail_lines | 43% (13/30) | 67% (12/18) | 48% (20/42) | 37% (14/38) | 54% (60/112) | 48% (87/180) |
+| pooled | onion_pair | 40% (12/30) | 44% (8/18) | 52% (22/42) | 32% (12/38) | 53% (59/112) | 46% (83/180) |
+| pooled | diff_pair | 30% (9/30) | 61% (11/18) | 48% (20/42) | 26% (10/38) | 51% (57/112) | 42% (76/180) |
+| pooled | grid_track1 | 53% (16/30) | 67% (12/18) | 60% (25/42) | 74% (28/38) | 62% (70/112) | 63% (114/180) |
+| pooled | grid_track3x3 | 53% (16/30) | 72% (13/18) | 64% (27/42) | 76% (29/38) | 65% (73/112) | 66% (118/180) |
+| pooled | grid_track3x3_cam | 47% (14/30) | 61% (11/18) | 60% (25/42) | 76% (29/38) | 63% (71/112) | 63% (114/180) |
+| pooled | grid_2048 | 50% (15/30) | 78% (14/18) | 57% (24/42) | 61% (23/38) | 66% (74/112) | 62% (112/180) |
+| pooled | grid_2048_large | 50% (15/30) | 72% (13/18) | 69% (29/42) | 79% (30/38) | 71% (79/112) | 69% (124/180) |
+| pooled | grid_track3x3_v2 | 40% (12/30) | 50% (9/18) | 57% (24/42) | 71% (27/38) | 62% (70/112) | 61% (109/180) |
+| pooled | grid_track3x3_cam_v2 | 47% (14/30) | 33% (6/18) | 67% (28/42) | 74% (28/38) | 58% (65/112) | 59% (107/180) |
+| pooled | window_frames | 47% (14/30) | 67% (12/18) | 52% (22/42) | 76% (29/38) | 64% (72/112) | 64% (115/180) |
+| pooled | trail_lines_v2 | 70% (21/30) | 67% (12/18) | 69% (29/42) | 79% (30/38) | 65% (73/112) | 69% (124/180) |
+| pooled | trail_ghosts_v2 | 50% (15/30) | 56% (10/18) | 62% (26/42) | 79% (30/38) | 63% (71/112) | 64% (116/180) |
+| pooled | grid_2048_lines | 63% (19/30) | 72% (13/18) | 67% (28/42) | 66% (25/38) | 64% (72/112) | 64% (116/180) |

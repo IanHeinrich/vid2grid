@@ -1,16 +1,36 @@
 import json
 import re
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 
 from conditions import CONDITIONS, supports
 from make_clips import reversed_truth
 from questions import QUESTIONS
-from run import CACHE, LEDGER, OUT, clip_set, load_manifest
+from run import (
+    CACHE,
+    LEDGER,
+    OUT,
+    ROUND_ONE_CONDITIONS,
+    clip_set,
+    entry_round,
+    ledger_entries,
+    load_manifest,
+)
 
 RESULTS = OUT / "results.md"
 DIRECTION_KEYS = ("direction_red", "direction_blue", "first_direction", "second_direction")
 MOTION_CLAIMS = {"moved": "no", "direction_red": "none", "background": "none"}
+ROUND_TWO_BASELINES = ("single_frame", "grid_1fps", "frames_1fps", "native_1fps")
+ROUND_TWO_TRACKS = ("grid_1fps", "grid_track3x3", "grid_track3x3_cam")
+POOLED_MODELS = ("gemini/gemini-3.1-flash-lite", "openai/gpt-5-mini")
+TEMPCOMPASS_GROUPS = (
+    "reversed direction",
+    "direction, camera",
+    "direction, object",
+    "joined order",
+    "other",
+)
 
 Answers = dict[tuple[str, str, str], dict[str, str] | None]
 Counts = dict[tuple[str, str, str], int]
@@ -62,7 +82,9 @@ def table(header: list[str], rows: list[list[str]]) -> list[str]:
 # Drops replies a provider was sent for a condition it cannot take, such as a video condition
 # sent as a bare prompt by a run that predates the provider check.
 def load_records() -> list[dict[str, Any]]:
-    records = [json.loads(path.read_text()) for path in sorted(CACHE.glob("*.json"))]
+    # Oldest first, so a rerun after a renderer change overrides the answer it replaces.
+    paths = sorted(CACHE.glob("*.json"), key=lambda path: path.stat().st_mtime)
+    records = [json.loads(path.read_text()) for path in paths]
     return [r for r in records if supports(r["condition"], r["provider"])]
 
 
@@ -281,6 +303,155 @@ def set_section(name: str, clips: dict[str, dict[str, Any]], answers: Answers) -
     return lines
 
 
+def spend_section() -> list[str]:
+    totals: dict[tuple[str, str], float] = defaultdict(float)
+    for entry in ledger_entries():
+        totals[(entry_round(entry), entry["provider"])] += float(entry["cost_usd"])
+    rows = [[tag, provider, f"${spent:.4f}"] for (tag, provider), spent in sorted(totals.items())]
+    note = "Ledger lines without a round tag are round one; 2-overlays is the overlay test."
+    return ["## Spend per round", "", note, "", *table(["round", "provider", "spent"], rows)]
+
+
+def tempcompass_groups(clip: dict[str, Any]) -> list[str]:
+    stem = Path(clip["file"]).stem
+    groups = []
+    if clip["kind"] == "tc_direction":
+        if stem.endswith("_reverse"):
+            groups.append("reversed direction")
+        camera = "camera" in clip["question"].lower()
+        groups.append("direction, camera" if camera else "direction, object")
+    joined = clip["kind"] == "tc_order" and "_" in stem and "concat" not in stem
+    if joined:
+        groups.append("joined order")
+    if not joined and not stem.endswith("_reverse"):
+        groups.append("other")
+    return groups
+
+
+def mean_tokens(records: list[dict[str, Any]]) -> dict[tuple[str, str, str], int]:
+    seen: dict[tuple[str, str, str], list[int]] = defaultdict(list)
+    for record in records:
+        model = f"{record['provider']}/{record['model']}"
+        key = (model, record["condition"], clip_set({"id": record["clip"]}))
+        seen[key].append(int(record["usage"]["prompt_tokens"]))
+    return {key: round(sum(values) / len(values)) for key, values in seen.items()}
+
+
+def round_two_rows(
+    name: str,
+    clips: dict[str, dict[str, Any]],
+    answers: Answers,
+    conditions: list[str],
+    tokens: dict[tuple[str, str, str], int],
+) -> list[list[str]]:
+    hits, totals, _ = tally(clips, answers)
+    costs = ledger_costs()
+    rows = []
+    for model in sorted({m for m, _, _ in answers}):
+        for condition in conditions:
+            total = totals[(model, condition, "all")]
+            if not total:
+                continue
+            right = hits[(model, condition, "all")]
+            spent = sum(costs.get((model, condition, c), 0.0) for c in clips)
+            tag = "" if condition in ROUND_ONE_CONDITIONS else " (r2)"
+            per = f"${spent / right:.5f}" if right else "-"
+            token_mean = str(tokens.get((model, condition, name), "-"))
+            rows.append([model, condition + tag, pct(right, total), token_mean, per])
+    return rows
+
+
+def group_cells(pairs: list[tuple[dict[str, Any], dict[str, str] | None]]) -> list[str]:
+    hits: dict[str, int] = defaultdict(int)
+    totals: dict[str, int] = defaultdict(int)
+    for clip, answer in pairs:
+        right = correct("answer", clip["truth"]["answer"], answer)
+        for group in [*tempcompass_groups(clip), "all"]:
+            totals[group] += 1
+            hits[group] += int(right)
+    return [pct(hits[g], totals[g]) for g in (*TEMPCOMPASS_GROUPS, "all")]
+
+
+def group_rows(
+    clips: dict[str, dict[str, Any]], answers: Answers, conditions: list[str], models: list[str]
+) -> list[list[str]]:
+    rows = []
+    for model in models:
+        for condition in conditions:
+            pairs = [
+                (clip, answers[(model, condition, clip_id)])
+                for clip_id, clip in clips.items()
+                if (model, condition, clip_id) in answers
+            ]
+            if pairs:
+                rows.append([model, condition, *group_cells(pairs)])
+    return rows
+
+
+# Pooled only on clips every pooled model answered, so the conditions stay paired.
+def pooled_rows(
+    clips: dict[str, dict[str, Any]], answers: Answers, conditions: list[str]
+) -> list[list[str]]:
+    rows = []
+    for condition in conditions:
+        shared = [c for c in clips if all((m, condition, c) in answers for m in POOLED_MODELS)]
+        pairs = [(clips[c], answers[(m, condition, c)]) for m in POOLED_MODELS for c in shared]
+        if pairs:
+            rows.append(["pooled", condition, *group_cells(pairs)])
+    return rows
+
+
+def round_two_section(
+    clips: dict[str, dict[str, Any]], answers: Answers, records: list[dict[str, Any]]
+) -> list[str]:
+    tokens = mean_tokens(records)
+    new = [c for c in CONDITIONS if c not in ROUND_ONE_CONDITIONS]
+    lines = [
+        "# Round two",
+        "",
+        "Conditions marked (r2) are new in round two; the rest are round one's, reused from the "
+        "cache where identical. Tokens are the mean prompt tokens per request as billed.",
+        "",
+    ]
+    for name, baselines in (
+        ("tempcompass", (*ROUND_TWO_BASELINES, *ROUND_TWO_TRACKS)),
+        ("hard", ROUND_TWO_TRACKS),
+    ):
+        members = {k: v for k, v in clips.items() if clip_set(v) == name}
+        subset = {k: v for k, v in answers.items() if k[2] in members}
+        conditions = [c for c in CONDITIONS if c in baselines or c in new]
+        rows = round_two_rows(name, members, subset, conditions, tokens)
+        header = ["model", "condition", "accuracy", "tokens", "per correct"]
+        lines += [f"## {name}, round two view", "", *table(header, rows)]
+    members = {k: v for k, v in clips.items() if clip_set(v) == "tempcompass"}
+    subset = {k: v for k, v in answers.items() if k[2] in members}
+    present = [c for c in CONDITIONS if any(k[1] == c for k in subset)]
+    models = sorted({m for m, _, _ in subset})
+    header = ["model", "condition", *TEMPCOMPASS_GROUPS, "all"]
+    note = (
+        "Reversed direction clips are the only direction clips that test vision rather than "
+        "language priors. Joined order clips are two videos played one after the other. "
+        "Direction is also split by whether the question or its options mention the camera."
+    )
+    pooled_note = (
+        f"Answers from {' and '.join(POOLED_MODELS)} summed, only on clips both answered for "
+        "that condition."
+    )
+    return [
+        *lines,
+        "## tempcompass by group",
+        "",
+        note,
+        "",
+        *table(header, group_rows(members, subset, present, models)),
+        "## tempcompass pooled across models",
+        "",
+        pooled_note,
+        "",
+        *table(header, pooled_rows(members, subset, present)),
+    ]
+
+
 def main() -> None:
     clips = {clip["id"]: clip for clip in load_manifest()}
     records = load_records()
@@ -293,11 +464,12 @@ def main() -> None:
             model = f"{record['provider']}/{record['model']}"
             answers[(model, record["condition"], record["clip"])] = parse_answer(record["response"])
 
-    lines = ["# Motion view experiment results", ""]
+    lines = ["# Motion view experiment results", "", *spend_section()]
     for name in ("synthetic", "hard", "tempcompass"):
         members = {k: v for k, v in clips.items() if clip_set(v) == name}
         if members:
             lines += set_section(name, members, answers)
+    lines += round_two_section(clips, answers, records)
     RESULTS.write_text("\n".join(lines))
     print(f"wrote {RESULTS}")
 

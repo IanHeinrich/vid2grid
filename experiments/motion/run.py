@@ -17,11 +17,13 @@ from PIL import Image
 from conditions import CONDITIONS, Rendered, render, supports
 from providers import (
     PROVIDERS,
+    ULTRA_HIGH,
     Provider,
     ProviderError,
     Reply,
     api_key,
     complete,
+    complete_native_images,
     complete_native_video,
     list_models,
 )
@@ -42,8 +44,36 @@ DEFAULT_MAX_TOKENS = {False: 600, True: 4000}
 INPUT_SAFETY = 1.5
 # Gemini 3 bills every image at its default media resolution, measured at about 1120 tokens.
 GEMINI_IMAGE_TOKENS = 1120
+GEMINI_ULTRA_IMAGE_TOKENS = 2240
 VIDEO_FRAME_TOKENS = 280
 AUDIO_TOKENS_PER_SECOND = 32
+ULTRA_HIGH_EDGE = 1024
+# Ledger lines from before rounds were tagged belong to round one.
+UNTAGGED_ROUND = "1"
+CURRENT_ROUND = "2"
+# The overlay test has its own budget, so its spend is tagged apart from round two's.
+ROUND_CAPS = {
+    "2": {"gemini": 2.00, "openai": 1.25, "venice": 1.75},
+    "2-overlays": {"gemini": 0.50, "openai": 0.50},
+}
+DEFAULT_BUDGET = 4.0
+ROUND_ONE_CONDITIONS = (
+    "single_frame",
+    "grid_1fps",
+    "burst",
+    "frames_1fps",
+    "trail_pair",
+    "trail_pair_nolegend",
+    "trail_lines",
+    "onion_pair",
+    "diff_pair",
+    "grid_track1",
+    "grid_track3x3",
+    "grid_track3x3_cam",
+    "native_1fps",
+    "native_8fps",
+    "native_24fps",
+)
 
 
 @dataclass(frozen=True)
@@ -63,6 +93,8 @@ class Price:
     extra: dict[str, Any]
     image_tokens_per_mpx: float | None
     video_frame_tokens: int
+    image_patch_multiplier: float | None
+    image_patch_cap: int | None
 
 
 def clip_set(clip: dict[str, Any]) -> str:
@@ -88,6 +120,8 @@ def select_clips(manifest: list[dict[str, Any]], spec: str) -> list[dict[str, An
     if spec == "all":
         return manifest
     by_id = {clip["id"]: clip for clip in manifest}
+    if not spec.isdigit():
+        return [by_id[clip_id] for clip_id in spec.split(",")]
     kinds: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for clip in manifest:
         if clip["reverse_of"] is None:
@@ -121,14 +155,28 @@ def price_for(pricing: dict[str, dict[str, Any]], provider: str, model: str) -> 
         dict(entry.get("extra", {})),
         entry.get("image_tokens_per_mpx"),
         int(entry.get("video_frame_tokens", VIDEO_FRAME_TOKENS)),
+        entry.get("image_patch_multiplier"),
+        entry.get("image_patch_cap"),
     )
 
 
-def image_tokens(provider: str, width: int, height: int, per_mpx: float | None) -> int:
-    if per_mpx is not None:
-        return math.ceil(width * height / 1_000_000 * per_mpx)
+# OpenAI's patch models count 32 px patches; some shrink the image to fit a patch cap.
+def patch_tokens(width: int, height: int, multiplier: float, cap: int | None) -> int:
+    patches = math.ceil(width / 32) * math.ceil(height / 32)
+    if cap is not None and patches > cap:
+        scale = math.sqrt(cap * 32 * 32 / (width * height))
+        patches = min(cap, math.ceil(width * scale / 32) * math.ceil(height * scale / 32))
+    return math.ceil(patches * multiplier)
+
+
+def image_tokens(provider: str, width: int, height: int, price: Price | None) -> int:
+    if price and price.image_patch_multiplier is not None:
+        return patch_tokens(width, height, price.image_patch_multiplier, price.image_patch_cap)
+    if price and price.image_tokens_per_mpx is not None:
+        return math.ceil(width * height / 1_000_000 * price.image_tokens_per_mpx)
     if provider == "gemini":
-        return GEMINI_IMAGE_TOKENS
+        ultra = ultra_high(provider, max(width, height))
+        return GEMINI_ULTRA_IMAGE_TOKENS if ultra else GEMINI_IMAGE_TOKENS
     scale = min(1.0, 2048 / max(width, height))
     w, h = width * scale, height * scale
     scale = min(1.0, 768 / min(w, h))
@@ -143,7 +191,6 @@ def has_audio(clip_file: str) -> bool:
 
 
 def input_tokens(item: Item, provider: str, price: Price | None) -> int:
-    per_mpx = price.image_tokens_per_mpx if price else None
     total = math.ceil(len(item.prompt) / 3.5) + 10
     if item.rendered.video_fps:
         seconds = float(item.clip["seconds"])
@@ -153,7 +200,7 @@ def input_tokens(item: Item, provider: str, price: Price | None) -> int:
             total += math.ceil(seconds * AUDIO_TOKENS_PER_SECOND)
     for path in item.rendered.images:
         with Image.open(path) as image:
-            total += image_tokens(provider, image.width, image.height, per_mpx)
+            total += image_tokens(provider, image.width, image.height, price)
     return total
 
 
@@ -161,23 +208,65 @@ def cost(price: Price, prompt_tokens: int, output_tokens: int) -> float:
     return (prompt_tokens * price.input + output_tokens * price.output) / 1_000_000
 
 
-def cache_path(provider: str, model: str, condition: str, clip_id: str, prompt: str) -> Path:
+def legacy_cache_path(provider: str, model: str, condition: str, clip_id: str, prompt: str) -> Path:
     digest = hashlib.sha256(
         json.dumps([provider, model, condition, clip_id, prompt]).encode()
     ).hexdigest()[:24]
     return CACHE / f"{digest}.json"
 
 
-def ledger_total(provider: str) -> float:
+def image_digest(item: Item) -> str:
+    hasher = hashlib.sha256()
+    for path in item.rendered.images:
+        hasher.update(path.read_bytes())
+    return hasher.hexdigest()[:24]
+
+
+# The images are part of the key, so a changed renderer can never reuse an old answer.
+def cache_path(provider: str, model: str, item: Item) -> Path:
+    key = [provider, model, item.condition, item.clip["id"], item.prompt, image_digest(item)]
+    return CACHE / f"{hashlib.sha256(json.dumps(key).encode()).hexdigest()[:24]}.json"
+
+
+# Round one keyed answers without their images; its renderers have not changed since.
+def cached_answer(provider: str, model: str, item: Item) -> Path | None:
+    path = cache_path(provider, model, item)
+    if path.is_file():
+        return path
+    legacy = legacy_cache_path(provider, model, item.condition, item.clip["id"], item.prompt)
+    return legacy if item.condition in ROUND_ONE_CONDITIONS and legacy.is_file() else None
+
+
+def ledger_entries() -> list[dict[str, Any]]:
     if not LEDGER.is_file():
-        return 0.0
-    total = 0.0
-    for line in LEDGER.read_text().splitlines():
-        if line.strip():
-            entry = json.loads(line)
-            if entry["provider"] == provider:
-                total += float(entry["cost_usd"])
-    return total
+        return []
+    return [json.loads(line) for line in LEDGER.read_text().splitlines() if line.strip()]
+
+
+def entry_round(entry: dict[str, Any]) -> str:
+    return str(entry.get("round", UNTAGGED_ROUND))
+
+
+def ledger_total(provider: str, round_tag: str) -> float:
+    return sum(
+        float(entry["cost_usd"])
+        for entry in ledger_entries()
+        if entry["provider"] == provider and entry_round(entry) == round_tag
+    )
+
+
+def append_ledger(entry: dict[str, Any], round_tag: str) -> None:
+    with LEDGER.open("a") as ledger:
+        ledger.write(json.dumps({**entry, "round": round_tag}) + "\n")
+
+
+def budget_for(provider: str, round_tag: str, requested: float | None) -> float:
+    cap = ROUND_CAPS.get(round_tag, {}).get(provider)
+    if cap is None:
+        return DEFAULT_BUDGET if requested is None else requested
+    if requested is not None and requested > cap:
+        sys.exit(f"--budget-usd {requested:.2f} is over round {round_tag}'s {provider} cap")
+    return cap if requested is None else requested
 
 
 def build_items(clips: list[dict[str, Any]], conditions: list[str]) -> list[Item]:
@@ -186,41 +275,53 @@ def build_items(clips: list[dict[str, Any]], conditions: list[str]) -> list[Item
         for condition in conditions:
             out_dir = RENDERS / clip["id"] / condition
             rendered = render(condition, CLIPS / clip["file"], out_dir)
-            text = build_prompt(condition, clip, rendered.track)
+            text = build_prompt(condition, clip, rendered.track, rendered.notes)
             (out_dir / "prompt.txt").write_text(text + "\n")
             items.append(Item(clip, condition, rendered, text))
         print(f"rendered {clip['id']}", flush=True)
     return items
 
 
-def dry_run(all_items: list[Item], targets: list[tuple[str, str]], pricing: dict[str, Any]) -> None:
+def dry_run(
+    all_items: list[Item],
+    targets: list[tuple[str, str]],
+    pricing: dict[str, Any],
+    round_tag: str,
+    requested: float | None,
+) -> None:
     images = sum(len(item.rendered.images) for item in all_items)
     videos = sum(item.rendered.video_fps is not None for item in all_items)
     print(f"\n{images} images and {videos} native video requests, renders in {RENDERS}")
     for provider, model in targets:
         items = [item for item in all_items if supports(item.condition, provider)]
         price = price_for(pricing, provider, model)
-        tokens_in = sum(input_tokens(item, provider, price) for item in items)
-        cached = sum(
-            cache_path(provider, model, i.condition, i.clip["id"], i.prompt).is_file()
-            for i in items
-        )
+        fresh = [i for i in items if cached_answer(provider, model, i) is None]
+        cached = len(items) - len(fresh)
+        tokens_in = sum(input_tokens(item, provider, price) for item in fresh)
         label = f"{provider}/{model}"
         if price is None:
             print(f"{label}: ~{tokens_in:,} input tokens; no price in pricing.json")
             continue
-        expected_out = EXPECTED_OUTPUT[price.reasoning] * len(items)
-        worst_out = price.max_tokens * len(items)
+        expected_out = EXPECTED_OUTPUT[price.reasoning] * len(fresh)
+        worst_out = price.max_tokens * len(fresh)
         expected = cost(price, tokens_in, expected_out)
         worst = cost(price, round(tokens_in * INPUT_SAFETY), worst_out)
+        spent = ledger_total(provider, round_tag)
+        budget = budget_for(provider, round_tag, requested)
         print(
-            f"{label}: {len(items)} requests ({cached} cached), ~{tokens_in:,} input tokens, "
-            f"~{expected_out:,} output tokens, expected ${expected:.2f}, worst case ${worst:.2f}"
+            f"{label}: {len(items)} requests ({cached} cached), ~{tokens_in:,} new input tokens, "
+            f"~{expected_out:,} output tokens, expected ${expected:.3f}, worst case "
+            f"${worst:.3f}; round {round_tag} {provider} spent ${spent:.4f} of ${budget:.2f}"
         )
 
 
 def real_run(
-    items: list[Item], provider: Provider, model: str, price: Price, budget: float
+    items: list[Item],
+    provider: Provider,
+    model: str,
+    price: Price,
+    budget: float,
+    round_tag: str,
 ) -> None:
     CACHE.mkdir(parents=True, exist_ok=True)
     skipped = [item for item in items if not supports(item.condition, provider.name)]
@@ -228,14 +329,14 @@ def real_run(
         names = sorted({item.condition for item in skipped})
         print(f"skipping {len(skipped)} requests {provider.name} cannot take: {', '.join(names)}")
         items = [item for item in items if supports(item.condition, provider.name)]
-    spent = ledger_total(provider.name)
-    print(f"{provider.name} ledger so far: ${spent:.4f} of ${budget:.2f}")
+    spent = ledger_total(provider.name, round_tag)
+    print(f"{provider.name} round {round_tag} ledger so far: ${spent:.4f} of ${budget:.2f}")
     sent = cached = 0
     for item in items:
-        path = cache_path(provider.name, model, item.condition, item.clip["id"], item.prompt)
-        if path.is_file():
+        if cached_answer(provider.name, model, item) is not None:
             cached += 1
             continue
+        path = cache_path(provider.name, model, item)
         estimate_in = round(input_tokens(item, provider.name, price) * INPUT_SAFETY)
         worst = cost(price, estimate_in, price.max_tokens)
         if spent + worst > budget:
@@ -266,11 +367,12 @@ def real_run(
             "usage": usage,
             "cost_usd": spend,
             "seconds": round(time.monotonic() - started, 2),
+            "round": round_tag,
+            "image_digest": image_digest(item),
         }
         path.write_text(json.dumps(record, indent=2))
         ledger_entry = {k: record[k] for k in ("provider", "model", "clip", "condition", "usage")}
-        with LEDGER.open("a") as ledger:
-            ledger.write(json.dumps({**ledger_entry, "cost_usd": spend, "cache": path.name}) + "\n")
+        append_ledger({**ledger_entry, "cost_usd": spend, "cache": path.name}, round_tag)
         print(
             f"{item.clip['id']} {item.condition}: {usage['prompt_tokens']}+"
             f"{usage['output_tokens']} tokens ${spend:.5f}, {provider.name} total ${spent:.4f}",
@@ -290,9 +392,28 @@ def send(item: Item, provider: Provider, model: str, price: Price) -> Reply:
             extra=price.extra,
         )
     images = [p.read_bytes() for p in item.rendered.images]
+    if any(ultra_high(provider.name, longest_edge(p)) for p in item.rendered.images):
+        levels = [
+            ULTRA_HIGH if ultra_high(provider.name, longest_edge(p)) else None
+            for p in item.rendered.images
+        ]
+        return complete_native_images(
+            model, item.prompt, images, levels, max_tokens=price.max_tokens, extra=price.extra
+        )
     return complete(
         provider, model, item.prompt, images, max_tokens=price.max_tokens, extra=price.extra
     )
+
+
+def longest_edge(path: Path) -> int:
+    with Image.open(path) as image:
+        return max(image.size)
+
+
+# Gemini bills every image at about 1100 tokens by default, whatever its size, so a sheet
+# larger than 1024 px only gains detail at the ultra-high level, set per image.
+def ultra_high(provider: str, edge: int) -> bool:
+    return provider == "gemini" and edge > ULTRA_HIGH_EDGE
 
 
 def video_fields(item: Item) -> dict[str, Any]:
@@ -334,10 +455,23 @@ def main() -> None:
         "--model", help="model id; a dry run without it estimates every priced model"
     )
     parser.add_argument("--conditions", default="all", help="comma-separated, default all")
-    parser.add_argument("--clips", default="all", help="all, or a count for a balanced pilot")
+    parser.add_argument(
+        "--clips",
+        default="all",
+        help="all, a count for a balanced pilot, or comma-separated clip ids",
+    )
     parser.add_argument("--set", default="synthetic", choices=SETS, help="default synthetic")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--budget-usd", type=float, default=4.0, help="per provider, default 4.0")
+    parser.add_argument(
+        "--budget-usd",
+        type=float,
+        help="per provider for this round; defaults to the round's cap, else 4.0",
+    )
+    parser.add_argument(
+        "--round",
+        default=CURRENT_ROUND,
+        help=f"tags ledger lines and scopes the budget gate, default {CURRENT_ROUND}",
+    )
     parser.add_argument("--list-models", action="store_true")
     args = parser.parse_args()
 
@@ -362,7 +496,7 @@ def main() -> None:
             for model in ([args.model] if args.model else pricing.get(name, {}))
             if not model.startswith("_")
         ]
-        dry_run(build_items(clips, conditions), targets, pricing)
+        dry_run(build_items(clips, conditions), targets, pricing, args.round, args.budget_usd)
         return
 
     if len(names) != 1 or not args.model:
@@ -373,7 +507,8 @@ def main() -> None:
         sys.exit(f"no price for {provider.name}/{args.model} in pricing.json; add one first")
     if api_key(provider) is None:
         sys.exit(f"{provider.name}: {provider.key_env} is not set, skipping")
-    real_run(build_items(clips, conditions), provider, args.model, price, args.budget_usd)
+    budget = budget_for(provider.name, args.round, args.budget_usd)
+    real_run(build_items(clips, conditions), provider, args.model, price, budget, args.round)
 
 
 if __name__ == "__main__":
