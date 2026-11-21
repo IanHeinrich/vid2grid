@@ -11,6 +11,7 @@ import { errorText, plural } from "../text";
 import type { ApiSettings, ModelInfo } from "../types";
 
 const RESULT_KEY = "vid2grid-chat-connection-test";
+export const NO_API_TEXT = "Choose an API first: pick one above or enter its base URL.";
 
 export type KeyKind = "admin" | "inference" | "unknown";
 
@@ -85,7 +86,7 @@ export function reportLines(report: ConnectionReport): string[] {
       : `${plural(report.models, "model")}, ${report.visionModels} of them can see images.`,
   ];
   if (!report.venice) {
-    lines.push("The server is not Venice, so there is no balance to read.");
+    lines.push("This server does not report a balance.");
     return lines;
   }
   lines.push("The server is Venice.", keyLine(report.key, report.balanceError));
@@ -107,11 +108,8 @@ export interface ConnectionTestDeps {
 }
 
 // Tests what is typed in the dialog, so a key can be checked before it is saved.
-function formSettings(dlg: AppElements["settingsDialog"], state: AppState): ApiSettings {
-  return {
-    apiKey: dlg.apiKeyInput.value.trim(),
-    baseUrl: dlg.baseUrlInput.value.trim() || state.settings.baseUrl,
-  };
+function formSettings(dlg: AppElements["settingsDialog"]): ApiSettings {
+  return { apiKey: dlg.apiKeyInput.value.trim(), baseUrl: dlg.baseUrlInput.value.trim() };
 }
 
 function renderLines(list: HTMLUListElement, lines: readonly string[], failed: boolean): void {
@@ -139,11 +137,16 @@ export function initConnectionTest(
   let running = false;
   const run = async () => {
     if (running) return;
+    const api = formSettings(els.settingsDialog);
+    if (api.baseUrl === "") {
+      renderLines(report, [NO_API_TEXT], true);
+      return;
+    }
     running = true;
     button.disabled = true;
     renderLines(report, ["Testing the connection…"], false);
     try {
-      const result = await testConnection(formSettings(els.settingsDialog, state), probes);
+      const result = await testConnection(api, probes);
       renderLines(report, reportLines(result), !result.reachable);
       (deps.storage ?? localStorage).setItem(RESULT_KEY, result.reachable ? "passed" : "failed");
       deps.onTested?.(result.reachable);

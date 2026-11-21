@@ -1,5 +1,6 @@
 import { expect, vi } from "vitest";
 import indexHtml from "../index.html?raw";
+import { VENICE_BASE_URL } from "../src/api/client";
 import type { AnalyseAudio } from "../src/audio/videoAudio";
 import { createMemoryStore } from "../src/chat/store";
 import { queryElements, type AppElements } from "../src/dom";
@@ -36,6 +37,8 @@ import {
 } from "../src/video/study";
 import type { ToolContext } from "../src/video/tools";
 
+export const STUDY_MODEL_ID = "qwen3-6-27b";
+
 export const VIDEO: VideoAttachment = {
   name: "beach.mp4",
   fileKey: "beach-key",
@@ -62,7 +65,12 @@ export function reloadPage(): void {
 export function resetStudy(): void {
   localStorage.clear();
   reloadPage();
-  state = createAppState({ ...DEFAULT_SETTINGS, apiKey: "key" });
+  state = createAppState({
+    ...DEFAULT_SETTINGS,
+    baseUrl: VENICE_BASE_URL,
+    apiKey: "key",
+    defaultModelId: STUDY_MODEL_ID,
+  });
   store = createMemoryStore();
   confirm = vi.fn(() => true);
   openPlayer = vi.fn();
@@ -77,7 +85,7 @@ export function resetStudy(): void {
       durationSeconds: (request.endSeconds ?? 0) - (request.startSeconds ?? 0),
     }),
   );
-  const chat = { ...blankChat(DEFAULT_SETTINGS.defaultModelId, "chat", 1), video: VIDEO };
+  const chat = { ...blankChat(STUDY_MODEL_ID, "chat", 1), video: VIDEO };
   replaceChat(state, chat);
   setCurrentChat(state, chat, []);
   HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
@@ -182,7 +190,7 @@ export function setInput(input: HTMLInputElement | HTMLSelectElement, value: str
 export function pricedModels(): void {
   setModels(state, [
     {
-      ...model(DEFAULT_SETTINGS.defaultModelId),
+      ...model(STUDY_MODEL_ID),
       pricing: { inputPerMTok: 100, outputPerMTok: 100 },
     },
   ]);

@@ -4,6 +4,7 @@ import type {
   Chat,
   ChatMessage,
   ChatStore,
+  Folder,
   ImageRef,
   ToolCall,
   ToolMessage,
@@ -133,6 +134,8 @@ export interface Backup {
   timelines: VideoTimeline[];
   // Absent in backups written before casts were included.
   casts?: VideoCast[];
+  // Absent in backups written before folders existed.
+  folders?: Folder[];
   images: BackupImage[];
 }
 
@@ -155,6 +158,7 @@ export async function exportBackup(store: ChatStore, options: ExportOptions = {}
     chats,
     timelines: await perVideo(chats, (key) => store.getTimeline(key)),
     casts: await perVideo(chats, (key) => store.getCast(key)),
+    folders: await store.listFolders(),
     images: options.includeImages === false ? [] : await imagesFor(store, chats),
   };
   return new Blob([JSON.stringify(backup)], { type: "application/json" });
@@ -239,9 +243,12 @@ export async function importBackup(
   const blobs = decodeImages(backup.images);
   const imageIds = new Map<string, string>();
   for (const [id, blob] of blobs) imageIds.set(id, await store.putImage(blob));
+  const folderIds = await importFolders(store, backup.folders ?? []);
   const existing = new Set((await store.listChats()).map((chat) => chat.id));
   let messageCount = 0;
-  for (const { chat, messages } of backup.chats) {
+  for (const backupChat of backup.chats) {
+    const { messages } = backupChat;
+    const chat = keepKnownFolder(backupChat.chat, folderIds);
     const clash = existing.has(chat.id);
     const imported = clash ? { ...chat, id: newId(), title: `${chat.title} (imported)` } : chat;
     existing.add(imported.id);
@@ -266,6 +273,24 @@ export async function importBackup(
       (cast) => store.putCast(cast),
     ),
   };
+}
+
+// A folder already in the store keeps its name and collapsed state, as with timelines and casts.
+async function importFolders(store: ChatStore, folders: readonly Folder[]): Promise<Set<string>> {
+  const known = new Set((await store.listFolders()).map((folder) => folder.id));
+  for (const folder of folders) {
+    if (known.has(folder.id)) continue;
+    await store.putFolder(folder);
+    known.add(folder.id);
+  }
+  return known;
+}
+
+function keepKnownFolder(chat: Chat, folderIds: ReadonlySet<string>): Chat {
+  if (chat.folderId === undefined || folderIds.has(chat.folderId)) return chat;
+  const unfiled = { ...chat };
+  delete unfiled.folderId;
+  return unfiled;
 }
 
 // The store's own copy may be newer than the backup's, so an existing one is kept.
@@ -319,7 +344,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parseBackup(text: string): Pick<Backup, "chats" | "timelines" | "casts" | "images"> {
+function parseBackup(
+  text: string,
+): Pick<Backup, "chats" | "timelines" | "casts" | "folders" | "images"> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -334,7 +361,7 @@ function parseBackup(text: string): Pick<Backup, "chats" | "timelines" | "casts"
       `This backup is version ${String(parsed.version)}, but this app reads version ${BACKUP_VERSION}.`,
     );
   }
-  const { chats, timelines, casts, images } = parsed;
+  const { chats, timelines, casts, folders, images } = parsed;
   if (!Array.isArray(chats) || !chats.every(isBackupChat)) throw malformed("a chat is damaged");
   if (!Array.isArray(timelines) || !timelines.every(isTimeline)) {
     throw malformed("a video timeline is damaged");
@@ -342,10 +369,19 @@ function parseBackup(text: string): Pick<Backup, "chats" | "timelines" | "casts"
   if (casts !== undefined && (!Array.isArray(casts) || !casts.every(isCast))) {
     throw malformed("a video cast is damaged");
   }
+  if (folders !== undefined && (!Array.isArray(folders) || !folders.every(isFolder))) {
+    throw malformed("a folder is damaged");
+  }
   if (!Array.isArray(images) || !images.every(isBackupImage)) {
     throw malformed("an image is damaged");
   }
-  return { chats, timelines, images, ...(casts !== undefined && { casts }) };
+  return {
+    chats,
+    timelines,
+    images,
+    ...(casts !== undefined && { casts }),
+    ...(folders !== undefined && { folders }),
+  };
 }
 
 function isBackupChat(value: unknown): value is BackupChat {
@@ -383,6 +419,15 @@ function isTimeline(value: unknown): value is VideoTimeline {
 
 function isCast(value: unknown): value is VideoCast {
   return isRecord(value) && typeof value.fileKey === "string" && Array.isArray(value.cards);
+}
+
+function isFolder(value: unknown): value is Folder {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    typeof value.createdAt === "number"
+  );
 }
 
 function isBackupImage(value: unknown): value is BackupImage {

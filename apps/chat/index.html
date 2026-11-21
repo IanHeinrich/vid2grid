@@ -10,7 +10,10 @@
       <aside class="sidebar">
         <div class="sidebar-header">
           <span class="brand">vid2grid chat</span>
-          <button id="newChatButton" type="button" class="button primary">New chat</button>
+          <div class="sidebar-new">
+            <button id="newChatButton" type="button" class="button primary">New chat</button>
+            <button id="newFolderButton" type="button" class="button ghost">New folder</button>
+          </div>
           <input
             id="chatSearchInput"
             type="search"
@@ -164,7 +167,7 @@
           <ol id="welcomeSteps" class="welcome-steps">
             <li class="welcome-step" data-step="key">
               <span class="welcome-check" aria-hidden="true"></span>
-              <span class="welcome-label">Add your API key</span>
+              <span class="welcome-label">Choose an API</span>
               <button type="button" class="button ghost welcome-action">Open settings</button>
             </li>
             <li class="welcome-step" data-step="test">
@@ -570,16 +573,28 @@
             aria-labelledby="personaTab"
           >
             <div class="persona-presets">
-              <label class="field">
-                <span>Saved presets</span>
-                <select id="personaSelect"></select>
-              </label>
+              <div class="preset-picker">
+                <label class="field">
+                  <span>Preset</span>
+                  <select id="personaSelect"></select>
+                </label>
+                <button id="managePresetsButton" type="button" class="button ghost">
+                  Manage presets
+                </button>
+              </div>
+              <div id="presetEdited" class="preset-edited" hidden>
+                <span class="preset-edited-label" title="These instructions differ from the preset">
+                  Edited
+                </span>
+                <button id="updatePresetButton" type="button" class="button ghost">
+                  Update preset
+                </button>
+                <button id="revertPresetButton" type="button" class="button ghost">Revert</button>
+              </div>
               <div class="drawer-actions">
                 <button id="savePersonaButton" type="button" class="button ghost">
                   Save as preset
                 </button>
-                <button id="updatePersonaButton" type="button" class="button ghost">Update</button>
-                <button id="deletePersonaButton" type="button" class="button ghost">Delete</button>
               </div>
             </div>
             <label class="field">
@@ -897,16 +912,55 @@
           <div class="settings-column">
             <section class="settings-section" aria-labelledby="connectionTitle">
               <h3 id="connectionTitle">Connection</h3>
+              <p class="muted small">
+                Any OpenAI-compatible API works, on your own computer or hosted. Pick one to fill in
+                its base URL, or type your own.
+              </p>
+              <div class="base-url-presets" role="group" aria-label="Fill in the base URL">
+                <button
+                  type="button"
+                  class="model-chip"
+                  data-base-url="https://api.venice.ai/api/v1"
+                >
+                  Venice
+                </button>
+                <button
+                  type="button"
+                  class="model-chip"
+                  data-base-url="https://openrouter.ai/api/v1"
+                >
+                  OpenRouter
+                </button>
+                <button type="button" class="model-chip" data-base-url="https://api.openai.com/v1">
+                  OpenAI
+                </button>
+                <button type="button" class="model-chip" data-base-url="http://localhost:11434/v1">
+                  Ollama
+                </button>
+                <button type="button" class="model-chip" data-base-url="http://localhost:1234/v1">
+                  LM Studio
+                </button>
+              </div>
+              <label class="field">
+                <span>Base URL</span>
+                <input
+                  id="baseUrlInput"
+                  type="url"
+                  spellcheck="false"
+                  placeholder="Pick one above or type a URL"
+                />
+              </label>
               <label class="field">
                 <span>API key</span>
                 <input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" />
               </label>
-              <label class="field">
-                <span>Base URL</span>
-                <input id="baseUrlInput" type="url" spellcheck="false" />
-              </label>
               <p class="muted small">
-                The key is kept in this browser's localStorage and sent only to the base URL.
+                The key is kept in this browser's localStorage and sent only to the base URL. Venice
+                needs one; a local server usually does not.
+              </p>
+              <p class="muted small">
+                A local server must allow this page's origin (CORS): for Ollama set OLLAMA_ORIGINS,
+                and in LM Studio turn on CORS in the server settings.
               </p>
               <div class="models-row">
                 <button id="testConnectionButton" type="button" class="button ghost">
@@ -1041,6 +1095,93 @@
         <menu class="dialog-actions">
           <button type="submit" value="cancel" class="button ghost" formnovalidate>Cancel</button>
           <button type="submit" value="save" class="button primary">Save</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog
+      id="presetManagerDialog"
+      class="settings-dialog preset-manager"
+      aria-labelledby="presetManagerTitle"
+    >
+      <form method="dialog" class="settings-form">
+        <h2 id="presetManagerTitle">Presets</h2>
+        <div class="preset-manager-body">
+          <div class="preset-sidebar">
+            <ul id="presetList" class="preset-list" aria-label="Saved presets"></ul>
+            <p id="presetEmpty" class="muted small">
+              No saved presets yet. Choose New to start one.
+            </p>
+            <div class="drawer-actions">
+              <button id="newPresetButton" type="button" class="button ghost">New</button>
+              <button id="duplicatePresetButton" type="button" class="button ghost">
+                Duplicate
+              </button>
+              <button id="deletePresetButton" type="button" class="button ghost">Delete</button>
+            </div>
+          </div>
+          <section id="presetEditor" class="preset-editor" aria-labelledby="presetManagerTitle">
+            <label class="field">
+              <span>Name</span>
+              <input id="presetNameInput" type="text" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>System prompt</span>
+              <textarea
+                id="presetSystemPromptInput"
+                rows="8"
+                placeholder="How should the model respond? Its role, tone, what to focus on."
+              ></textarea>
+            </label>
+            <div class="field-row">
+              <label class="field">
+                <span>Voice</span>
+                <select id="presetVoiceSelect">
+                  <option value="analyst">Analyst</option>
+                  <option value="character">In character</option>
+                  <option value="narrator">Narrator</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Refer to the video</span>
+                <select id="presetVideoReferencesSelect">
+                  <option value="free">Cite moments freely</option>
+                  <option value="few">A few links to help find moments</option>
+                  <option value="none">Never mention the video</option>
+                </select>
+              </label>
+            </div>
+            <p id="presetVoiceHint" class="muted small"></p>
+            <p class="muted small">{{char}} and {{user}} in the prompt stand for these names.</p>
+            <div class="field-row">
+              <label class="field">
+                <span>Character name</span>
+                <input
+                  id="presetCharacterNameInput"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="{{char}}"
+                />
+              </label>
+              <label class="field">
+                <span>Your name</span>
+                <input
+                  id="presetUserNameInput"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="{{user}}"
+                />
+              </label>
+            </div>
+            <div class="drawer-actions">
+              <button id="applyPresetButton" type="button" class="button primary">
+                Apply to this chat
+              </button>
+            </div>
+          </section>
+        </div>
+        <menu class="dialog-actions">
+          <button type="submit" value="close" class="button ghost">Close</button>
         </menu>
       </form>
     </dialog>

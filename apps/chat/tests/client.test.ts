@@ -3,6 +3,7 @@ import {
   ApiError,
   VENICE_BASE_URL,
   getBalance,
+  isChatModelId,
   isVenice,
   listModels,
   streamChat,
@@ -349,6 +350,33 @@ describe("listModels traits and flags", () => {
   });
 });
 
+describe("isChatModelId", () => {
+  it("rejects embedding, speech, rerank, moderation and image generation ids", () => {
+    for (const id of [
+      "text-embedding-3-small",
+      "nomic-embed-text:latest",
+      "tts-1-hd",
+      "gpt-4o-mini-tts",
+      "whisper-1",
+      "gpt-4o-transcribe",
+      "bge-reranker-v2",
+      "omni-moderation-latest",
+      "dall-e-3",
+      "gpt-image-1",
+      "stable-diffusion-3.5",
+      "flux-dev",
+    ]) {
+      expect(isChatModelId(id), id).toBe(false);
+    }
+  });
+
+  it("keeps chat and vision models", () => {
+    for (const id of ["gpt-4o", "llava:13b", "qwen2.5vl:7b", "google/gemma-3-27b-it", "o4-mini"]) {
+      expect(isChatModelId(id), id).toBe(true);
+    }
+  });
+});
+
 describe("listModels requests", () => {
   it("asks Venice for text models only", async () => {
     const venice = fakeFetch(() => jsonResponse({ data: [] }));
@@ -358,6 +386,19 @@ describe("listModels requests", () => {
     const local = fakeFetch(() => jsonResponse({ data: [] }));
     await listModels(localSettings, { fetch: local.fetch });
     expect(local.calls[0]?.url).toBe("http://localhost:11434/v1/models");
+  });
+
+  it("calls no server while the base URL is unset", async () => {
+    const unset = fakeFetch(() => jsonResponse({ data: [{ id: "m" }] }));
+    expect(await listModels({ baseUrl: " ", apiKey: "" }, { fetch: unset.fetch })).toEqual([]);
+    expect(unset.calls).toEqual([]);
+  });
+
+  it("drops models that cannot chat on servers other than Venice", async () => {
+    const data = [{ id: "llava:13b" }, { id: "nomic-embed-text:latest" }, { id: "whisper-1" }];
+    const local = fakeFetch(() => jsonResponse({ data }));
+    const ids = (await listModels(localSettings, { fetch: local.fetch })).map((model) => model.id);
+    expect(ids).toEqual(["llava:13b"]);
   });
 
   it("sends the key as a bearer token only when one is set", async () => {
@@ -383,6 +424,24 @@ describe("listModels requests", () => {
 });
 
 describe("streamChat", () => {
+  it("refuses to send a request that names no model", async () => {
+    const { fetch: fetchImpl, calls } = fakeFetch(() => streamResponse(["data: [DONE]\n\n"]));
+    const unnamed = { ...request, model: "" };
+    await expect(
+      collect(streamChat(veniceSettings, unnamed, new AbortController().signal, fetchImpl)),
+    ).rejects.toMatchObject({ message: "Choose a model in Chat settings first." });
+    expect(calls).toEqual([]);
+  });
+
+  it("refuses to send while the base URL is unset", async () => {
+    const { fetch: fetchImpl, calls } = fakeFetch(() => streamResponse(["data: [DONE]\n\n"]));
+    const unset = { baseUrl: "", apiKey: "" };
+    await expect(
+      collect(streamChat(unset, request, new AbortController().signal, fetchImpl)),
+    ).rejects.toMatchObject({ name: "ApiError", message: "Choose an API in Settings first." });
+    expect(calls).toEqual([]);
+  });
+
   it("posts the request with auth, content type and signal", async () => {
     const { fetch: fetchImpl, calls } = fakeFetch(() => streamResponse(["data: [DONE]\n\n"]));
     const controller = new AbortController();

@@ -2,6 +2,7 @@ import type {
   Chat,
   ChatMessage,
   ChatStore,
+  Folder,
   ImageRef,
   VideoAudio,
   VideoCast,
@@ -9,7 +10,7 @@ import type {
 } from "../types";
 
 const DEFAULT_NAME = "vid2grid-chat";
-const VERSION = 4;
+const VERSION = 5;
 
 const CHATS = "chats";
 const MESSAGES = "messages";
@@ -19,6 +20,7 @@ const VIDEO_HANDLES = "videoHandles";
 const TIMELINES = "timelines";
 const CAST = "cast";
 const AUDIO = "audio";
+const FOLDERS = "folders";
 
 const BLOCKED_MESSAGE =
   "The chat database is open in an older version elsewhere. Close other vid2grid chat tabs and reload.";
@@ -60,6 +62,7 @@ function openDatabase(factory: IDBFactory, name: string): Promise<IDBDatabase> {
     if (event.oldVersion < 2) db.createObjectStore(TIMELINES, { keyPath: "fileKey" });
     if (event.oldVersion < 3) db.createObjectStore(CAST, { keyPath: "fileKey" });
     if (event.oldVersion < 4) db.createObjectStore(AUDIO, { keyPath: "fileKey" });
+    if (event.oldVersion < 5) db.createObjectStore(FOLDERS, { keyPath: "id" });
   };
   return new Promise((resolve, reject) => {
     // Another tab holding an older version open would otherwise stall the upgrade forever.
@@ -94,6 +97,10 @@ function newestFirst(a: Chat, b: Chat): number {
   return b.updatedAt - a.updatedAt;
 }
 
+function oldestFirst(a: Folder, b: Folder): number {
+  return a.createdAt - b.createdAt;
+}
+
 class IndexedDbChatStore implements ChatStore {
   constructor(private readonly db: IDBDatabase) {}
 
@@ -118,6 +125,19 @@ class IndexedDbChatStore implements ChatStore {
       const keys = messages.index(BY_CHAT).getAllKeys(id);
       keys.onsuccess = () => keys.result.forEach((key) => messages.delete(key));
     });
+  }
+
+  async listFolders(): Promise<Folder[]> {
+    const folders = await this.read<Folder[]>(FOLDERS, (store) => store.getAll());
+    return folders.sort(oldestFirst);
+  }
+
+  putFolder(folder: Folder): Promise<void> {
+    return this.write([FOLDERS], (transaction) => transaction.objectStore(FOLDERS).put(folder));
+  }
+
+  deleteFolder(id: string): Promise<void> {
+    return this.write([FOLDERS], (transaction) => transaction.objectStore(FOLDERS).delete(id));
   }
 
   async listMessages(chatId: string): Promise<ChatMessage[]> {
@@ -234,6 +254,7 @@ class IndexedDbChatStore implements ChatStore {
 
 export function createMemoryStore(): ChatStore {
   const chats = new Map<string, Chat>();
+  const folders = new Map<string, Folder>();
   const messages = new Map<string, Map<string, ChatMessage>>();
   const images = new Map<string, Blob>();
   const sheets = new Map<string, ImageRef[]>();
@@ -252,6 +273,9 @@ export function createMemoryStore(): ChatStore {
         messages.delete(id);
         handles.delete(id);
       }),
+    listFolders: () => Promise.resolve([...folders.values()].map(copy).sort(oldestFirst)),
+    putFolder: (folder) => resolved(() => folders.set(folder.id, copy(folder))),
+    deleteFolder: (id) => resolved(() => folders.delete(id)),
     listMessages: (chatId) =>
       Promise.resolve([...(messages.get(chatId)?.values() ?? [])].map(copy).sort(byCreatedAt)),
     putMessage: (chatId, message) =>

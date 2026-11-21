@@ -13,6 +13,7 @@ import type {
   Chat,
   ChatMessage,
   ChatStore,
+  Folder,
   ImageRef,
   VideoCast,
   VideoTimeline,
@@ -311,6 +312,51 @@ describe("importing malformed backups", () => {
       ),
     ).rejects.toThrow("an image is damaged");
     expect(await store.listChats()).toEqual([]);
+  });
+});
+
+describe("backups with folders", () => {
+  const trips: Folder = { id: "f1", name: "Trips", createdAt: 1, collapsed: true };
+
+  async function storeWithFolder(): Promise<ChatStore> {
+    const store = createMemoryStore();
+    await store.putFolder(trips);
+    await store.putChat(chat("filed", { folderId: trips.id }));
+    await store.putChat(chat("loose"));
+    return store;
+  }
+
+  it("round-trips folders and which folder each chat is in", async () => {
+    const backup = await backupOf(await exportBackup(await storeWithFolder()));
+    expect(backup.folders).toEqual([trips]);
+    const target = createMemoryStore();
+    await importBackup(target, await new Response(JSON.stringify(backup)).blob());
+    expect(await target.listFolders()).toEqual([trips]);
+    expect((await target.getChat("filed"))?.folderId).toBe(trips.id);
+    expect((await target.getChat("loose"))?.folderId).toBeUndefined();
+  });
+
+  it("keeps a folder already in the store", async () => {
+    const blob = await asFile(await exportBackup(await storeWithFolder()));
+    const target = createMemoryStore();
+    await target.putFolder({ ...trips, name: "Renamed" });
+    await importBackup(target, blob);
+    expect(await target.listFolders()).toEqual([{ ...trips, name: "Renamed" }]);
+  });
+
+  it("reads a backup written without folders, leaving chats in no folder", async () => {
+    const backup = await backupOf(await exportBackup(await storeWithFolder()));
+    delete backup.folders;
+    const target = createMemoryStore();
+    await importBackup(target, await new Response(JSON.stringify(backup)).blob());
+    expect(await target.listFolders()).toEqual([]);
+    expect((await target.getChat("filed"))?.folderId).toBeUndefined();
+  });
+
+  it("rejects a damaged folder", async () => {
+    const backup = await backupOf(await exportBackup(await storeWithFolder()));
+    const file = await new Response(JSON.stringify({ ...backup, folders: [{ id: 1 }] })).blob();
+    await expect(importBackup(createMemoryStore(), file)).rejects.toThrow("a folder is damaged");
   });
 });
 

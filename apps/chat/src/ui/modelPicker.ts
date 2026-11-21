@@ -1,5 +1,5 @@
 import { saveSettings, type GlobalSettings } from "../settings";
-import { setSettings, type AppState } from "../state";
+import { reportsPrivacy, setSettings, type AppState } from "../state";
 import type { ModelInfo } from "../types";
 import { resolveSheetResolution } from "../video/resolution";
 import { icon } from "./icons";
@@ -474,7 +474,7 @@ function activeId(ctx: PickerContext): string | undefined {
 
 function view(ctx: PickerContext): PickerView {
   const filters = new Set(ctx.filters);
-  if (ctx.deps.settings.privateOnly()) filters.add("private");
+  if (ctx.deps.settings.privateOnly() && reportsPrivacy(ctx.deps.models())) filters.add("private");
   return { query: ctx.query, favouritesOnly: ctx.favouritesOnly, filters, sort: ctx.sort };
 }
 
@@ -637,9 +637,11 @@ function renderList(ctx: PickerContext, activeModelId: string | undefined): void
 function renderControls(ctx: PickerContext): void {
   const { parts } = ctx;
   const filters = view(ctx).filters;
+  const privacyKnown = reportsPrivacy(ctx.deps.models());
   for (const chip of parts.filterChips.querySelectorAll<HTMLButtonElement>("[data-filter]")) {
     const name = chip.dataset.filter;
     chip.setAttribute("aria-pressed", String(isFilterName(name) && filters.has(name)));
+    chip.hidden = name === "private" && !privacyKnown;
   }
   for (const chip of parts.sortChips.querySelectorAll<HTMLButtonElement>("[data-sort]")) {
     chip.setAttribute("aria-checked", String(chip.dataset.sort === ctx.sort));

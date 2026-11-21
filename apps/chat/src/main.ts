@@ -7,10 +7,13 @@ import { loadSettings, type GlobalSettings } from "./settings";
 import {
   addPending,
   createAppState,
+  currentModel,
+  defaultModelId,
   setChats,
   setCurrentChat,
   setModels,
   setModelsError,
+  updateChat,
   upsertMessage,
   type AppState,
 } from "./state";
@@ -120,7 +123,7 @@ function conversationDeps(app: () => App, store: ChatStore, state: AppState): Co
     onPrefill: (text) => app().composer.prefill(text),
     focusComposer: () => app().composer.focus(),
     models: () => state.models,
-    chatModelId: () => state.currentChat?.settings.modelId,
+    chatModelId: () => currentModel(state)?.id,
     pickerSettings: storedPickerSettings(state),
     onSwitchReply: (user, index) =>
       surface(app(), "switch the reply", app().actions.switchReply(user, index)),
@@ -189,7 +192,6 @@ function videoDeps(app: () => App, store: ChatStore, status: StatusLine): VideoP
   return {
     store,
     status,
-    confirm,
     onChatChanged: () => app().refresh(),
     onVideoChanged: () => app().refresh(),
     onOverviewProgress: () => app().composer.updateProgress(),
@@ -197,7 +199,8 @@ function videoDeps(app: () => App, store: ChatStore, status: StatusLine): VideoP
     studyStatus: () => app().study.status(),
     copyStatus: (fileKey) => app().copies.status(fileKey),
     loadCopy: (fileKey) => app().copies.load(fileKey),
-    onAttached: (file, video, replaced) => {
+    onAttached: (file, video) => app().copies.approve(file, video.fileKey),
+    onCommitted: (file, video, replaced) => {
       app().copies.save(file, video.fileKey);
       if (!replaced) return;
       app().study.render();
@@ -420,6 +423,7 @@ function wire(els: AppElements, state: AppState, store: ChatStore, status: Statu
 }
 
 function onPendingChanged(app: App): void {
+  app.video.render();
   app.usage.render();
   app.welcome.render();
 }
@@ -463,7 +467,9 @@ async function openChat(app: App, chatId: string): Promise<void> {
   if (!chat) return;
   const messages = await store.listMessages(chatId);
   setCurrentChat(state, chat, messages);
+  fillChatModel(app);
   app.conversation.reset(messages);
+  app.conversation.setRunning(state.running);
   app.status.clear();
   app.refresh();
   await app.video.restore();
@@ -489,13 +495,14 @@ async function openFallbackChat(app: App): Promise<void> {
 }
 
 function shouldLoadModels(settings: GlobalSettings): boolean {
-  return settings.apiKey !== "" || !isVenice(settings.baseUrl);
+  return settings.baseUrl.trim() !== "" && (settings.apiKey !== "" || !isVenice(settings.baseUrl));
 }
 
 async function loadModels(app: App, settings: GlobalSettings): Promise<readonly ModelInfo[]> {
   try {
     const models = await listModels(settings, { fallbackMaxImages: settings.fallbackMaxImages });
     setModels(app.state, models);
+    fillChatModel(app);
     return models;
   } catch (error) {
     setModelsError(app.state, errorText(error));
@@ -511,6 +518,22 @@ function loadModelsInBackground(app: App): void {
   });
 }
 
+// A chat made before the models loaded takes the default once there is one, so requests name a model.
+function fillChatModel(app: App): void {
+  const chat = app.state.currentChat;
+  if (!chat || chat.settings.modelId !== "" || app.state.models.length === 0) return;
+  const modelId = defaultModelId(app.state);
+  if (modelId === "") return;
+  updateChat(app.state, app.store, chat.id, (latest) => ({
+    ...latest,
+    settings: { ...latest.settings, modelId: latest.settings.modelId || modelId },
+  })).then(
+    () => app.refresh(),
+    (error: unknown) =>
+      app.status.show(`Could not save the chat's model: ${errorText(error)}`, "error"),
+  );
+}
+
 function onSettingsSaved(app: App, previous: GlobalSettings): void {
   const { settings } = app.state;
   const apiChanged =
@@ -518,6 +541,7 @@ function onSettingsSaved(app: App, previous: GlobalSettings): void {
     settings.baseUrl !== previous.baseUrl ||
     settings.fallbackMaxImages !== previous.fallbackMaxImages;
   if (apiChanged) refreshBalance(app);
+  if (settings.baseUrl === "") setModels(app.state, []);
   if (apiChanged && shouldLoadModels(settings)) loadModelsInBackground(app);
   else app.refresh();
 }

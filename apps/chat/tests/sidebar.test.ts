@@ -11,9 +11,21 @@ import {
   setCurrentChat,
   type AppState,
 } from "../src/state";
-import type { Chat, ChatStore, VideoAttachment } from "../src/types";
-import { groupChats, initSidebar, matchesSearch, type SidebarDeps } from "../src/ui/sidebar";
+import type { Chat, ChatStore, Folder, VideoAttachment } from "../src/types";
+import {
+  groupChats,
+  initSidebar,
+  matchesSearch,
+  sectionChats,
+  type SidebarDeps,
+} from "../src/ui/sidebar";
 import { initToast } from "../src/ui/toast";
+
+const SETTINGS = {
+  ...DEFAULT_SETTINGS,
+  baseUrl: "http://localhost:1234/v1",
+  defaultModelId: "qwen3-6-27b",
+};
 
 let els: AppElements;
 let state: AppState;
@@ -77,7 +89,7 @@ function readText(blob: Blob): Promise<string> {
 }
 
 function chatAt(id: string, updatedAt: number, extra: Partial<Chat> = {}): Chat {
-  return { ...blankChat(DEFAULT_SETTINGS.defaultModelId, id, updatedAt), ...extra };
+  return { ...blankChat(SETTINGS.defaultModelId, id, updatedAt), ...extra };
 }
 
 async function seed(
@@ -86,7 +98,7 @@ async function seed(
   title: string,
   extra: Partial<Chat> = {},
 ): Promise<void> {
-  const chat = { ...blankChat(DEFAULT_SETTINGS.defaultModelId, id, updatedAt), title, ...extra };
+  const chat = { ...blankChat(SETTINGS.defaultModelId, id, updatedAt), title, ...extra };
   await store.putChat(chat);
   setChats(state, await store.listChats());
 }
@@ -94,7 +106,7 @@ async function seed(
 beforeEach(() => {
   document.body.innerHTML = indexHtml;
   els = queryElements();
-  state = createAppState(DEFAULT_SETTINGS);
+  state = createAppState(SETTINGS);
   store = createMemoryStore();
   let next = 0;
   spies = makeSpies();
@@ -377,5 +389,290 @@ describe("exporting a chat as Markdown", () => {
     await vi.waitFor(() =>
       expect(els.toast.text.textContent).toBe("Could not export the chat: Disk gone"),
     );
+  });
+});
+
+const TRIPS: Folder = { id: "trips", name: "Trips", createdAt: 1 };
+const COOKING: Folder = { id: "cooking", name: "Cooking", createdAt: 2 };
+
+function folderFor(folderId: string): HTMLElement {
+  const item = els.sidebar.chatList.querySelector<HTMLElement>(`[data-folder-id="${folderId}"]`);
+  if (!item) throw new Error(`No folder for ${folderId}`);
+  return item;
+}
+
+function folderNames(): string[] {
+  return [...els.sidebar.chatList.querySelectorAll(".chat-folder-name")].map(
+    (el) => el.textContent ?? "",
+  );
+}
+
+function titlesIn(root: HTMLElement): string[] {
+  return [...root.querySelectorAll(".chat-open")].map((el) => el.textContent ?? "");
+}
+
+function renameInput(root: HTMLElement): HTMLInputElement {
+  const input = root.querySelector<HTMLInputElement>(".chat-rename-input");
+  if (!input) throw new Error("No rename input");
+  return input;
+}
+
+function moveOption(chatId: string, label: string): HTMLButtonElement {
+  click(itemFor(chatId), ".chat-move-button");
+  const option = [...itemFor(chatId).querySelectorAll<HTMLButtonElement>(".chat-move-option")].find(
+    (el) => el.textContent === label,
+  );
+  if (!option) throw new Error(`No move option ${label}`);
+  return option;
+}
+
+function drag(chatId: string, onto: HTMLElement): void {
+  itemFor(chatId).dispatchEvent(new Event("dragstart", { bubbles: true }));
+  onto.dispatchEvent(new Event("dragover", { bubbles: true, cancelable: true }));
+  onto.dispatchEvent(new Event("drop", { bubbles: true, cancelable: true }));
+}
+
+async function withFolders(...folders: Folder[]): Promise<void> {
+  for (const folder of folders) await store.putFolder(folder);
+  initSidebar(els, state, deps);
+  await vi.waitFor(() => expect(folderNames()).toHaveLength(folders.length));
+}
+
+describe("sectioning chats into folders", () => {
+  it("puts filed chats under their folder, by name, and the rest under date groups", () => {
+    const chats = [
+      chatAt("pasta", NOW - 1000, { folderId: COOKING.id }),
+      chatAt("beach", NOW - 2000, { folderId: TRIPS.id }),
+      chatAt("orphan", NOW - 3000, { folderId: "gone" }),
+      chatAt("loose", NOW - 5 * DAY),
+    ];
+    const { folders, groups } = sectionChats(chats, [TRIPS, COOKING], "", NOW);
+    expect(
+      folders.map(({ folder, chats: inside }) => [folder.id, inside.map((c) => c.id)]),
+    ).toEqual([
+      ["cooking", ["pasta"]],
+      ["trips", ["beach"]],
+    ]);
+    expect(groups.map((group) => [group.label, group.chats.map((c) => c.id)])).toEqual([
+      ["Today", ["orphan"]],
+      ["Previous 7 days", ["loose"]],
+    ]);
+  });
+
+  it("expands every folder with a match while searching and hides the rest", () => {
+    const chats = [chatAt("beach", 1, { title: "Beach", folderId: TRIPS.id })];
+    const collapsed = { ...TRIPS, collapsed: true };
+    expect(sectionChats(chats, [collapsed, COOKING], "", NOW).folders).toEqual([
+      { folder: COOKING, chats: [], expanded: true },
+      { folder: collapsed, chats, expanded: false },
+    ]);
+    expect(sectionChats(chats, [collapsed, COOKING], "bea", NOW).folders).toEqual([
+      { folder: collapsed, chats, expanded: true },
+    ]);
+  });
+});
+
+describe("folders in the sidebar", () => {
+  it("creates a folder and names it inline", async () => {
+    initSidebar(els, state, deps);
+    els.sidebar.newFolderButton.click();
+    await vi.waitFor(() => expect(folderNames()).toEqual([]));
+    const input = renameInput(folderFor("chat-1"));
+    expect(input.value).toBe("New folder");
+    input.value = "Trips";
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await vi.waitFor(() => expect(folderNames()).toEqual(["Trips"]));
+    expect(await store.listFolders()).toEqual([{ id: "chat-1", name: "Trips", createdAt: 101 }]);
+  });
+
+  it("shows folders above the date groups with their chats newest first", async () => {
+    await seed("old", 1, "Old beach", { folderId: TRIPS.id });
+    await seed("new", 3, "New beach", { folderId: TRIPS.id });
+    await seed("loose", 2, "Loose");
+    await withFolders(TRIPS);
+    expect(titlesIn(folderFor("trips"))).toEqual(["New beach", "Old beach"]);
+    expect(titles()).toEqual(["New beach", "Old beach", "Loose"]);
+    expect(groupTitles()).toEqual(["Today"]);
+  });
+
+  it("collapses a folder and remembers it", async () => {
+    await seed("a", 1, "Beach", { folderId: TRIPS.id });
+    await withFolders(TRIPS);
+    click(folderFor("trips"), ".chat-folder-toggle");
+    await vi.waitFor(() =>
+      expect(folderFor("trips").querySelector(".chat-folder-list")?.hasAttribute("hidden")).toBe(
+        true,
+      ),
+    );
+    const toggle = folderFor("trips").querySelector(".chat-folder-toggle");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    expect((await store.listFolders())[0]?.collapsed).toBe(true);
+  });
+});
+
+describe("moving chats between folders", () => {
+  it("moves a chat into a folder and out again from its Move to menu", async () => {
+    await seed("a", 1, "Beach");
+    await withFolders(TRIPS, COOKING);
+    const option = moveOption("a", "Trips");
+    expect(option.getAttribute("role")).toBe("menuitemradio");
+    option.click();
+    await vi.waitFor(() => expect(titlesIn(folderFor("trips"))).toEqual(["Beach"]));
+    expect((await store.getChat("a"))?.folderId).toBe("trips");
+    expect(moveOption("a", "Trips").getAttribute("aria-checked")).toBe("true");
+    const noFolder = [
+      ...itemFor("a").querySelectorAll<HTMLButtonElement>(".chat-move-option"),
+    ].find((el) => el.textContent === "No folder");
+    noFolder?.click();
+    await vi.waitFor(() => expect(titlesIn(folderFor("trips"))).toEqual([]));
+    expect((await store.getChat("a"))?.folderId).toBeUndefined();
+  });
+});
+
+describe("closing the Move to menu", () => {
+  it("moves the chat even when removing the focused menu fires focusout", async () => {
+    await seed("a", 1, "Beach");
+    await withFolders(TRIPS);
+    let dispatching = false;
+    // A browser fires focusout while removing the focused menu, then fails on a node already gone.
+    const remove = vi.spyOn(Element.prototype, "remove").mockImplementation(function (
+      this: Element,
+    ) {
+      if (!this.classList.contains("chat-move-menu")) {
+        this.parentNode?.removeChild(this);
+        return;
+      }
+      if (!dispatching) {
+        dispatching = true;
+        this.parentElement?.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+        dispatching = false;
+      }
+      if (!this.parentNode) throw new DOMException("The node to be removed is no longer a child");
+      this.parentNode.removeChild(this);
+    });
+    moveOption("a", "Trips").click();
+    await vi.waitFor(() => expect(titlesIn(folderFor("trips"))).toEqual(["Beach"]));
+    expect((await store.getChat("a"))?.folderId).toBe("trips");
+    remove.mockRestore();
+  });
+
+  it("closes the Move to menu on Escape", async () => {
+    await seed("a", 1, "Beach");
+    await withFolders(TRIPS);
+    const option = moveOption("a", "Trips");
+    option.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(itemFor("a").querySelector(".chat-move-menu")).toBeNull();
+  });
+
+  it("offers no Move to action while there are no folders", async () => {
+    await seed("a", 1, "Beach");
+    initSidebar(els, state, deps);
+    expect(itemFor("a").querySelector(".chat-move-button")).toBeNull();
+  });
+
+  it("moves a dragged chat into a folder and back out onto the list", async () => {
+    await seed("a", 1, "Beach");
+    await withFolders(TRIPS);
+    drag("a", folderFor("trips"));
+    await vi.waitFor(() => expect(titlesIn(folderFor("trips"))).toEqual(["Beach"]));
+    drag("a", els.sidebar.chatList);
+    await vi.waitFor(() => expect(titlesIn(folderFor("trips"))).toEqual([]));
+    expect((await store.getChat("a"))?.folderId).toBeUndefined();
+  });
+});
+
+describe("folder actions", () => {
+  it("renames a folder inline", async () => {
+    await withFolders(TRIPS);
+    click(folderFor("trips"), ".folder-rename");
+    const input = renameInput(folderFor("trips"));
+    input.value = "Holidays";
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await vi.waitFor(() => expect(folderNames()).toEqual(["Holidays"]));
+    expect((await store.listFolders())[0]?.name).toBe("Holidays");
+  });
+
+  it("deletes a folder, keeping its chats, and puts it back on Undo", async () => {
+    await seed("a", 1, "Beach", { folderId: TRIPS.id });
+    await withFolders(TRIPS);
+    click(folderFor("trips"), ".folder-delete");
+    await vi.waitFor(() => expect(els.toast.text.textContent).toBe('Deleted folder "Trips"'));
+    expect(folderNames()).toEqual([]);
+    expect(titles()).toEqual(["Beach"]);
+    expect(await store.listFolders()).toEqual([]);
+    expect((await store.getChat("a"))?.folderId).toBeUndefined();
+    els.toast.action.click();
+    await vi.waitFor(() => expect(titlesIn(folderFor("trips"))).toEqual(["Beach"]));
+    expect(await store.listFolders()).toEqual([TRIPS]);
+    expect((await store.getChat("a"))?.folderId).toBe("trips");
+  });
+});
+
+describe("deleting a folder that fails part way", () => {
+  it("puts every chat back in the folder and keeps it when a move fails", async () => {
+    await seed("a", 2, "Beach", { folderId: TRIPS.id });
+    await seed("b", 1, "Dunes", { folderId: TRIPS.id });
+    await withFolders(TRIPS);
+    const putChat = store.putChat.bind(store);
+    let calls = 0;
+    store.putChat = (chat) => {
+      calls += 1;
+      return calls === 2 ? Promise.reject(new Error("Disk full")) : putChat(chat);
+    };
+    click(folderFor("trips"), ".folder-delete");
+    await vi.waitFor(() =>
+      expect(els.toast.text.textContent).toBe("Could not delete the folder: Disk full"),
+    );
+    expect(await store.listFolders()).toEqual([TRIPS]);
+    expect((await store.getChat("a"))?.folderId).toBe("trips");
+    expect((await store.getChat("b"))?.folderId).toBe("trips");
+    expect(titlesIn(folderFor("trips"))).toEqual(["Beach", "Dunes"]);
+  });
+
+  it("puts the chats back when the folder itself cannot be deleted", async () => {
+    await seed("a", 1, "Beach", { folderId: TRIPS.id });
+    await withFolders(TRIPS);
+    store.deleteFolder = () => Promise.reject(new Error("Disk full"));
+    click(folderFor("trips"), ".folder-delete");
+    await vi.waitFor(() =>
+      expect(els.toast.text.textContent).toBe("Could not delete the folder: Disk full"),
+    );
+    expect(folderNames()).toEqual(["Trips"]);
+    expect((await store.getChat("a"))?.folderId).toBe("trips");
+  });
+});
+
+describe("folders with search, new chats and restores", () => {
+  it("searches inside folders, showing matches under their folder and hiding empty ones", async () => {
+    await seed("a", 2, "Beach", { folderId: TRIPS.id });
+    await seed("b", 1, "Pasta", { folderId: COOKING.id });
+    await withFolders({ ...TRIPS, collapsed: true }, COOKING);
+    const search = els.sidebar.searchInput;
+    search.value = "beach";
+    search.dispatchEvent(new Event("input"));
+    expect(folderNames()).toEqual(["Trips"]);
+    expect(titlesIn(folderFor("trips"))).toEqual(["Beach"]);
+    expect(folderFor("trips").querySelector(".chat-folder-list")?.hasAttribute("hidden")).toBe(
+      false,
+    );
+  });
+
+  it("puts a new chat in no folder even when a filed chat is open", async () => {
+    await seed("a", 1, "Beach", { folderId: TRIPS.id });
+    const hello = { id: "m", createdAt: 1, role: "user" as const, text: "hi", images: [] };
+    await store.putMessage("a", hello);
+    setCurrentChat(state, state.chats[0] ?? null, [hello]);
+    await withFolders(TRIPS);
+    els.sidebar.newChatButton.click();
+    await vi.waitFor(() => expect(spies.onOpen).toHaveBeenCalledWith("chat-1"));
+    expect((await store.getChat("chat-1"))?.folderId).toBeUndefined();
+    expect(titlesIn(folderFor("trips"))).toEqual(["Beach"]);
+  });
+
+  it("picks up folders added to the store, as a restore does, on the next render", async () => {
+    const sidebar = initSidebar(els, state, deps);
+    await store.putFolder(TRIPS);
+    sidebar.render();
+    await vi.waitFor(() => expect(folderNames()).toEqual(["Trips"]));
   });
 });

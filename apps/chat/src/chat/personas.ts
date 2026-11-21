@@ -1,4 +1,5 @@
 import type { ChatSettings, VideoReferences, Voice } from "../types";
+import { effectiveVideoReferences } from "./history";
 
 const STORAGE_KEY = "vid2grid-chat-personas";
 const VOICES: readonly Voice[] = ["analyst", "character", "narrator"];
@@ -91,19 +92,84 @@ function characterFields({
   };
 }
 
+export function withName<T extends CharacterFields>(
+  fields: T,
+  key: "characterName" | "userName",
+  raw: string,
+): T {
+  const next = { ...fields };
+  const name = raw.trim();
+  if (name === "") delete next[key];
+  else next[key] = name;
+  return next;
+}
+
+// Left unset, the choice keeps following the voice's default.
+export function withVideoReferences<T extends CharacterFields>(
+  fields: T,
+  references: VideoReferences,
+): T {
+  if (fields.videoReferences === undefined && references === effectiveVideoReferences(fields)) {
+    return fields;
+  }
+  return { ...fields, videoReferences: references };
+}
+
 export function personaFromChat(
   settings: ChatSettings,
-  name = settings.characterName ?? "Untitled persona",
+  name = settings.characterName ?? "Untitled preset",
   id: string = crypto.randomUUID(),
 ): Persona {
   return { id, name, systemPrompt: settings.systemPrompt, ...characterFields(settings) };
 }
 
+function withoutPresetFields(settings: ChatSettings): ChatSettings {
+  const rest = { ...settings };
+  delete rest.characterName;
+  delete rest.userName;
+  delete rest.voice;
+  delete rest.videoReferences;
+  delete rest.presetId;
+  return rest;
+}
+
 export function applyPersona(settings: ChatSettings, persona: Persona): ChatSettings {
-  const applied: ChatSettings = { ...settings, systemPrompt: persona.systemPrompt };
-  delete applied.characterName;
-  delete applied.userName;
-  delete applied.voice;
-  delete applied.videoReferences;
-  return { ...applied, ...characterFields(persona) };
+  return {
+    ...withoutPresetFields(settings),
+    systemPrompt: persona.systemPrompt,
+    ...characterFields(persona),
+    presetId: persona.id,
+  };
+}
+
+export function restorePresetFields(settings: ChatSettings, before: ChatSettings): ChatSettings {
+  return {
+    ...withoutPresetFields(settings),
+    systemPrompt: before.systemPrompt,
+    ...characterFields(before),
+    ...(before.presetId !== undefined && { presetId: before.presetId }),
+  };
+}
+
+// Compares what the fields mean, so an unset voice matches an explicit Analyst.
+export function personaMatches(persona: Persona, settings: ChatSettings): boolean {
+  return (
+    persona.systemPrompt === settings.systemPrompt &&
+    (persona.characterName ?? "") === (settings.characterName ?? "") &&
+    (persona.userName ?? "") === (settings.userName ?? "") &&
+    (persona.voice ?? "analyst") === (settings.voice ?? "analyst") &&
+    effectiveVideoReferences(persona) === effectiveVideoReferences(settings)
+  );
+}
+
+// A blank prompt matches nothing, so a new chat never looks like it came from a preset.
+export function chatPersona(
+  settings: ChatSettings,
+  personas: readonly Persona[],
+): Persona | undefined {
+  if (settings.presetId !== undefined) {
+    return personas.find((persona) => persona.id === settings.presetId);
+  }
+  if (settings.systemPrompt.trim() === "") return undefined;
+  return personas.find((persona) => personaMatches(persona, settings));
 }

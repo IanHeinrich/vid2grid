@@ -2,7 +2,7 @@ import { mergeCast, suggestCast } from "../chat/cast";
 import { blobToDataUrl } from "../chat/dataUrl";
 import { latestOverview } from "../chat/history";
 import type { AppElements } from "../dom";
-import { currentPending, type AppState } from "../state";
+import { chatModelId, currentPending, type AppState } from "../state";
 import { errorText } from "../text";
 import { formatTimestamp, parseTimestamp } from "../time";
 import type {
@@ -214,7 +214,7 @@ async function suggest(ctx: CastContext): Promise<void> {
     }
     return suggestCast(
       {
-        ...modelCallDeps(ctx.state, ctx.deps.streamChat, chat.settings.modelId, signal),
+        ...modelCallDeps(ctx.state, ctx.deps.streamChat, chatModelId(ctx.state, chat), signal),
         ...(ctx.deps.newId ? { newId: ctx.deps.newId } : {}),
       },
       { overview, sceneLog: chat.sceneLog, durationSeconds: video.durationSeconds },

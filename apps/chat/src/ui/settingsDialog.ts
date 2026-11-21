@@ -1,18 +1,25 @@
+import { isVenice } from "../api/client";
 import { DEEP_MAX_ROUNDS as MAX_ROUNDS_LIMIT } from "../chat/agentLoop";
 import { applyPersonaNames, effectiveVideoReferences } from "../chat/history";
 import {
   applyPersona,
-  deletePersona,
+  chatPersona,
   listPersonas,
   personaFromChat,
+  personaMatches,
+  restorePresetFields,
   savePersona,
+  withName,
+  withVideoReferences,
   type Persona,
 } from "../chat/personas";
 import type { AppElements } from "../dom";
 import {
   DEFAULT_BACKGROUND_SOUND_LABELS,
   DEFAULT_SOUND_LABELS,
+  keyFor,
   saveSettings,
+  withKey,
   type GlobalSettings,
 } from "../settings";
 import {
@@ -35,6 +42,7 @@ import type {
 } from "../types";
 import { resolveSheetResolution } from "../video/resolution";
 import { createModelPicker, storedPickerSettings, type ModelPicker } from "./modelPicker";
+import { initPresetManager, VOICE_HINTS, type PresetManager } from "./presetManager";
 import type { Toast } from "./toast";
 
 export interface SettingsDialog {
@@ -121,6 +129,48 @@ function initDefaultModelChoice(
   return { id: () => chosenModelId, fill, refill, close: () => picker.close() };
 }
 
+function renderPrivacyOption(dlg: AppElements["settingsDialog"]): void {
+  const option = dlg.privateOnlyInput.closest("label");
+  if (option) option.hidden = !isVenice(dlg.baseUrlInput.value);
+}
+
+// The key field always holds the key for the base URL shown, so a key is never tested against another host.
+interface KeyMemory {
+  reset(settings: GlobalSettings): void;
+  follow(): void;
+  keys(): Record<string, string>;
+}
+
+function initKeyMemory(dlg: AppElements["settingsDialog"]): KeyMemory {
+  let keys: Record<string, string> = {};
+  let keyUrl = "";
+  return {
+    reset: (settings) => {
+      keys = { ...settings.apiKeys };
+      keyUrl = settings.baseUrl;
+    },
+    follow: () => {
+      keys = withKey(keys, keyUrl, dlg.apiKeyInput.value.trim());
+      keyUrl = dlg.baseUrlInput.value;
+      dlg.apiKeyInput.value = keyFor(keys, keyUrl);
+    },
+    keys: () => keys,
+  };
+}
+
+function listenToBaseUrl(dlg: AppElements["settingsDialog"], memory: KeyMemory): void {
+  dlg.baseUrlInput.addEventListener("input", () => renderPrivacyOption(dlg));
+  dlg.baseUrlInput.addEventListener("change", () => memory.follow());
+  dlg.form.addEventListener("click", (event) => {
+    const fill = event.target instanceof Element ? event.target.closest("[data-base-url]") : null;
+    if (!(fill instanceof HTMLElement)) return;
+    dlg.baseUrlInput.value = fill.dataset["baseUrl"] ?? "";
+    memory.follow();
+    renderPrivacyOption(dlg);
+    dlg.apiKeyInput.focus();
+  });
+}
+
 export function initSettingsDialog(
   els: Pick<AppElements, "settingsDialog" | "templates">,
   state: AppState,
@@ -128,9 +178,11 @@ export function initSettingsDialog(
 ): SettingsDialog {
   const dlg = els.settingsDialog;
   const defaultModel = initDefaultModelChoice(els, state, deps.storage);
+  const memory = initKeyMemory(dlg);
+  listenToBaseUrl(dlg, memory);
   dlg.refreshModelsButton.addEventListener("click", () => {
     dlg.modelsStatus.textContent = "Loading models…";
-    deps.loadModels(readForm(dlg, state.settings, defaultModel.id())).then(
+    deps.loadModels(readForm(dlg, state.settings, defaultModel.id(), memory.keys())).then(
       () => {
         defaultModel.refill();
         dlg.modelsStatus.textContent = visionCountText(state, dlg.privateOnlyInput.checked);
@@ -147,7 +199,7 @@ export function initSettingsDialog(
     defaultModel.close();
     if (dlg.dialog.returnValue !== "save") return;
     const previous = state.settings;
-    const settings = readForm(dlg, previous, defaultModel.id());
+    const settings = readForm(dlg, previous, defaultModel.id(), memory.keys());
     saveSettings(settings, deps.storage);
     setSettings(state, settings);
     deps.onSaved(previous);
@@ -155,9 +207,11 @@ export function initSettingsDialog(
   return {
     open: () => {
       const { settings } = state;
+      memory.reset(settings);
       dlg.apiKeyInput.value = settings.apiKey;
       dlg.baseUrlInput.value = settings.baseUrl;
       dlg.privateOnlyInput.checked = settings.privateOnly;
+      renderPrivacyOption(dlg);
       dlg.showThinkingInput.checked = settings.showThinking;
       dlg.keepCopiesInput.checked = settings.keepVideoCopies;
       dlg.askAboveInput.value = String(Math.round((settings.askAboveBytes / GIB) * 10) / 10);
@@ -176,12 +230,16 @@ function readForm(
   dlg: AppElements["settingsDialog"],
   previous: GlobalSettings,
   defaultModelId: string,
+  keys: Readonly<Record<string, string>>,
 ): GlobalSettings {
   const fallbackMaxImages = Number(dlg.fallbackMaxImagesInput.value);
+  const apiKey = dlg.apiKeyInput.value.trim();
+  const baseUrl = dlg.baseUrlInput.value.trim();
   return {
     favouriteModels: previous.favouriteModels,
-    apiKey: dlg.apiKeyInput.value.trim(),
-    baseUrl: dlg.baseUrlInput.value.trim() || previous.baseUrl,
+    apiKey,
+    baseUrl,
+    apiKeys: withKey(keys, baseUrl, apiKey),
     privateOnly: dlg.privateOnlyInput.checked,
     showThinking: dlg.showThinkingInput.checked,
     keepVideoCopies: dlg.keepCopiesInput.checked,
@@ -209,7 +267,6 @@ export interface ChatSettingsDeps {
   toast: Toast;
   onChanged(): void;
   onError(message: string): void;
-  askName?: (suggested: string) => string | null;
   storage?: Storage;
 }
 
@@ -218,18 +275,12 @@ interface ChatSettingsContext {
   state: AppState;
   deps: ChatSettingsDeps;
   picker: ModelPicker;
-  personaId: string;
+  presets: PresetManager;
   renderedChatId: string | undefined;
   saving: Promise<void>;
 }
 
 const VOICES: readonly Voice[] = ["analyst", "character", "narrator"];
-
-export const VOICE_HINTS: Record<Voice, string> = {
-  analyst: "Plain, direct answers about what the video shows.",
-  character: "Stays in character, as if what the video shows happened in the scene.",
-  narrator: "Tells what happens as third-person prose.",
-};
 
 const VIDEO_REFERENCES: readonly VideoReferences[] = ["free", "few", "none"];
 
@@ -237,7 +288,7 @@ const EARLIER_IMAGES: readonly EarlierImages[] = ["describe", "send"];
 const DEFAULT_EARLIER_IMAGES: EarlierImages = "describe";
 
 export function initChatSettings(
-  els: Pick<AppElements, "header" | "chatSettings" | "templates">,
+  els: Pick<AppElements, "header" | "chatSettings" | "templates" | "presetManager">,
   state: AppState,
   deps: ChatSettingsDeps,
 ): ChatSettingsPanel {
@@ -249,12 +300,17 @@ export function initChatSettings(
       { mount: els.chatSettings.modelPicker, ...els.templates },
       {
         models: () => state.models,
-        current: () => state.currentChat?.settings.modelId,
+        current: () => currentModel(state)?.id,
         onPick: (id) => change(ctx, (settings) => withModel(ctx, settings, id)),
         settings: storedPickerSettings(state, deps.storage),
       },
     ),
-    personaId: "",
+    presets: initPresetManager(els, {
+      toast: deps.toast,
+      storage: deps.storage ?? localStorage,
+      onApply: (persona) => applyWithUndo(ctx, persona, `Applied ${persona.name}`),
+      onChanged: () => renderPresets(ctx),
+    }),
     renderedChatId: undefined,
     saving: Promise.resolve(),
   };
@@ -312,26 +368,6 @@ function readVideoReferences(panel: AppElements["chatSettings"]): VideoReference
   return VIDEO_REFERENCES.find((known) => known === panel.videoReferencesSelect.value);
 }
 
-// Left unset, the choice keeps following the voice's default.
-function withVideoReferences(settings: ChatSettings, references: VideoReferences): ChatSettings {
-  if (settings.videoReferences === undefined && references === effectiveVideoReferences(settings)) {
-    return settings;
-  }
-  return { ...settings, videoReferences: references };
-}
-
-function withName(
-  settings: ChatSettings,
-  key: "characterName" | "userName",
-  raw: string,
-): ChatSettings {
-  const next = { ...settings };
-  const name = raw.trim();
-  if (name === "") delete next[key];
-  else next[key] = name;
-  return next;
-}
-
 // Changes save on blur, so a preset saved straight after typing reads the form, not the chat.
 function formSettings(ctx: ChatSettingsContext, settings: ChatSettings): ChatSettings {
   const panel = ctx.els.chatSettings;
@@ -346,79 +382,69 @@ function formSettings(ctx: ChatSettingsContext, settings: ChatSettings): ChatSet
 
 function listenToPresets(ctx: ChatSettingsContext): void {
   const panel = ctx.els.chatSettings;
-  panel.personaSelect.addEventListener("change", () => applySaved(ctx, panel.personaSelect.value));
+  panel.personaSelect.addEventListener("change", () => pickPreset(ctx, panel.personaSelect.value));
   panel.savePersonaButton.addEventListener("click", () => saveAsPersona(ctx));
-  panel.updatePersonaButton.addEventListener("click", () => updatePersona(ctx));
-  panel.deletePersonaButton.addEventListener("click", () => removePersona(ctx));
+  panel.managePresetsButton.addEventListener("click", () =>
+    ctx.presets.open({ presetId: shownPersona(ctx)?.id }),
+  );
+  panel.updatePresetButton.addEventListener("click", () => updatePersona(ctx));
+  panel.revertPresetButton.addEventListener("click", () => {
+    const persona = shownPersona(ctx);
+    if (persona) applyWithUndo(ctx, persona, `Reverted to ${persona.name}`);
+  });
 }
 
 function personaStorage(ctx: ChatSettingsContext): Storage {
   return ctx.deps.storage ?? localStorage;
 }
 
-function selectedPersona(ctx: ChatSettingsContext): Persona | undefined {
-  return listPersonas(personaStorage(ctx)).find((persona) => persona.id === ctx.personaId);
+function shownPersona(ctx: ChatSettingsContext): Persona | undefined {
+  const chat = ctx.state.currentChat;
+  return chat ? chatPersona(chat.settings, listPersonas(personaStorage(ctx))) : undefined;
 }
 
-function applySaved(ctx: ChatSettingsContext, id: string): void {
-  ctx.personaId = id;
-  const persona = selectedPersona(ctx);
+function pickPreset(ctx: ChatSettingsContext, id: string): void {
+  if (id === "") {
+    change(ctx, (settings) => ({ ...settings, presetId: "" }));
+    return;
+  }
+  const persona = listPersonas(personaStorage(ctx)).find((entry) => entry.id === id);
+  if (persona) applyWithUndo(ctx, persona, `Applied ${persona.name}`);
+}
+
+function applyWithUndo(ctx: ChatSettingsContext, persona: Persona, message: string): void {
   const chat = ctx.state.currentChat;
-  renderPresets(ctx);
-  if (!persona || !chat) return;
-  const before = personaFromChat(chat.settings, "", "");
+  if (!chat) return;
+  const before = chat.settings;
   change(ctx, (settings) => applyPersona(settings, persona));
-  ctx.deps.toast.show(`Applied ${persona.name}`, {
+  ctx.deps.toast.show(message, {
     label: "Undo",
     run: () => {
       if (ctx.state.currentChat?.id !== chat.id) return;
-      change(ctx, (settings) => applyPersona(settings, before));
+      change(ctx, (settings) => restorePresetFields(settings, before));
     },
   });
-}
-
-function askName(suggested: string): string | null {
-  return window.prompt("Name this preset", suggested);
 }
 
 function saveAsPersona(ctx: ChatSettingsContext): void {
   const chat = ctx.state.currentChat;
   if (!chat) return;
-  const settings = formSettings(ctx, chat.settings);
-  const name = (ctx.deps.askName ?? askName)(settings.characterName ?? "")?.trim();
-  if (!name) return;
-  const persona = personaFromChat(settings, name);
+  const persona = personaFromChat(formSettings(ctx, chat.settings));
   savePersona(persona, personaStorage(ctx));
-  ctx.personaId = persona.id;
-  renderPresets(ctx);
-  ctx.deps.toast.show(`Saved preset ${name}`);
+  change(ctx, (settings) => applyPersona(settings, persona));
+  ctx.presets.open({ presetId: persona.id, focusName: true });
 }
 
 function updatePersona(ctx: ChatSettingsContext): void {
   const chat = ctx.state.currentChat;
-  const persona = selectedPersona(ctx);
+  const persona = shownPersona(ctx);
   if (!chat || !persona) return;
   savePersona(
     personaFromChat(formSettings(ctx, chat.settings), persona.name, persona.id),
     personaStorage(ctx),
   );
-  ctx.deps.toast.show(`Updated preset ${persona.name}`);
-}
-
-function removePersona(ctx: ChatSettingsContext): void {
-  const persona = selectedPersona(ctx);
-  if (!persona) return;
-  deletePersona(persona.id, personaStorage(ctx));
-  ctx.personaId = "";
   renderPresets(ctx);
-  ctx.deps.toast.show(`Deleted preset ${persona.name}`, {
-    label: "Undo",
-    run: () => {
-      savePersona(persona, personaStorage(ctx));
-      ctx.personaId = persona.id;
-      renderPresets(ctx);
-    },
-  });
+  ctx.deps.toast.show(`Updated preset ${persona.name}`);
 }
 
 export function parseMaxRounds(raw: string): number | undefined {
@@ -570,16 +596,16 @@ function renderPreview(panel: AppElements["chatSettings"]): void {
 function renderPresets(ctx: ChatSettingsContext): void {
   const panel = ctx.els.chatSettings;
   const personas = listPersonas(personaStorage(ctx));
-  if (!personas.some((persona) => persona.id === ctx.personaId)) ctx.personaId = "";
-  const prompt = personas.length === 0 ? "No saved presets yet" : "Apply a saved preset…";
+  const settings = ctx.state.currentChat?.settings;
+  const shown = settings && chatPersona(settings, personas);
+  const none = personas.length === 0 ? "No saved presets yet" : "No preset";
   panel.personaSelect.replaceChildren(
-    new Option(prompt, ""),
+    new Option(none, ""),
     ...personas.map((persona) => new Option(persona.name, persona.id)),
   );
-  panel.personaSelect.value = ctx.personaId;
+  panel.personaSelect.value = shown?.id ?? "";
   panel.personaSelect.disabled = personas.length === 0;
-  panel.updatePersonaButton.disabled = ctx.personaId === "";
-  panel.deletePersonaButton.disabled = ctx.personaId === "";
+  panel.presetEdited.hidden = !shown || !settings || personaMatches(shown, settings);
 }
 
 function renderSheetResolution(

@@ -8,8 +8,9 @@ TypeScript and Vite, no framework.
 
 ## What it does
 
-- Talks to [Venice.ai](https://venice.ai) or to any OpenAI-compatible server.
-  The base URL is a setting, so a local Ollama or LM Studio works too.
+- Talks to any OpenAI-compatible API, local or hosted: a server such as
+  Ollama, LM Studio or llama.cpp on your own computer, or a hosted API. Where
+  a server reports privacy, prices or an account balance, the app shows them.
 - Keeps many chats. Each has its own persona, model, temperature, reasoning
   effort, sheet resolution and round limit, and is saved in IndexedDB.
 - Drag a video into a chat. It stays a playable video in a floating player.
@@ -70,21 +71,45 @@ website at the root of `/tmp/vid2grid-site` and this checkout's chat app in its
 
 ## Setup
 
-Open Settings from the sidebar and fill in:
+There is no default API. Open Settings from the sidebar and fill in:
+
+- **Base URL.** Any API that speaks the OpenAI chat completions protocol, local
+  or hosted. Quick fills set it for you:
+
+  | Choice     | Base URL                       |
+  | ---------- | ------------------------------ |
+  | Venice     | `https://api.venice.ai/api/v1` |
+  | OpenRouter | `https://openrouter.ai/api/v1` |
+  | OpenAI     | `https://api.openai.com/v1`    |
+  | Ollama     | `http://localhost:11434/v1`    |
+  | LM Studio  | `http://localhost:1234/v1`     |
+
+  A llama.cpp server or anything else compatible works by typing its URL.
 
 - **API key.** Stored in your browser's localStorage and sent only to the base
-  URL. A local server that needs no key can leave it empty.
-- **Base URL.** Venice.ai by default. Point it at any server that speaks the
-  OpenAI chat completions API.
-- **Default model** for new chats, plus an image limit to assume for models
-  that do not report one, and a switch for showing the model's thinking.
+  URL. Venice needs one; a local server usually does not, so leave it empty.
+- **Default model** for new chats. Left unset, it is the first model the server
+  lists. There is also an image limit to assume for models that do not report
+  one, and a switch for showing the model's thinking.
 
-A "Get started" checklist on the main screen walks through the key, a
+Until a base URL is set the app calls no server, and the message box asks you
+to choose an API.
+
+A local server has to allow this page's origin, or the browser blocks the
+requests (CORS). For Ollama, set `OLLAMA_ORIGINS` to the page's origin, or `*`;
+in LM Studio, turn on CORS in the server settings.
+
+On a server other than Venice, models whose ids mark them as embedding, speech,
+rerank, moderation or image generation models are left out of the list.
+
+A "Get started" checklist on the main screen walks through choosing an API, a
 connection test, a default model and a first video or image. You can hide it.
 
 **Test connection** checks what is typed in the dialog before you save it. It
 reports whether the server answered, how many models it lists and how many can
-see images. On Venice it also says which kind of key you have. An admin key can
+see images.
+
+Venice only: the test also says which kind of key you have. An admin key can
 read the account balance, which then shows in the sidebar. An inference key
 chats fine but cannot read the balance.
 
@@ -92,10 +117,12 @@ chats fine but cannot read the balance.
 
 The model picker is used in Settings, in each chat and in the study dialog.
 
-- Search by name, mark favourites with a star, filter by Private, Uncensored,
+- Search by name, mark favourites with a star, filter by Uncensored,
   Recommended, Reasoning, Audio and Beta, and sort by recommendation, price,
-  context or name. Only private models show by default.
-- Each model has a privacy badge: private, or anonymized.
+  context or name.
+- Venice only: each model has a privacy badge, private or anonymized, and a
+  Private filter. Only private models show by default. Other servers report no
+  privacy, so the filter is hidden there and every model shows.
 - Hover or arrow to a model to see its details pane: description, tags, price
   per million tokens, context size, image limit, the Auto sheet resolution,
   reasoning effort, privacy and whether it takes audio. Arrow keys, Home, End
@@ -286,9 +313,10 @@ has. Models that cannot use tools, or chats with no video, get no tools.
 
 ### The image budget
 
-Venice keeps every image in the conversation, caps the number of images per
-request (`maxImages`, usually 10) and bills them again on every turn. So the app
-does not resend everything:
+Every image in the conversation is sent again on every turn, servers cap the
+number of images per request (Venice reports `maxImages`, usually 10; for other
+servers the image limit in Settings stands in) and hosted APIs bill them again
+each time. So the app does not resend everything:
 
 - Pinned images are always sent.
 - The latest overview comes next. It may take up to half of the slots left after
@@ -323,7 +351,7 @@ model. Vision models shrink or split images very differently: some scale every
 image down to under 1000 px, others read 3000 px or more. Sending more pixels
 than a model uses wastes bytes, and every image is billed again on each turn.
 The sizes and token estimates come from each model family's own documentation,
-since Venice publishes no image limits. When the model's context is known, Auto
+since most APIs publish no image limits. When the model's context is known, Auto
 also steps the size down until a full set of images fits in half of it, and
 keeps the overview under about 20,000 tokens. The fixed sizes are still in the
 list.

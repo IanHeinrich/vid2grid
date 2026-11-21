@@ -4,8 +4,10 @@ import {
   DEFAULT_BACKGROUND_SOUND_LABELS,
   DEFAULT_SETTINGS,
   DEFAULT_SOUND_LABELS,
+  keyFor,
   loadSettings,
   saveSettings,
+  withKey,
 } from "../src/settings";
 
 const KEY = "vid2grid-chat-settings";
@@ -18,9 +20,10 @@ describe("loadSettings", () => {
   it("returns the defaults when nothing is stored", () => {
     expect(loadSettings(localStorage)).toEqual({
       apiKey: "",
-      baseUrl: VENICE_BASE_URL,
+      baseUrl: "",
+      apiKeys: {},
       privateOnly: true,
-      defaultModelId: "qwen3-6-27b",
+      defaultModelId: "",
       fallbackMaxImages: 10,
       showThinking: false,
       keepVideoCopies: true,
@@ -35,6 +38,7 @@ describe("loadSettings", () => {
     const settings = {
       apiKey: "secret",
       baseUrl: "http://localhost:11434/v1",
+      apiKeys: { "http://localhost:11434/v1": "secret", "https://api.venice.ai/api/v1": "vkey" },
       privateOnly: false,
       defaultModelId: "llava",
       fallbackMaxImages: 4,
@@ -60,12 +64,77 @@ describe("loadSettings", () => {
       JSON.stringify({
         apiKey: 5,
         baseUrl: " ",
+        apiKeys: ["key"],
         privateOnly: "no",
         fallbackMaxImages: 0,
         showThinking: "yes",
       }),
     );
     expect(loadSettings(localStorage)).toEqual(DEFAULT_SETTINGS);
+  });
+});
+
+describe("loadSettings base URL", () => {
+  it("keeps Venice for settings saved with a key but no base URL", () => {
+    localStorage.setItem(KEY, JSON.stringify({ apiKey: "secret" }));
+    expect(loadSettings(localStorage)).toMatchObject({
+      baseUrl: VENICE_BASE_URL,
+      apiKeys: { [VENICE_BASE_URL]: "secret" },
+    });
+    localStorage.setItem(KEY, JSON.stringify({ apiKey: "secret", baseUrl: " " }));
+    expect(loadSettings(localStorage).baseUrl).toBe(VENICE_BASE_URL);
+  });
+
+  it("keeps a blank base URL blank once the settings were saved by this version", () => {
+    saveSettings({ ...DEFAULT_SETTINGS, apiKey: "secret", baseUrl: "" }, localStorage);
+    expect(JSON.parse(localStorage.getItem(KEY) ?? "{}")).toMatchObject({ settingsVersion: 2 });
+    expect(loadSettings(localStorage).baseUrl).toBe("");
+  });
+
+  it("leaves the base URL unset when no key was saved either", () => {
+    localStorage.setItem(KEY, JSON.stringify({ privateOnly: false }));
+    expect(loadSettings(localStorage).baseUrl).toBe("");
+  });
+
+  it("keeps a stored base URL and default model as they are", () => {
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({
+        apiKey: "secret",
+        baseUrl: "https://openrouter.ai/api/v1",
+        defaultModelId: "qwen3-6-27b",
+      }),
+    );
+    const loaded = loadSettings(localStorage);
+    expect(loaded.baseUrl).toBe("https://openrouter.ai/api/v1");
+    expect(loaded.defaultModelId).toBe("qwen3-6-27b");
+  });
+});
+
+describe("keys per base URL", () => {
+  it("files a key under its base URL, ignoring a trailing slash, and drops a cleared one", () => {
+    const keys = withKey({}, "https://openrouter.ai/api/v1/", "or-key");
+    expect(keys).toEqual({ "https://openrouter.ai/api/v1": "or-key" });
+    expect(keyFor(keys, " https://openrouter.ai/api/v1 ")).toBe("or-key");
+    expect(keyFor(keys, VENICE_BASE_URL)).toBe("");
+    expect(withKey(keys, "https://openrouter.ai/api/v1", "")).toEqual({});
+    expect(withKey(keys, " ", "stray")).toEqual(keys);
+  });
+
+  it("keeps only string keys from storage and adds the current key", () => {
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({
+        settingsVersion: 2,
+        apiKey: "local-key",
+        baseUrl: "http://localhost:1234/v1",
+        apiKeys: { [VENICE_BASE_URL]: "vkey", "https://api.openai.com/v1": 7 },
+      }),
+    );
+    expect(loadSettings(localStorage).apiKeys).toEqual({
+      [VENICE_BASE_URL]: "vkey",
+      "http://localhost:1234/v1": "local-key",
+    });
   });
 });
 

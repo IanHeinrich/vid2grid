@@ -352,6 +352,19 @@ describe("model picker filters", () => {
     expect(rowIds()).not.toContain("text-only");
   });
 
+  it("hides the Private chip and ignores private-only on a server without privacy data", () => {
+    setModels(state, [
+      model("llava", { privacy: "unknown" }),
+      model("gpt-4o", { name: "GPT-4o", privacy: "unknown" }),
+    ]);
+    current = "llava";
+    setup();
+    trigger().click();
+    expect(rowIds()).toEqual(["gpt-4o", "llava"]);
+    expect(find<HTMLButtonElement>('[data-filter="private"]').hidden).toBe(true);
+    expect(find<HTMLButtonElement>(".model-filter-toggle").classList.contains("is-on")).toBe(false);
+  });
+
   it("narrows by search, chips, sort and favourites", () => {
     setup();
     trigger().click();

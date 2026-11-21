@@ -16,6 +16,7 @@ import { messageThoroughness, roundsFor } from "../chat/thoroughness";
 import type { StatusLine } from "../dom";
 import {
   currentModel,
+  isRunningIn,
   NEW_CHAT_TITLE,
   removeMessages,
   setRunning,
@@ -75,6 +76,7 @@ export interface TurnRequest {
 }
 
 export interface Turns {
+  // Prepare watches the signal itself: a message it returns is saved even if Stop came meanwhile.
   run(prepare: (signal: AbortSignal) => Promise<TurnRequest | undefined>): Promise<void>;
   replay(): Promise<void>;
   compare(model: ModelInfo): Promise<void>;
@@ -103,11 +105,16 @@ export interface TurnsDeps {
   newId?: () => string;
 }
 
+interface TurnControllers {
+  controller: AbortController;
+  answerNow: AbortController;
+}
+
 interface TurnsContext {
   state: AppState;
   deps: TurnsDeps;
-  controller: AbortController | null;
-  answerNow: AbortController | null;
+  // By chat, so a reply still stopping in one chat leaves another free to send.
+  running: Map<string, TurnControllers>;
 }
 
 interface TurnFlags {
@@ -131,21 +138,26 @@ interface TurnSetup {
 }
 
 export function initTurns(state: AppState, deps: TurnsDeps): Turns {
-  const ctx: TurnsContext = { state, deps, controller: null, answerNow: null };
+  const ctx: TurnsContext = { state, deps, running: new Map() };
   return {
     run: (prepare) => run(ctx, prepare),
     replay: () => replay(ctx),
     compare: (model) => compare(ctx, model),
     edit: (message, text) => edit(ctx, message, text),
     keepGoing: () => keepGoing(ctx),
-    stop: () => ctx.controller?.abort(),
-    answerNow: () => ctx.answerNow?.abort(),
+    stop: () => currentTurn(ctx)?.controller.abort(),
+    answerNow: () => currentTurn(ctx)?.answerNow.abort(),
   };
 }
 
-function setRunningState(ctx: TurnsContext, running: boolean): void {
-  setRunning(ctx.state, running);
-  ctx.deps.conversation.setRunning(running);
+function currentTurn(ctx: TurnsContext): TurnControllers | undefined {
+  const chatId = ctx.state.currentChat?.id;
+  return chatId === undefined ? undefined : ctx.running.get(chatId);
+}
+
+function setRunningState(ctx: TurnsContext, chatId: string, running: boolean): void {
+  setRunning(ctx.state, running, chatId);
+  ctx.deps.conversation.setRunning(ctx.state.running);
   ctx.deps.onRunningChanged();
 }
 
@@ -154,22 +166,22 @@ async function run(
   prepare: (signal: AbortSignal) => Promise<TurnRequest | undefined>,
 ): Promise<void> {
   const chat = ctx.state.currentChat;
-  if (ctx.state.running || !chat) return;
+  if (!chat || isRunningIn(ctx.state, chat.id)) return;
   const controller = new AbortController();
   const answerNow = new AbortController();
-  ctx.controller = controller;
-  ctx.answerNow = answerNow;
+  ctx.running.set(chat.id, { controller, answerNow });
   ctx.deps.conversation.clearErrors();
-  setRunningState(ctx, true);
+  setRunningState(ctx, chat.id, true);
   try {
     const { signal } = controller;
-    const request = await Promise.race([
-      prepare(signal),
-      untilAborted(signal).then(() => undefined),
-    ]);
-    if (!request || signal.aborted || ctx.state.currentChat?.id !== chat.id) return;
+    const request = await prepare(signal);
+    if (!request) return;
+    // The composer has already cleared the message, so it is kept even when no reply follows.
     if (request.message) await saveUserMessage(ctx, chat.id, request.message);
+    const stopped = signal.aborted || ctx.state.currentChat?.id !== chat.id;
+    if (stopped && !request.message) return;
     const turnChat = await touchChat(ctx, chat.id, request.message);
+    if (stopped) return;
     const audio = request.audio ?? request.message?.audio === true;
     const thoroughness =
       request.thoroughness ?? (request.message ? messageThoroughness(request.message) : "normal");
@@ -180,9 +192,8 @@ async function run(
   } catch (error) {
     ctx.deps.status.show(errorText(error), "error");
   } finally {
-    ctx.controller = null;
-    ctx.answerNow = null;
-    setRunningState(ctx, false);
+    ctx.running.delete(chat.id);
+    setRunningState(ctx, chat.id, false);
     if (ctx.state.currentChat?.id === chat.id) ctx.deps.conversation.endTurn();
   }
 }
@@ -193,6 +204,7 @@ async function saveUserMessage(
   message: UserMessage,
 ): Promise<void> {
   await ctx.deps.store.putMessage(chatId, message);
+  if (ctx.state.currentChat?.id !== chatId) return;
   upsertMessage(ctx.state, message);
   ctx.deps.conversation.show(message);
 }

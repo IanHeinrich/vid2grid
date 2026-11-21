@@ -12,6 +12,8 @@ import { createSseParser } from "./sse";
 export const VENICE_BASE_URL = "https://api.venice.ai/api/v1";
 
 const DEFAULT_MAX_IMAGES = 10;
+const NO_API_MESSAGE = "Choose an API in Settings first.";
+const NO_MODEL_MESSAGE = "Choose a model in Chat settings first.";
 const OPEN_THINK = "<think>";
 const CLOSE_THINK = "</think>";
 
@@ -37,6 +39,14 @@ function asRecord(value: unknown): JsonRecord {
 
 function normaliseBaseUrl(baseUrl: string): string {
   return baseUrl.trim().replace(/\/+$/, "");
+}
+
+// Servers other than Venice list every model they host; these ids are never chat models.
+const NON_CHAT_ID =
+  /(^|[-_/.:])(embed|tts|whisper|transcribe|rerank|moderation|dall-e|gpt-image|image-gen|stable-diffusion|sdxl|flux)/i;
+
+export function isChatModelId(id: string): boolean {
+  return !NON_CHAT_ID.test(id);
 }
 
 export function isVenice(baseUrl: string): boolean {
@@ -174,9 +184,11 @@ export async function listModels(
   settings: ApiSettings,
   options: { fetch?: typeof fetch; fallbackMaxImages?: number } = {},
 ): Promise<ModelInfo[]> {
+  if (settings.baseUrl.trim() === "") return [];
   const fetchImpl = options.fetch ?? fetch;
   const fallbackMaxImages = options.fallbackMaxImages ?? DEFAULT_MAX_IMAGES;
-  const query = isVenice(settings.baseUrl) ? "?type=text" : "";
+  const venice = isVenice(settings.baseUrl);
+  const query = venice ? "?type=text" : "";
   const response = await fetchImpl(`${normaliseBaseUrl(settings.baseUrl)}/models${query}`, {
     headers: requestHeaders(settings, false),
   });
@@ -186,6 +198,7 @@ export async function listModels(
   return entries
     .map((entry) => toModelInfo(asRecord(entry), fallbackMaxImages))
     .filter((model): model is ModelInfo => model !== undefined)
+    .filter((model) => venice || isChatModelId(model.id))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -437,6 +450,8 @@ export async function* streamChat(
   signal: AbortSignal,
   fetchImpl: typeof fetch = fetch,
 ): AsyncGenerator<StreamEvent> {
+  if (settings.baseUrl.trim() === "") throw new ApiError(0, NO_API_MESSAGE);
+  if (request.model.trim() === "") throw new ApiError(0, NO_MODEL_MESSAGE);
   const response = await fetchImpl(`${normaliseBaseUrl(settings.baseUrl)}/chat/completions`, {
     method: "POST",
     headers: requestHeaders(settings, true),

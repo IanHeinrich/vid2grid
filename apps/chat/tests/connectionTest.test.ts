@@ -3,11 +3,12 @@ import indexHtml from "../index.html?raw";
 import { ApiError, VENICE_BASE_URL } from "../src/api/client";
 import { queryElements, type AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
-import { createAppState, type AppState } from "../src/state";
+import { createAppState, setSettings, type AppState } from "../src/state";
 import type { ModelInfo } from "../src/types";
 import {
   initConnectionTest,
   lastTestPassed,
+  NO_API_TEXT,
   reportLines,
   testConnection,
   type ConnectionProbes,
@@ -94,7 +95,7 @@ describe("testConnection", () => {
     expect(reportLines(report)).toEqual([
       "Reachable: the server answered.",
       "1 model, 1 of them can see images.",
-      "The server is not Venice, so there is no balance to read.",
+      "This server does not report a balance.",
     ]);
   });
 
@@ -119,7 +120,19 @@ describe("initConnectionTest", () => {
     return [...els.connectionTest.report.querySelectorAll("li")].map((li) => li.textContent ?? "");
   }
 
+  it("asks for an API without calling anything while no base URL is typed", async () => {
+    setSettings(state, { ...state.settings, baseUrl: VENICE_BASE_URL });
+    const listModels = vi.fn(() => Promise.resolve(MODELS));
+    const test = initConnectionTest(els, state, { probes: probes({ listModels }) });
+    els.settingsDialog.baseUrlInput.value = " ";
+    await test.run();
+    expect(listModels).not.toHaveBeenCalled();
+    expect(reportText()).toEqual([NO_API_TEXT]);
+    expect(els.connectionTest.report.classList.contains("is-failed")).toBe(true);
+  });
+
   it("tests the key and base URL typed in the dialog and remembers a pass", async () => {
+    setSettings(state, { ...state.settings, baseUrl: "http://localhost:1234/v1" });
     const listModels = vi.fn(() => Promise.resolve(MODELS));
     const onTested = vi.fn();
     const test = initConnectionTest(els, state, {
@@ -128,7 +141,7 @@ describe("initConnectionTest", () => {
       onTested,
     });
     els.settingsDialog.apiKeyInput.value = " typed-key ";
-    els.settingsDialog.baseUrlInput.value = "";
+    els.settingsDialog.baseUrlInput.value = ` ${VENICE_BASE_URL} `;
     await test.run();
     expect(listModels).toHaveBeenCalledWith({ apiKey: "typed-key", baseUrl: VENICE_BASE_URL });
     expect(reportText()[0]).toBe("Reachable: the server answered.");
@@ -139,6 +152,7 @@ describe("initConnectionTest", () => {
 
   it("marks a failed test and forgets an earlier pass", async () => {
     localStorage.setItem("vid2grid-chat-connection-test", "passed");
+    els.settingsDialog.baseUrlInput.value = LOCAL.baseUrl;
     initConnectionTest(els, state, {
       probes: probes({ listModels: () => Promise.reject(new Error("Failed to fetch")) }),
       storage: localStorage,

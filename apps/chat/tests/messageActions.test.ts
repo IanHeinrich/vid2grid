@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import indexHtml from "../index.html?raw";
+import { savePersona } from "../src/chat/personas";
 import { createMemoryStore } from "../src/chat/store";
 import { queryElements, type AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
@@ -23,6 +24,7 @@ import type {
 } from "../src/types";
 import { initConversation } from "../src/ui/conversation";
 import { initMessageActions, type MessageActions } from "../src/ui/messageActions";
+import { initChatSettings } from "../src/ui/settingsDialog";
 import { initToast } from "../src/ui/toast";
 import type * as Tools from "../src/video/tools";
 import { createToolRunner, type ToolContext } from "../src/video/tools";
@@ -311,6 +313,33 @@ describe("branching", () => {
   it("copies a whole reply, tool rounds included", async () => {
     await setup().branch(A1);
     expect(ids(await store.listMessages("branch"))).toEqual(["U1", "A1a", "T1", "A1"]);
+  });
+});
+
+describe("branching with a preset", () => {
+  it("keeps the chat's preset, so the branch shows it", async () => {
+    localStorage.clear();
+    savePersona({ id: "p1", name: "Narrator", systemPrompt: "Tell it as a story." }, localStorage);
+    const preset = {
+      ...chat,
+      settings: { ...chat.settings, systemPrompt: "Tell it as a poem.", presetId: "p1" },
+    };
+    replaceChat(state, preset);
+    setCurrentChat(state, preset, CHAT);
+    await setup().branch(U2);
+    const branch = await store.getChat("branch");
+    expect(branch?.settings.presetId).toBe("p1");
+    if (!branch) return;
+    setCurrentChat(state, branch, []);
+    initChatSettings(els, state, {
+      store,
+      toast: initToast(els, { set: () => 0, clear: vi.fn() }),
+      onChanged: vi.fn(),
+      onError: vi.fn(),
+      storage: localStorage,
+    });
+    expect(els.chatSettings.personaSelect.value).toBe("p1");
+    expect(els.chatSettings.presetEdited.hidden).toBe(false);
   });
 });
 
