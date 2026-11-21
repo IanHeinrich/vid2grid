@@ -6,21 +6,29 @@ import { createMemoryStore } from "../src/chat/store";
 import { queryElements, type AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import {
+  addPending,
   blankChat,
+  clearPending,
   createAppState,
   currentPending,
+  pendingFor,
+  pendingVideo,
+  removePendingVideo,
   replaceChat,
   setCurrentChat,
   setRunning,
+  updateChat,
   type AppState,
 } from "../src/state";
 import type { Chat, ChatStore, ImageRef, VideoAttachment } from "../src/types";
 import { initVideoPanel, type VideoPanel, type VideoPanelDeps } from "../src/ui/videoPanel";
-import { fileKey } from "../src/video/render";
+import { fileKey, type RenderedSheet } from "../src/video/render";
+import type { ToolContext } from "../src/video/tools";
 
 vi.mock("@vid2grid/browser", () => ({}));
 
 const INFO = { durationSeconds: 60, width: 640, height: 360 };
+const MODEL = "vision-model";
 
 let els: AppElements;
 let state: AppState;
@@ -34,7 +42,6 @@ function attachmentFor(file: File): VideoAttachment {
 function makeSpies() {
   return {
     status: { show: vi.fn(), clear: vi.fn() },
-    confirm: vi.fn(() => true),
     onChatChanged: vi.fn(),
     onVideoChanged: vi.fn(),
     onOverview: vi.fn(),
@@ -43,12 +50,46 @@ function makeSpies() {
     copyStatus: () => "",
     loadCopy: vi.fn((): Promise<File | undefined> => Promise.resolve(undefined)),
     onAttached: vi.fn(),
+    onCommitted: vi.fn(),
     probe: vi.fn((file: File) => Promise.resolve({ attachment: attachmentFor(file), info: INFO })),
-    renderOverview: vi.fn(() => Promise.resolve<ImageRef[]>([])),
+    renderOverview: vi.fn(freshOverview),
+    renderSheets: vi.fn(() => Promise.resolve<RenderedSheet[]>([])),
     readFrameTimes: vi.fn<(file: File) => Promise<number[] | undefined>>(() =>
       Promise.resolve(undefined),
     ),
   };
+}
+
+// Goes through the context's renderer, as a cache miss does, so the overview counts as new.
+async function freshOverview(toolCtx: ToolContext): Promise<ImageRef[]> {
+  await toolCtx.render?.(toolCtx.file, toolCtx.info, {});
+  return [];
+}
+
+// What the composer does on send: the video becomes the chat's, then the pending items clear.
+async function send(videos: VideoPanel, chatId = "chat"): Promise<void> {
+  const video = pendingVideo(pendingFor(state, chatId));
+  if (!video) throw new Error("Nothing pending");
+  await videos.commit(chatId, video);
+  clearPending(state, chatId);
+  videos.render();
+}
+
+async function attachAndSend(
+  videos: VideoPanel,
+  file: File,
+  handle?: FileSystemFileHandle,
+): Promise<void> {
+  await videos.attach(file, handle);
+  await send(videos);
+}
+
+async function openOther(videos: VideoPanel, id: string, modelId: string): Promise<void> {
+  const other = blankChat(modelId, id, 2);
+  await store.putChat(other);
+  replaceChat(state, other);
+  setCurrentChat(state, other, []);
+  await videos.restore();
 }
 
 function panel(overrides: Partial<VideoPanelDeps> = {}): VideoPanel {
@@ -78,7 +119,7 @@ function deferred<T>() {
 }
 
 async function openChatWithVideo(attachment: VideoAttachment): Promise<Chat> {
-  const chat = { ...blankChat(DEFAULT_SETTINGS.defaultModelId, "chat", 1), video: attachment };
+  const chat = { ...blankChat(MODEL, "chat", 1), video: attachment };
   await store.putChat(chat);
   replaceChat(state, chat);
   setCurrentChat(state, chat, []);
@@ -91,7 +132,7 @@ beforeEach(async () => {
   state = createAppState({ ...DEFAULT_SETTINGS, apiKey: "key" });
   store = createMemoryStore();
   spies = makeSpies();
-  const chat = blankChat(DEFAULT_SETTINGS.defaultModelId, "chat", 1);
+  const chat = blankChat(MODEL, "chat", 1);
   await store.putChat(chat);
   replaceChat(state, chat);
   setCurrentChat(state, chat, []);
@@ -107,19 +148,25 @@ afterEach(() => {
 });
 
 describe("attaching", () => {
-  it("stores the file handle only after the probe succeeds", async () => {
+  it("holds the dropped video in the message, saving it and its handle to the chat on send", async () => {
     const probed = deferred<{ attachment: VideoAttachment; info: typeof INFO }>();
     const file = video("beach.mp4");
     const handle = handleFor(file);
-    const attaching = panel({ probe: () => probed.promise }).attach(file, handle);
+    const videos = panel({ probe: () => probed.promise });
+    const attaching = videos.attach(file, handle);
     await Promise.resolve();
-    expect(await store.getVideoHandle("chat")).toBeUndefined();
     probed.resolve({ attachment: attachmentFor(file), info: INFO });
     await attaching;
-    expect(await store.getVideoHandle("chat")).toBe(handle);
-    expect(state.currentChat?.video?.name).toBe("beach.mp4");
     expect(currentPending(state)[0]).toEqual({ kind: "video", video: attachmentFor(file) });
     expect(els.video.chip.hidden).toBe(false);
+    expect(els.video.chipName.textContent).toBe("beach.mp4");
+    expect(state.currentChat?.video).toBeUndefined();
+    expect(await store.getVideoHandle("chat")).toBeUndefined();
+    await send(videos);
+    expect(await store.getVideoHandle("chat")).toBe(handle);
+    expect(state.currentChat?.video?.name).toBe("beach.mp4");
+    expect((await store.getChat("chat"))?.video?.name).toBe("beach.mp4");
+    expect(state.video?.file).toBe(file);
     expect(els.video.chipName.textContent).toBe("beach.mp4");
   });
 
@@ -145,14 +192,23 @@ describe("attaching", () => {
       "error",
     );
   });
+});
 
+describe("attaching over a pending video", () => {
   it("drops an overview that finishes after its video was replaced", async () => {
     const first = deferred<ImageRef[]>();
     const second = deferred<ImageRef[]>();
     const renders = [first.promise, second.promise];
-    const videos = panel({ renderOverview: () => renders.shift() ?? Promise.resolve([]) });
+    const videos = panel({
+      renderOverview: async (toolCtx) => {
+        const refs = renders.shift() ?? Promise.resolve([]);
+        await toolCtx.render?.(toolCtx.file, toolCtx.info, {});
+        return refs;
+      },
+    });
     await videos.attach(video("one.mp4", 1));
     await videos.attach(video("two.mp4", 2));
+    expect(pendingVideo(currentPending(state))).toEqual(attachmentFor(video("two.mp4", 2)));
     expect(els.video.chipMeta.textContent).toBe("1:00 · Rendering overview");
     const sheet: ImageRef = { id: "s", pinned: false, source: { kind: "upload", name: "s" } };
     first.resolve([sheet]);
@@ -167,13 +223,210 @@ describe("attaching", () => {
 });
 
 describe("replacing the video", () => {
-  it("forgets the old handle when a picked file without one replaces the video", async () => {
+  it("forgets the old handle once a picked file without one is sent in its place", async () => {
     const first = video("one.mp4", 1);
+    const handle = handleFor(first);
     const videos = panel();
-    await videos.attach(first, handleFor(first));
+    await attachAndSend(videos, first, handle);
     await videos.attach(video("two.mp4", 2));
+    expect(await store.getVideoHandle("chat")).toBe(handle);
+    await send(videos);
     expect(await store.getVideoHandle("chat")).toBeUndefined();
     expect(state.currentChat?.video?.name).toBe("two.mp4");
+  });
+
+  it("asks nothing when a dropped video takes the place of the chat's video", async () => {
+    const ask = vi.spyOn(window, "confirm");
+    const videos = panel();
+    await attachAndSend(videos, video("one.mp4", 1));
+    await videos.attach(video("two.mp4", 2));
+    expect(ask).not.toHaveBeenCalled();
+    expect(els.video.chipName.textContent).toBe("two.mp4");
+  });
+});
+
+describe("removing a pending video before sending", () => {
+  it("leaves the chat exactly as it was: its video, file handle and scene log", async () => {
+    const own = video("own.mp4", 1);
+    const handle = handleFor(own);
+    const videos = panel({
+      onOverview: (chatId, refs) => addPending(state, chatId, { kind: "overview", refs }),
+    });
+    await videos.attach(own, handle);
+    await vi.waitFor(() => expect(currentPending(state)).toHaveLength(2));
+    await send(videos);
+    const note = { timeSeconds: 3, text: "a door opens" };
+    await updateChat(state, store, "chat", (chat) => ({ ...chat, sceneLog: [note] }));
+    const dropped = video("dropped.mp4", 2);
+    await videos.attach(dropped);
+    expect(els.video.chipName.textContent).toBe("dropped.mp4");
+    await vi.waitFor(() => expect(currentPending(state)).toHaveLength(2));
+    expect(currentPending(state).map((attachment) => attachment.kind)).toEqual([
+      "video",
+      "overview",
+    ]);
+    removePendingVideo(state, "chat");
+    videos.render();
+    expect(els.video.chipName.textContent).toBe("own.mp4");
+    expect(state.currentChat?.video).toEqual(attachmentFor(own));
+    expect(state.currentChat?.sceneLog).toEqual([note]);
+    expect(await store.getVideoHandle("chat")).toBe(handle);
+    expect(state.video?.file).toBe(own);
+    expect(videos.pendingView().video).toBeUndefined();
+  });
+
+  it("clears the scene log when a different video is sent", async () => {
+    const videos = panel();
+    await attachAndSend(videos, video("own.mp4", 1));
+    const note = { timeSeconds: 3, text: "a door opens" };
+    await updateChat(state, store, "chat", (chat) => ({ ...chat, sceneLog: [note] }));
+    await videos.attach(video("next.mp4", 2));
+    expect(state.currentChat?.sceneLog).toEqual([note]);
+    await send(videos);
+    expect(state.currentChat?.sceneLog).toEqual([]);
+  });
+
+  it("closes the player when it was playing the removed video", async () => {
+    let next = 0;
+    URL.createObjectURL = vi.fn(() => `blob:video-${++next}`);
+    const revoke = vi.fn();
+    URL.revokeObjectURL = revoke;
+    const videos = panel();
+    await videos.attach(video("dropped.mp4", 2));
+    videos.openPlayer(1);
+    expect(els.video.miniPlayer.hidden).toBe(false);
+    removePendingVideo(state, "chat");
+    videos.render();
+    expect(els.video.miniPlayer.hidden).toBe(true);
+    expect(els.video.chip.hidden).toBe(true);
+    expect(revoke).toHaveBeenCalledWith("blob:video-1");
+  });
+});
+
+describe("sending a pending video", () => {
+  it("changes nothing when saving the sent video fails", async () => {
+    const videos = panel();
+    await attachAndSend(videos, video("own.mp4", 1));
+    const next = video("next.mp4", 2);
+    await videos.attach(next);
+    vi.spyOn(store, "putChat").mockRejectedValueOnce(new Error("quota"));
+    await expect(videos.commit("chat", attachmentFor(next))).rejects.toThrow("quota");
+    expect(state.currentChat?.video).toEqual(attachmentFor(video("own.mp4", 1)));
+    expect((await store.getChat("chat"))?.video).toEqual(attachmentFor(video("own.mp4", 1)));
+    expect(pendingVideo(currentPending(state))).toEqual(attachmentFor(next));
+    expect(videos.pendingView().video).toEqual(attachmentFor(next));
+    expect(spies.onCommitted).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("dropping the same video into a new chat", () => {
+  const firstChat = [
+    ["after sending it in the first chat", true],
+    ["while it still waits in the first chat", false],
+  ] as const;
+
+  for (const [when, sentInFirst] of firstChat) {
+    it(`shows it pending and prepares its overview ${when}`, async () => {
+      const file = video("beach.mp4");
+      const videos = panel();
+      if (sentInFirst) await attachAndSend(videos, file);
+      else await videos.attach(file);
+      await openOther(videos, "new", MODEL);
+      await videos.attach(file);
+      expect(pendingVideo(pendingFor(state, "new"))).toEqual(attachmentFor(file));
+      expect(els.video.chip.hidden).toBe(false);
+      expect(els.video.chipName.textContent).toBe("beach.mp4");
+      expect(spies.renderOverview).toHaveBeenCalledTimes(2);
+      await vi.waitFor(() => expect(spies.onOverview).toHaveBeenCalledWith("new", []));
+      expect(state.chats.find((chat) => chat.id === "chat")?.video).toEqual(
+        sentInFirst ? attachmentFor(file) : undefined,
+      );
+    });
+  }
+});
+
+describe("dropping the same video into a new chat, when something is in the way", () => {
+  it("is not blocked by a reply still running or stopping in the other chat", async () => {
+    const file = video("beach.mp4");
+    const videos = panel();
+    await attachAndSend(videos, file);
+    setRunning(state, true);
+    await openOther(videos, "new", MODEL);
+    await videos.attach(file);
+    expect(pendingVideo(pendingFor(state, "new"))).toEqual(attachmentFor(file));
+    expect(els.video.chip.hidden).toBe(false);
+    expect(spies.status.show).not.toHaveBeenCalledWith(
+      expect.stringContaining("Stop or wait"),
+      "error",
+    );
+  });
+
+  it("says a model is needed and prepares the overview once one is chosen", async () => {
+    const file = video("beach.mp4");
+    const videos = panel();
+    await openOther(videos, "new", "");
+    await videos.attach(file);
+    expect(pendingVideo(pendingFor(state, "new"))).toEqual(attachmentFor(file));
+    expect(els.video.chipMeta.textContent).toBe("1:00 · Choose a model to prepare the overview");
+    expect(spies.status.show).toHaveBeenCalledWith("Choose a model to prepare the overview.");
+    expect(spies.renderOverview).not.toHaveBeenCalled();
+    await updateChat(state, store, "new", (chat) => ({
+      ...chat,
+      settings: { ...chat.settings, modelId: MODEL },
+    }));
+    videos.render();
+    expect(spies.renderOverview).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(spies.onOverview).toHaveBeenCalledWith("new", []));
+  });
+
+  it("says when the overview is reused from before, and drops the note once sent", async () => {
+    const file = video("beach.mp4");
+    const videos = panel({ renderOverview: () => Promise.resolve([]) });
+    await openOther(videos, "new", MODEL);
+    await videos.attach(file);
+    await vi.waitFor(() =>
+      expect(els.video.chipMeta.textContent).toBe("1:00 · Seen before, overview reused"),
+    );
+    await send(videos, "new");
+    expect(els.video.chipMeta.textContent).toBe("1:00");
+  });
+});
+
+describe("a pending video's thumbnail", () => {
+  it("never hands out another chat's URL before the panel renders", async () => {
+    let next = 0;
+    URL.createObjectURL = vi.fn(() => `blob:video-${++next}`);
+    const videos = panel();
+    await videos.attach(video("one.mp4", 1));
+    const first = state.currentChat;
+    await openOther(videos, "new", MODEL);
+    await videos.attach(video("two.mp4", 2));
+    expect(videos.pendingView().url).toBe("blob:video-2");
+    setCurrentChat(state, first, []);
+    expect(videos.pendingView()).toEqual({ video: attachmentFor(video("one.mp4", 1)), url: null });
+    videos.render();
+    expect(videos.pendingView().url).toBe("blob:video-3");
+  });
+});
+
+describe("a new chat", () => {
+  it("shows no video, player or pending items from the chat left behind", async () => {
+    const videos = panel();
+    await videos.attach(video("beach.mp4"));
+    const ref: ImageRef = { id: "i", pinned: false, source: { kind: "upload", name: "i" } };
+    addPending(state, "chat", { kind: "image", ref });
+    videos.openPlayer(1);
+    expect(els.video.miniPlayer.hidden).toBe(false);
+    await openOther(videos, "new", MODEL);
+    expect(els.video.chip.hidden).toBe(true);
+    expect(els.video.miniPlayer.hidden).toBe(true);
+    expect(currentPending(state)).toEqual([]);
+    expect(videos.view()).toEqual({ video: undefined, url: null });
+    expect(videos.pendingView()).toEqual({ video: undefined, url: null });
+    expect(pendingFor(state, "chat").map((attachment) => attachment.kind)).toEqual([
+      "video",
+      "image",
+    ]);
   });
 });
 
@@ -222,15 +475,42 @@ describe("stored copies", () => {
     expect(state.video?.file).toBe(file);
   });
 
-  it("reports a new attachment so a copy can be kept and the old one released", async () => {
+  it("asks about a copy on drop and reports the sent video with the one it replaced", async () => {
     const videos = panel();
-    await videos.attach(video("one.mp4", 1));
+    const first = video("one.mp4", 1);
+    await attachAndSend(videos, first);
+    expect(spies.onCommitted).toHaveBeenLastCalledWith(first, attachmentFor(first), undefined);
     const second = video("two.mp4", 2);
     await videos.attach(second);
-    expect(spies.onAttached).toHaveBeenLastCalledWith(
+    expect(spies.onAttached).toHaveBeenLastCalledWith(second, attachmentFor(second));
+    expect(spies.onCommitted).toHaveBeenCalledTimes(1);
+    await send(videos);
+    expect(spies.onCommitted).toHaveBeenLastCalledWith(
       second,
       attachmentFor(second),
-      attachmentFor(video("one.mp4", 1)),
+      attachmentFor(first),
+    );
+  });
+});
+
+describe("reopening without the file", () => {
+  it("keeps the Reattach chip and says the browser needs permission again", async () => {
+    const file = video("beach.mp4");
+    await openChatWithVideo(attachmentFor(file));
+    await store.putVideoHandle("chat", handleFor(file, "prompt"));
+    await panel().restore();
+    expect(els.video.chipMeta.textContent).toBe("Reattach");
+    expect(spies.status.show).toHaveBeenCalledWith(
+      "The browser needs your permission to read beach.mp4 again. Click Reattach on the video to open it.",
+    );
+  });
+
+  it("says no copy was kept when there is no saved handle either", async () => {
+    await openChatWithVideo(attachmentFor(video("beach.mp4")));
+    await panel().restore();
+    expect(els.video.chipMeta.textContent).toBe("Reattach");
+    expect(spies.status.show).toHaveBeenCalledWith(
+      expect.stringContaining("This browser kept no copy of beach.mp4."),
     );
   });
 });
@@ -343,7 +623,7 @@ describe("frame stepping", () => {
     spies.readFrameTimes.mockResolvedValue([0, 0.5, 0.75, 2]);
     const file = video("beach.mp4");
     const videos = panel();
-    await videos.attach(file);
+    await attachAndSend(videos, file);
     await settle();
     expect(spies.readFrameTimes).toHaveBeenCalledTimes(1);
     expect(spies.readFrameTimes.mock.calls[0]?.[0]).toBe(state.video?.file);
@@ -386,26 +666,27 @@ describe("timestamps from an earlier video", () => {
     URL.revokeObjectURL = revoke;
     const first = video("one.mp4", 1);
     const videos = panel();
-    await videos.attach(first);
-    await videos.attach(video("two.mp4", 2));
+    await attachAndSend(videos, first);
+    await attachAndSend(videos, video("two.mp4", 2));
+    expect(els.video.miniPlayer.hidden).toBe(true);
     videos.seek(12, attachmentFor(first));
     await vi.waitFor(() => expect(els.video.miniPlayer.hidden).toBe(false));
     expect(els.video.miniPlayerTitle.textContent).toBe("one.mp4");
-    expect(els.video.miniPlayerVideo.getAttribute("src")).toBe("blob:video-3");
+    expect(els.video.miniPlayerVideo.getAttribute("src")).toBe("blob:video-5");
     expect(els.video.miniPlayerVideo.currentTime).toBe(12);
     expect(state.currentChat?.video?.name).toBe("two.mp4");
     expect(spies.loadCopy).not.toHaveBeenCalled();
     videos.seek(5, state.currentChat?.video);
     expect(els.video.miniPlayerTitle.textContent).toBe("two.mp4");
-    expect(els.video.miniPlayerVideo.getAttribute("src")).toBe("blob:video-2");
-    expect(revoke).toHaveBeenCalledWith("blob:video-3");
+    expect(els.video.miniPlayerVideo.getAttribute("src")).toBe("blob:video-4");
+    expect(revoke).toHaveBeenCalledWith("blob:video-5");
   });
 
   it("reports the attached video's playback time only while it is the one shown", async () => {
     const first = video("one.mp4", 1);
     const videos = panel();
-    await videos.attach(first);
-    await videos.attach(video("two.mp4", 2));
+    await attachAndSend(videos, first);
+    await attachAndSend(videos, video("two.mp4", 2));
     videos.openPlayer(9);
     expect(videos.attachedPlaybackTime()).toBe(9);
     videos.seek(12, attachmentFor(first));
@@ -418,7 +699,7 @@ describe("timestamps from an earlier video", () => {
   it("opens an earlier video from its stored copy", async () => {
     const first = video("one.mp4", 1);
     const videos = panel({ loadCopy: () => Promise.resolve(first) });
-    await videos.attach(video("two.mp4", 2));
+    await attachAndSend(videos, video("two.mp4", 2));
     videos.seek(7, attachmentFor(first));
     await vi.waitFor(() => expect(els.video.miniPlayerTitle.textContent).toBe("one.mp4"));
     expect(els.video.miniPlayer.hidden).toBe(false);
@@ -494,7 +775,7 @@ describe("audio ready in advance, cancelled", () => {
     );
     await videos.attach(video("two.mp4", 2));
     expect(signals[0]?.aborted).toBe(true);
-    expect(state.currentChat?.video?.name).toBe("two.mp4");
+    expect(pendingVideo(currentPending(state))?.name).toBe("two.mp4");
     expect(spies.status.show).not.toHaveBeenCalledWith(expect.stringContaining("aborted"), "error");
   });
 
@@ -512,7 +793,7 @@ describe("audio ready in advance, cancelled", () => {
     const videos = panel({ audioWanted: () => true, analyseAudio });
     await videos.attach(video("one.mp4", 1));
     await vi.waitFor(() => expect(signals).toHaveLength(1));
-    const other = blankChat(DEFAULT_SETTINGS.defaultModelId, "other", 2);
+    const other = blankChat(MODEL, "other", 2);
     await store.putChat(other);
     replaceChat(state, other);
     setCurrentChat(state, other, []);

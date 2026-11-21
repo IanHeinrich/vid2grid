@@ -1,5 +1,5 @@
 import type { AppElements, StatusLine } from "../dom";
-import type { AppState } from "../state";
+import { pendingVideo, type AppState } from "../state";
 import { errorText } from "../text";
 import type { ChatStore } from "../types";
 import {
@@ -39,6 +39,8 @@ const browserStorage: VideoStorage = {
 };
 
 export interface VideoCopies {
+  // Asks about a large file when it is dropped, so sending it never waits on the question.
+  approve(file: File, fileKey: string): void;
   save(file: File, fileKey: string): void;
   load(fileKey: string): Promise<File | undefined>;
   release(fileKey: string): Promise<void>;
@@ -67,6 +69,8 @@ interface CopiesContext {
   saving: Map<string, number>;
   writes: Map<string, Write>;
   askedForPersistence: boolean;
+  toldUnsupported: boolean;
+  answers: Map<string, boolean>;
 }
 
 export function formatBytes(bytes: number): string {
@@ -94,8 +98,11 @@ export function initVideoCopies(
     saving: new Map(),
     writes: new Map(),
     askedForPersistence: false,
+    toldUnsupported: false,
+    answers: new Map(),
   };
   return {
+    approve: (file, fileKey) => approve(ctx, file, fileKey),
     save: (file, fileKey) => save(ctx, file, fileKey),
     load: (fileKey) => load(ctx, fileKey),
     release: (fileKey) => release(ctx, fileKey),
@@ -107,11 +114,32 @@ export function initVideoCopies(
   };
 }
 
+const UNSUPPORTED_TEXT =
+  "This browser cannot keep copies of videos, so attach the file again after a restart.";
+
+function keepQuestion(file: File): string {
+  return `Keep a ${formatBytes(file.size)} copy of ${file.name} in this browser, so it opens again after a restart?`;
+}
+
+function approve(ctx: CopiesContext, file: File, fileKey: string): void {
+  const { settings } = ctx.state;
+  if (!settings.keepVideoCopies || !ctx.storage.supported() || ctx.answers.has(fileKey)) return;
+  if (file.size <= settings.askAboveBytes) return;
+  ctx.answers.set(fileKey, ctx.deps.confirm(keepQuestion(file)));
+}
+
 function save(ctx: CopiesContext, file: File, fileKey: string): void {
   const { settings } = ctx.state;
-  if (!settings.keepVideoCopies || !ctx.storage.supported() || ctx.saving.has(fileKey)) return;
-  const ask = `Keep a ${formatBytes(file.size)} copy of ${file.name} in this browser, so it opens again after a restart?`;
-  if (file.size > settings.askAboveBytes && !ctx.deps.confirm(ask)) return;
+  if (!settings.keepVideoCopies || ctx.saving.has(fileKey)) return;
+  if (!ctx.storage.supported()) {
+    if (!ctx.toldUnsupported) ctx.deps.status.show(UNSUPPORTED_TEXT);
+    ctx.toldUnsupported = true;
+    return;
+  }
+  const answer = ctx.answers.get(fileKey);
+  if (answer === false) return;
+  const large = file.size > settings.askAboveBytes;
+  if (answer === undefined && large && !ctx.deps.confirm(keepQuestion(file))) return;
   if (!ctx.askedForPersistence) {
     ctx.askedForPersistence = true;
     void ctx.storage.persist().catch(() => false);
@@ -154,6 +182,8 @@ async function load(ctx: CopiesContext, fileKey: string): Promise<File | undefin
 
 async function release(ctx: CopiesContext, fileKey: string): Promise<void> {
   if (!ctx.storage.supported()) return;
+  const pending = [...ctx.state.pending.values()].map(pendingVideo);
+  if (pending.some((video) => video?.fileKey === fileKey)) return;
   const chats = await ctx.deps.store.listChats();
   if (chats.some((chat) => chat.video?.fileKey === fileKey)) return;
   await stopWriting(ctx, fileKey);

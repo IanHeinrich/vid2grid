@@ -156,8 +156,8 @@ More in [apps/node-cli/README.md](apps/node-cli/README.md).
 A chat for talking to a vision model about a video. Drag a video in
 and the app renders an overview with vid2grid. The model can then look at any
 time range again, closer or wider, through its own tools. It talks straight
-from the page to Venice.ai or to any OpenAI-compatible server, including a
-local Ollama or LM Studio. The video never leaves your machine, and only the
+from the page to any OpenAI-compatible API, hosted or on your own computer,
+such as a local Ollama or LM Studio. The video never leaves your machine, and only the
 sheets the model is sent go to the API. Each release is served at
 [ianheinrich.github.io/vid2grid/chat/](https://ianheinrich.github.io/vid2grid/chat/);
 to run it from a clone, from the repo root:

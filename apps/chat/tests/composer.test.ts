@@ -2,12 +2,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import indexHtml from "../index.html?raw";
 import { createMemoryStore } from "../src/chat/store";
 import { queryElements, type AppElements } from "../src/dom";
+import { VENICE_BASE_URL } from "../src/api/client";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import {
   addPending,
   blankChat,
   createAppState,
   currentPending,
+  isRunningIn,
+  pendingFor,
   removeChat,
   replaceChat,
   setCurrentChat,
@@ -30,6 +33,15 @@ import { initComposer, storedAudioOn, type Composer, type ComposerDeps } from ".
 import { initTurns } from "../src/ui/turns";
 
 vi.mock("@vid2grid/browser", () => ({}));
+
+const MODEL = "vision-model";
+const BEACH = { name: "beach.mp4", fileKey: "k", durationSeconds: 75, width: 1, height: 1 };
+const SETTINGS = {
+  ...DEFAULT_SETTINGS,
+  baseUrl: VENICE_BASE_URL,
+  apiKey: "key",
+  defaultModelId: MODEL,
+};
 
 let els: AppElements;
 let state: AppState;
@@ -82,6 +94,8 @@ const noVideo = {
   overviewRendering: () => false,
   whenOverviewReady: () => Promise.resolve(),
   view: () => ({ video: undefined, url: null }),
+  pendingView: () => ({ video: undefined, url: null }),
+  commit: () => Promise.resolve(),
 };
 
 function setup(
@@ -143,7 +157,7 @@ beforeEach(async () => {
   localStorage.clear();
   document.body.innerHTML = indexHtml;
   els = queryElements();
-  state = createAppState({ ...DEFAULT_SETTINGS, apiKey: "key" });
+  state = createAppState(SETTINGS);
   store = createMemoryStore();
   const chat = blankChat(state.settings.defaultModelId, "chat", 1);
   await store.putChat(chat);
@@ -239,9 +253,10 @@ describe("stopping", () => {
     await vi.waitFor(() => expect(spies.conversation.apply).toHaveBeenCalled());
     composer.stop();
     setCurrentChat(state, blankChat("m", "other", 2), []);
-    spies.conversation.apply.mockClear();
-    await vi.waitFor(() => expect(state.running).toBe(false));
+    composer.render();
     expect(els.composer.sendButton.textContent).toBe("Send");
+    spies.conversation.apply.mockClear();
+    await vi.waitFor(() => expect(isRunningIn(state, "chat")).toBe(false));
     expect(spies.conversation.apply).not.toHaveBeenCalled();
   });
 
@@ -282,11 +297,16 @@ describe("attachments and limits", () => {
     expect(items()).toHaveLength(1);
   });
 
-  it("carries the pending video on the sent message and clears its chip", async () => {
+  it("carries the pending video on the sent message, makes it the chat's and clears its chip", async () => {
     const video = { name: "beach.mp4", fileKey: "k", durationSeconds: 75, width: 1, height: 1 };
     setPendingVideo(state, "chat", video);
+    const commit = vi.fn((chatId: string, committed: typeof video) => {
+      expect(currentPending(state)).toHaveLength(1);
+      expect([chatId, committed]).toEqual(["chat", video]);
+      return Promise.resolve();
+    });
     const spies = makeSpies();
-    setup(spies);
+    setup(spies, { video: { ...noVideo, commit } });
     expect(els.composer.pendingList.querySelector(".pending-label")?.textContent).toBe(
       "beach.mp4 · 1:15",
     );
@@ -295,7 +315,66 @@ describe("attachments and limits", () => {
     await vi.waitFor(() => expect(spies.conversation.endTurn).toHaveBeenCalled());
     const [sent] = await store.listMessages("chat");
     expect(sent).toEqual(expect.objectContaining({ role: "user", video }));
+    expect(commit).toHaveBeenCalledTimes(1);
     expect(currentPending(state)).toEqual([]);
+  });
+
+  it("sends nothing and keeps the message when making the video the chat's fails", async () => {
+    setPendingVideo(state, "chat", BEACH);
+    const spies = makeSpies();
+    const commit = () => Promise.reject(new Error("quota"));
+    setup(spies, { video: { ...noVideo, commit } });
+    els.composer.messageInput.value = "Watch this";
+    pressEnter();
+    await vi.waitFor(() => expect(spies.status.show).toHaveBeenCalledWith("quota", "error"));
+    expect(await store.listMessages("chat")).toEqual([]);
+    expect(els.composer.messageInput.value).toBe("Watch this");
+    expect(currentPending(state)).toEqual([{ kind: "video", video: BEACH }]);
+    expect(els.composer.sendButton.textContent).toBe("Send");
+  });
+});
+
+describe("stopping while the video is being saved", () => {
+  function sendWithSlowCommit(streamChat: StreamChat): () => void {
+    setPendingVideo(state, "chat", BEACH);
+    let finish: () => void = () => undefined;
+    const commit = () => new Promise<void>((resolve) => (finish = resolve));
+    setup(makeSpies(), { streamChat, video: { ...noVideo, commit } });
+    els.composer.messageInput.value = "Watch this";
+    pressEnter();
+    return () => finish();
+  }
+
+  it("still saves the message on Stop, without a reply", async () => {
+    const streamChat = vi.fn<StreamChat>(reply);
+    const finish = sendWithSlowCommit(streamChat);
+    await vi.waitFor(() => expect(els.composer.sendButton.textContent).toBe("Stop"));
+    els.composer.sendButton.click();
+    finish();
+    await vi.waitFor(() => expect(els.composer.sendButton.textContent).toBe("Send"));
+    const messages = await store.listMessages("chat");
+    expect(messages).toEqual([expect.objectContaining({ text: "Watch this", video: BEACH })]);
+    expect(state.messages).toEqual(messages);
+    expect(els.composer.messageInput.value).toBe("");
+    expect(currentPending(state)).toEqual([]);
+    expect(streamChat).not.toHaveBeenCalled();
+  });
+
+  it("still saves the message to its own chat when another chat opens", async () => {
+    const streamChat = vi.fn<StreamChat>(reply);
+    const finish = sendWithSlowCommit(streamChat);
+    await vi.waitFor(() => expect(isRunningIn(state, "chat")).toBe(true));
+    const other = blankChat(MODEL, "other", 2);
+    replaceChat(state, other);
+    setCurrentChat(state, other, []);
+    finish();
+    await vi.waitFor(() => expect(isRunningIn(state, "chat")).toBe(false));
+    expect(await store.listMessages("chat")).toEqual([
+      expect.objectContaining({ text: "Watch this", video: BEACH }),
+    ]);
+    expect(state.messages).toEqual([]);
+    expect(pendingFor(state, "chat")).toEqual([]);
+    expect(streamChat).not.toHaveBeenCalled();
   });
 });
 
@@ -324,7 +403,7 @@ describe("dropped images and limits", () => {
   });
 
   it("blocks sending when pinned images exceed the model's limit", async () => {
-    state = createAppState({ ...DEFAULT_SETTINGS, apiKey: "key", fallbackMaxImages: 1 });
+    state = createAppState({ ...SETTINGS, fallbackMaxImages: 1 });
     setCurrentChat(state, blankChat(state.settings.defaultModelId, "chat", 1), []);
     addPending(state, "chat", { kind: "image", ref: { ...image("a"), pinned: true } });
     addPending(state, "chat", { kind: "image", ref: { ...image("b"), pinned: true } });
@@ -343,7 +422,7 @@ describe("dropped images and limits", () => {
   });
 
   it("disables Send with a hint when the Venice key is missing", () => {
-    state = createAppState(DEFAULT_SETTINGS);
+    state = createAppState({ ...SETTINGS, apiKey: "" });
     setCurrentChat(state, blankChat(state.settings.defaultModelId, "chat", 1), []);
     setup();
     expect(els.composer.sendButton.disabled).toBe(true);
@@ -352,7 +431,64 @@ describe("dropped images and limits", () => {
   });
 });
 
-describe("the pending video and its overview", () => {
+describe("the pending video", () => {
+  const video = { name: "beach.mp4", fileKey: "k", durationSeconds: 75, width: 1, height: 1 };
+
+  it("removes the pending video and its overview from the chip, leaving other items", () => {
+    setPendingVideo(state, "chat", video);
+    addPending(state, "chat", { kind: "overview", refs: [image("s1")] });
+    addPending(state, "chat", { kind: "image", ref: image("a") });
+    const onPendingChanged = vi.fn();
+    initComposer(els, state, {
+      store,
+      status: makeSpies().status,
+      video: noVideo,
+      turns: { run: vi.fn(), stop: vi.fn(), answerNow: vi.fn() },
+      stopChecks: vi.fn(),
+      onFiles: vi.fn(),
+      onPendingChanged,
+      onReady: vi.fn(),
+    });
+    const remove = els.composer.pendingList.querySelector<HTMLButtonElement>(
+      ".pending-video .pending-remove",
+    );
+    expect(remove?.getAttribute("aria-label")).toBe("Remove beach.mp4 · 1:15");
+    remove?.click();
+    expect(currentPending(state)).toEqual([{ kind: "image", ref: image("a") }]);
+    expect(onPendingChanged).toHaveBeenCalled();
+    expect(els.composer.pendingList.querySelectorAll(".pending-item")).toHaveLength(1);
+  });
+
+  it("shows the pending video's own thumbnail, not the chat's earlier video", () => {
+    const earlier = { ...video, name: "earlier.mp4", fileKey: "e" };
+    const chat = state.currentChat;
+    if (!chat) throw new Error("No chat");
+    replaceChat(state, { ...chat, video: earlier });
+    setPendingVideo(state, "chat", video);
+    setup(makeSpies(), {
+      video: {
+        ...noVideo,
+        view: () => ({ video: earlier, url: "blob:earlier" }),
+        pendingView: () => ({ video, url: "blob:pending" }),
+      },
+    });
+    const thumb = els.composer.pendingList.querySelector<HTMLVideoElement>(".pending-thumb");
+    expect(thumb?.getAttribute("src")).toBe("blob:pending");
+  });
+
+  it("says when the overview waits for a model or was reused", () => {
+    setPendingVideo(state, "chat", video);
+    setOverviewStatus(state, "chat", { kind: "needsModel", fileKey: "k" });
+    const composer = setup();
+    const progress = () => els.composer.pendingList.querySelector(".pending-progress")?.textContent;
+    expect(progress()).toBe("Choose a model to prepare the overview");
+    setOverviewStatus(state, "chat", { kind: "ready", fileKey: "k", sheets: 2, reused: true });
+    composer.updateProgress();
+    expect(progress()).toBe("Seen before, overview reused");
+  });
+});
+
+describe("the pending overview", () => {
   const video = { name: "beach.mp4", fileKey: "k", durationSeconds: 75, width: 1, height: 1 };
 
   function attachVideo(): void {
@@ -361,18 +497,6 @@ describe("the pending video and its overview", () => {
     replaceChat(state, { ...chat, video });
     setPendingVideo(state, "chat", video);
   }
-
-  it("removes the pending video from its chip", () => {
-    attachVideo();
-    setup();
-    const remove = els.composer.pendingList.querySelector<HTMLButtonElement>(
-      ".pending-video .pending-remove",
-    );
-    expect(remove?.getAttribute("aria-label")).toBe("Remove beach.mp4 · 1:15");
-    remove?.click();
-    expect(currentPending(state)).toEqual([]);
-    expect(els.composer.pendingList.hidden).toBe(true);
-  });
 
   it("explains what removing the overview means", () => {
     addPending(state, "chat", { kind: "overview", refs: [image("s1")] });
@@ -415,6 +539,19 @@ describe("audio toggle", () => {
     composer.render();
     expect(toggle.disabled).toBe(false);
     expect(toggle.title).toContain("analysed on this computer");
+  });
+
+  it("can be turned on for a video still waiting to be sent", () => {
+    const composer = setup();
+    setPendingVideo(state, "chat", {
+      name: "beach.mp4",
+      fileKey: "k",
+      durationSeconds: 75,
+      width: 1,
+      height: 1,
+    });
+    composer.render();
+    expect(els.composer.audioToggle.disabled).toBe(false);
   });
 
   it("marks the message, stays on after sending and is remembered", async () => {

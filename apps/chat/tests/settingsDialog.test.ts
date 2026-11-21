@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import indexHtml from "../index.html?raw";
 import { effectiveVideoReferences } from "../src/chat/history";
-import { listPersonas, savePersona } from "../src/chat/personas";
+import { listPersonas, savePersona, type Persona } from "../src/chat/personas";
 import { createMemoryStore } from "../src/chat/store";
 import { queryElements, type AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS, loadSettings } from "../src/settings";
@@ -13,13 +13,9 @@ import {
   setModels,
   type AppState,
 } from "../src/state";
-import type { ChatStore, ModelInfo } from "../src/types";
-import {
-  initChatSettings,
-  initSettingsDialog,
-  parseMaxRounds,
-  VOICE_HINTS,
-} from "../src/ui/settingsDialog";
+import type { ChatSettings, ChatStore, ModelInfo } from "../src/types";
+import { VOICE_HINTS } from "../src/ui/presetManager";
+import { initChatSettings, initSettingsDialog, parseMaxRounds } from "../src/ui/settingsDialog";
 import { initToast, type Toast } from "../src/ui/toast";
 
 let els: AppElements;
@@ -66,6 +62,12 @@ beforeEach(() => {
   document.body.innerHTML = indexHtml;
   els = queryElements();
   els.settingsDialog.dialog.showModal = vi.fn();
+  els.presetManager.dialog.showModal = function (this: HTMLDialogElement) {
+    this.open = true;
+  };
+  els.presetManager.dialog.close = function (this: HTMLDialogElement) {
+    this.open = false;
+  };
   state = createAppState({ ...DEFAULT_SETTINGS, defaultModelId: "mock-model" });
   setModels(state, [model("anon", "anonymized"), model("priv", "private")]);
 });
@@ -128,6 +130,99 @@ describe("initSettingsDialog", () => {
     els.settingsDialog.dialog.dispatchEvent(new Event("close"));
     expect(state.settings.defaultModelId).toBe("anon");
     expect(loadSettings(localStorage).defaultModelId).toBe("anon");
+  });
+});
+
+describe("Connection", () => {
+  function openDialog(baseUrl: string): void {
+    localStorage.clear();
+    state = createAppState({ ...state.settings, baseUrl });
+    initSettingsDialog(els, state, {
+      loadModels: () => Promise.resolve(state.models),
+      onSaved: vi.fn(),
+      storage: localStorage,
+    }).open();
+  }
+
+  function privacyOption(): HTMLElement | null {
+    return els.settingsDialog.privateOnlyInput.closest("label");
+  }
+
+  it("offers the private-only switch only for Venice, following the typed base URL", () => {
+    openDialog("http://localhost:11434/v1");
+    expect(privacyOption()?.hidden).toBe(true);
+    const { baseUrlInput } = els.settingsDialog;
+    baseUrlInput.value = "https://api.venice.ai/api/v1";
+    baseUrlInput.dispatchEvent(new Event("input"));
+    expect(privacyOption()?.hidden).toBe(false);
+  });
+
+  it("fills the base URL from a quick-fill choice", () => {
+    openDialog("");
+    const fill = els.settingsDialog.form.querySelector<HTMLButtonElement>(
+      '[data-base-url="https://openrouter.ai/api/v1"]',
+    );
+    expect(fill).not.toBeNull();
+    fill?.click();
+    expect(els.settingsDialog.baseUrlInput.value).toBe("https://openrouter.ai/api/v1");
+    expect(document.activeElement).toBe(els.settingsDialog.apiKeyInput);
+  });
+
+  it("clears the base URL when the field is saved blank, and keeps it cleared", () => {
+    openDialog("http://localhost:1234/v1");
+    els.settingsDialog.apiKeyInput.value = "secret";
+    els.settingsDialog.baseUrlInput.value = " ";
+    els.settingsDialog.dialog.returnValue = "save";
+    els.settingsDialog.dialog.dispatchEvent(new Event("close"));
+    expect(state.settings.baseUrl).toBe("");
+    expect(loadSettings(localStorage).baseUrl).toBe("");
+  });
+});
+
+describe("API keys per base URL", () => {
+  const venice = "https://api.venice.ai/api/v1";
+  const openRouter = "https://openrouter.ai/api/v1";
+
+  function openWith(baseUrl: string, apiKey: string): void {
+    localStorage.clear();
+    state = createAppState({ ...state.settings, baseUrl, apiKey, apiKeys: { [baseUrl]: apiKey } });
+    initSettingsDialog(els, state, {
+      loadModels: () => Promise.resolve(state.models),
+      onSaved: vi.fn(),
+      storage: localStorage,
+    }).open();
+  }
+
+  it("keeps a key per base URL as the quick fills switch servers", () => {
+    openWith(venice, "venice-key");
+    const { form, apiKeyInput } = els.settingsDialog;
+    const fill = (url: string) =>
+      form.querySelector<HTMLButtonElement>(`[data-base-url="${url}"]`)?.click();
+    fill(openRouter);
+    expect(apiKeyInput.value).toBe("");
+    apiKeyInput.value = "router-key";
+    fill(venice);
+    expect(apiKeyInput.value).toBe("venice-key");
+    fill(openRouter);
+    expect(apiKeyInput.value).toBe("router-key");
+    els.settingsDialog.dialog.returnValue = "save";
+    els.settingsDialog.dialog.dispatchEvent(new Event("close"));
+    expect(loadSettings(localStorage)).toMatchObject({
+      baseUrl: openRouter,
+      apiKey: "router-key",
+      apiKeys: { [venice]: "venice-key", [openRouter]: "router-key" },
+    });
+  });
+
+  it("swaps in the key for a base URL typed by hand once the field is left", () => {
+    openWith("http://localhost:1234/v1", "local-key");
+    const { baseUrlInput, apiKeyInput } = els.settingsDialog;
+    baseUrlInput.value = "https://api.openai.com/v1";
+    baseUrlInput.dispatchEvent(new Event("change"));
+    expect(apiKeyInput.value).toBe("");
+    baseUrlInput.value = "http://localhost:1234/v1/";
+    baseUrlInput.dispatchEvent(new Event("change"));
+    expect(apiKeyInput.value).toBe("local-key");
   });
 });
 
@@ -340,10 +435,12 @@ describe("Chat settings model", () => {
   });
 });
 
-async function openPersona(askName = vi.fn(() => "Mara")) {
+async function openPersona(settings: Partial<ChatSettings> = {}, presets: Persona[] = []) {
   localStorage.clear();
+  for (const preset of presets) savePersona(preset, localStorage);
   const store = createMemoryStore();
-  const chat = blankChat("anon", "chat", 1);
+  const blank = blankChat("anon", "chat", 1);
+  const chat = { ...blank, settings: { ...blank.settings, ...settings } };
   await store.putChat(chat);
   replaceChat(state, chat);
   setCurrentChat(state, chat, []);
@@ -352,7 +449,6 @@ async function openPersona(askName = vi.fn(() => "Mara")) {
     toast: toast(),
     onChanged: vi.fn(),
     onError: vi.fn(),
-    askName,
     storage: localStorage,
   });
   return store;
@@ -454,10 +550,10 @@ describe("Earlier images", () => {
   });
 });
 
-describe("Roleplay names", () => {
+describe("Character names", () => {
   it("starts folded for a chat without names", async () => {
     await openPersona();
-    expect(els.chatSettings.roleplayNames.open).toBe(false);
+    expect(els.chatSettings.characterNames.open).toBe(false);
   });
 
   it("opens when the voice is set to In character", async () => {
@@ -465,7 +561,7 @@ describe("Roleplay names", () => {
     const panel = els.chatSettings;
     panel.voiceSelect.value = "character";
     panel.voiceSelect.dispatchEvent(new Event("change"));
-    expect(panel.roleplayNames.open).toBe(true);
+    expect(panel.characterNames.open).toBe(true);
   });
 
   it("starts open for a chat with a name set", async () => {
@@ -477,75 +573,220 @@ describe("Roleplay names", () => {
     replaceChat(state, named);
     setCurrentChat(state, named, []);
     initChatSettings(els, state, { store, toast: toast(), onChanged: vi.fn(), onError: vi.fn() });
-    expect(els.chatSettings.roleplayNames.open).toBe(true);
+    expect(els.chatSettings.characterNames.open).toBe(true);
   });
 });
 
+const narrator: Persona = {
+  id: "p1",
+  name: "Narrator",
+  systemPrompt: "Tell it as a story.",
+  voice: "narrator",
+};
+
 describe("Saved presets", () => {
-  it("saves the form as a named preset and selects it", async () => {
-    const askName = vi.fn(() => " Mara ");
-    await openPersona(askName);
+  it("saves the form under the suggested name and opens it in the manager", async () => {
+    const store = await openPersona();
     const panel = els.chatSettings;
     panel.systemPromptInput.value = "You are {{char}}.";
     panel.characterNameInput.value = "Mara";
     panel.savePersonaButton.click();
-    expect(askName).toHaveBeenCalledWith("Mara");
     const [saved] = listPersonas(localStorage);
     expect(saved).toMatchObject({
       name: "Mara",
       systemPrompt: "You are {{char}}.",
       characterName: "Mara",
     });
+    await vi.waitFor(async () =>
+      expect((await store.getChat("chat"))?.settings.presetId).toBe(saved?.id),
+    );
     expect(panel.personaSelect.value).toBe(saved?.id);
-    expect(panel.updatePersonaButton.disabled).toBe(false);
-    expect(els.toast.text.textContent).toBe("Saved preset Mara");
+    expect(panel.presetEdited.hidden).toBe(true);
+    expect(els.presetManager.dialog.open).toBe(true);
+    expect(document.activeElement).toBe(els.presetManager.nameInput);
+    expect(els.presetManager.nameInput.value).toBe("Mara");
   });
 
-  it("applies a saved preset to the chat and undoes it", async () => {
-    await openPersona();
-    savePersona(
-      { id: "p1", name: "Narrator", systemPrompt: "Tell it as a story.", voice: "narrator" },
-      localStorage,
-    );
+  it("applies a picked preset, remembers it on the chat and undoes both", async () => {
+    await openPersona({}, [narrator]);
     const panel = els.chatSettings;
     panel.systemPromptInput.value = "Before";
     panel.systemPromptInput.dispatchEvent(new Event("change"));
     await vi.waitFor(() => expect(state.currentChat?.settings.systemPrompt).toBe("Before"));
-    panel.personaSelect.replaceChildren(new Option("Narrator", "p1"));
     panel.personaSelect.value = "p1";
     panel.personaSelect.dispatchEvent(new Event("change"));
     await vi.waitFor(() =>
       expect(state.currentChat?.settings).toMatchObject({
         systemPrompt: "Tell it as a story.",
         voice: "narrator",
+        presetId: "p1",
       }),
     );
+    expect(panel.personaSelect.value).toBe("p1");
     expect(els.toast.text.textContent).toBe("Applied Narrator");
     els.toast.action.click();
     await vi.waitFor(() => expect(state.currentChat?.settings.systemPrompt).toBe("Before"));
     expect(state.currentChat?.settings).not.toHaveProperty("voice");
+    expect(state.currentChat?.settings).not.toHaveProperty("presetId");
+    expect(panel.personaSelect.value).toBe("");
   });
 });
 
-describe("Saved preset changes", () => {
-  it("updates the selected preset from the form", async () => {
-    await openPersona();
-    const panel = els.chatSettings;
-    panel.systemPromptInput.value = "First";
-    panel.savePersonaButton.click();
-    panel.systemPromptInput.value = "Second";
-    panel.updatePersonaButton.click();
-    expect(listPersonas(localStorage).map((persona) => persona.systemPrompt)).toEqual(["Second"]);
+describe("The chat's preset", () => {
+  it("shows the chat's own preset when the panel opens", async () => {
+    await openPersona({ systemPrompt: "Tell it as a story.", voice: "narrator", presetId: "p1" }, [
+      { id: "p0", name: "Other", systemPrompt: "Other." },
+      narrator,
+    ]);
+    expect(els.chatSettings.personaSelect.value).toBe("p1");
+    expect(els.chatSettings.presetEdited.hidden).toBe(true);
   });
 
-  it("deletes the selected preset and brings it back with Undo", async () => {
-    await openPersona();
-    els.chatSettings.savePersonaButton.click();
-    els.chatSettings.deletePersonaButton.click();
-    expect(listPersonas(localStorage)).toEqual([]);
-    expect(els.chatSettings.deletePersonaButton.disabled).toBe(true);
+  it("shows a preset the chat matches without writing it to the chat", async () => {
+    const store = await openPersona({ systemPrompt: "Tell it as a story.", voice: "narrator" }, [
+      narrator,
+    ]);
+    expect(els.chatSettings.personaSelect.value).toBe("p1");
+    expect((await store.getChat("chat"))?.settings).not.toHaveProperty("presetId");
+  });
+
+  it("matches nothing for a chat with a blank prompt", async () => {
+    await openPersona({}, [{ id: "p2", name: "Blank", systemPrompt: "" }]);
+    expect(els.chatSettings.personaSelect.value).toBe("");
+  });
+
+  it("shows a deleted preset as none", async () => {
+    await openPersona({ systemPrompt: "Tell it as a story.", presetId: "gone" }, [narrator]);
+    expect(els.chatSettings.personaSelect.value).toBe("");
+    expect(els.chatSettings.presetEdited.hidden).toBe(true);
+  });
+
+  it("forgets the preset when No preset is picked", async () => {
+    const store = await openPersona({ systemPrompt: "Mine.", presetId: "p1" }, [narrator]);
+    els.chatSettings.personaSelect.value = "";
+    els.chatSettings.personaSelect.dispatchEvent(new Event("change"));
+    await vi.waitFor(async () => expect((await store.getChat("chat"))?.settings.presetId).toBe(""));
+    expect((await store.getChat("chat"))?.settings.systemPrompt).toBe("Mine.");
+  });
+
+  it("keeps No preset for a chat whose fields still match a preset", async () => {
+    const store = await openPersona(
+      { systemPrompt: "Tell it as a story.", voice: "narrator", presetId: "p1" },
+      [narrator],
+    );
+    els.chatSettings.personaSelect.value = "";
+    els.chatSettings.personaSelect.dispatchEvent(new Event("change"));
+    await vi.waitFor(async () => expect((await store.getChat("chat"))?.settings.presetId).toBe(""));
+    expect(els.chatSettings.personaSelect.value).toBe("");
+    expect(els.chatSettings.presetEdited.hidden).toBe(true);
+    initChatSettings(els, state, {
+      store,
+      toast: toast(),
+      onChanged: vi.fn(),
+      onError: vi.fn(),
+      storage: localStorage,
+    });
+    expect(els.chatSettings.personaSelect.value).toBe("");
+  });
+});
+
+describe("Edited presets", () => {
+  async function editedChat() {
+    const store = await openPersona(
+      { systemPrompt: "Tell it as a story.", voice: "narrator", presetId: "p1" },
+      [narrator],
+    );
+    type(els.chatSettings.systemPromptInput, "Tell it as a poem.");
+    await vi.waitFor(() => expect(els.chatSettings.presetEdited.hidden).toBe(false));
+    return store;
+  }
+
+  it("marks the preset edited once the chat's fields differ", async () => {
+    await editedChat();
+    expect(els.chatSettings.personaSelect.value).toBe("p1");
+  });
+
+  it("does not count an explicit Analyst voice as an edit", async () => {
+    await openPersona({ systemPrompt: "Plain.", presetId: "p2" }, [
+      { id: "p2", name: "Plain", systemPrompt: "Plain." },
+    ]);
+    els.chatSettings.voiceSelect.value = "analyst";
+    els.chatSettings.voiceSelect.dispatchEvent(new Event("change"));
+    await vi.waitFor(() => expect(state.currentChat?.settings.voice).toBe("analyst"));
+    expect(els.chatSettings.presetEdited.hidden).toBe(true);
+  });
+
+  it("writes the chat's fields into the preset with Update preset", async () => {
+    await editedChat();
+    els.chatSettings.updatePresetButton.click();
+    expect(listPersonas(localStorage)).toEqual([
+      { ...narrator, systemPrompt: "Tell it as a poem." },
+    ]);
+    expect(els.chatSettings.presetEdited.hidden).toBe(true);
+    expect(els.toast.text.textContent).toBe("Updated preset Narrator");
+  });
+
+  it("re-applies the preset with Revert and undoes the revert", async () => {
+    const store = await editedChat();
+    els.chatSettings.revertPresetButton.click();
+    await vi.waitFor(async () =>
+      expect((await store.getChat("chat"))?.settings.systemPrompt).toBe("Tell it as a story."),
+    );
+    expect(els.chatSettings.presetEdited.hidden).toBe(true);
+    expect(els.toast.text.textContent).toBe("Reverted to Narrator");
     els.toast.action.click();
-    expect(listPersonas(localStorage).map((persona) => persona.name)).toEqual(["Mara"]);
-    expect(els.chatSettings.personaSelect.value).not.toBe("");
+    await vi.waitFor(async () =>
+      expect((await store.getChat("chat"))?.settings).toMatchObject({
+        systemPrompt: "Tell it as a poem.",
+        presetId: "p1",
+      }),
+    );
+    expect(listPersonas(localStorage)).toEqual([narrator]);
+  });
+});
+
+describe("Manage presets", () => {
+  it("opens on the chat's preset", async () => {
+    await openPersona({ systemPrompt: "Tell it as a story.", presetId: "p1" }, [
+      { id: "p0", name: "Other", systemPrompt: "Other." },
+      narrator,
+    ]);
+    els.chatSettings.managePresetsButton.click();
+    expect(els.presetManager.dialog.open).toBe(true);
+    expect(els.presetManager.nameInput.value).toBe("Narrator");
+  });
+
+  it("edits a preset without touching the chat, which then shows as edited", async () => {
+    const store = await openPersona(
+      { systemPrompt: "Tell it as a story.", voice: "narrator", presetId: "p1" },
+      [narrator],
+    );
+    els.chatSettings.managePresetsButton.click();
+    type(els.presetManager.systemPromptInput, "Tell it as a song.");
+    expect(listPersonas(localStorage)[0]?.systemPrompt).toBe("Tell it as a song.");
+    expect(els.chatSettings.presetEdited.hidden).toBe(false);
+    expect((await store.getChat("chat"))?.settings.systemPrompt).toBe("Tell it as a story.");
+  });
+
+  it("applies the selected preset to the chat and closes", async () => {
+    await openPersona({}, [narrator]);
+    els.chatSettings.managePresetsButton.click();
+    els.presetManager.applyButton.click();
+    expect(els.presetManager.dialog.open).toBe(false);
+    await vi.waitFor(() =>
+      expect(state.currentChat?.settings).toMatchObject({
+        systemPrompt: "Tell it as a story.",
+        presetId: "p1",
+      }),
+    );
+    expect(els.toast.text.textContent).toBe("Applied Narrator");
+  });
+
+  it("lists a preset deleted in the manager as none", async () => {
+    await openPersona({ systemPrompt: "Tell it as a story.", presetId: "p1" }, [narrator]);
+    els.chatSettings.managePresetsButton.click();
+    els.presetManager.deleteButton.click();
+    expect(els.chatSettings.personaSelect.value).toBe("");
+    expect(els.chatSettings.personaSelect.disabled).toBe(true);
   });
 });

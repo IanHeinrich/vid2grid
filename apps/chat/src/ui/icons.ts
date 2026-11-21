@@ -22,6 +22,7 @@ const PATHS = {
   sliders: ["M4 7h9", "M17 7h3", "M4 17h3", "M11 17h9", "M15 5v4", "M9 15v4"],
   play: ["M8 5v14l11-7Z"],
   pause: ["M9 6v12", "M15 6v12"],
+  folder: ["M3 6.5V18a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V9a1 1 0 0 0-1-1h-8l-2-2.5H4a1 1 0 0 0-1 1Z"],
 } as const;
 
 export type IconName = keyof typeof PATHS;

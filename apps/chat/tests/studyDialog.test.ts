@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_SETTINGS } from "../src/settings";
 import { setModels } from "../src/state";
 import { estimateText, planSummaryText } from "../src/ui/study/studyDialog";
 import type * as StudyModule from "../src/video/study";
@@ -15,6 +14,7 @@ import {
   setup,
   startStudy,
   state,
+  STUDY_MODEL_ID,
 } from "./studyHarness";
 
 vi.mock("@vid2grid/browser", () => ({}));
@@ -44,13 +44,13 @@ describe("study dialog", () => {
     setup().open();
     expect(els.study.dialog.open).toBe(true);
     expect(els.study.modelPicker.querySelector(".model-trigger-name")?.textContent).toBe(
-      DEFAULT_SETTINGS.defaultModelId,
+      STUDY_MODEL_ID,
     );
     expect(els.study.estimate.textContent).toBe(withAudio(estimateText(expectedPlan().estimate)));
   });
 
   it("studies with the model picked in the dialog and updates the estimate", async () => {
-    setModels(state, [model(DEFAULT_SETTINGS.defaultModelId), model("claude-opus-4-7")]);
+    setModels(state, [model(STUDY_MODEL_ID), model("claude-opus-4-7")]);
     vi.mocked(runStudy).mockImplementationOnce((deps) => Promise.resolve(deps.timeline));
     setup().open();
     const mount = els.study.modelPicker;
@@ -122,7 +122,7 @@ describe("study dialog settings", () => {
     setInput(els.study.densityInput, "dense");
     setInput(els.study.fromInput, "1:00");
     setInput(els.study.toInput, "5:00");
-    const plan = planFor(DEFAULT_SETTINGS.defaultModelId, {
+    const plan = planFor(STUDY_MODEL_ID, {
       windowSeconds: 60,
       framesPerWindow: 72,
       startSeconds: 60,

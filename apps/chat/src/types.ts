@@ -57,6 +57,9 @@ export interface ChatSettings {
   // Substituted for {{char}} and {{user}} in the system prompt.
   characterName?: string;
   userName?: string;
+  // The saved preset the instructions came from; they may have been edited since. Empty means the
+  // user picked No preset, which stops matching the fields against presets.
+  presetId?: string;
   modelId: string;
   temperature?: number;
   reasoningEffort?: string;
@@ -92,6 +95,15 @@ export interface Chat {
   video?: VideoAttachment;
   sceneLog: SceneNote[];
   storySoFar?: StorySoFar;
+  // Absent means the chat is in no folder.
+  folderId?: string;
+}
+
+export interface Folder {
+  id: string;
+  name: string;
+  createdAt: number;
+  collapsed?: boolean;
 }
 
 // A summary that stands in for every message up to and including throughMessageId.
@@ -356,6 +368,9 @@ export interface ChatStore extends ImageStore, SheetCache {
   getChat(id: string): Promise<Chat | undefined>;
   putChat(chat: Chat): Promise<void>;
   deleteChat(id: string): Promise<void>;
+  listFolders(): Promise<Folder[]>;
+  putFolder(folder: Folder): Promise<void>;
+  deleteFolder(id: string): Promise<void>;
   listMessages(chatId: string): Promise<ChatMessage[]>;
   putMessage(chatId: string, message: ChatMessage): Promise<void>;
   deleteMessages(chatId: string, ids: readonly string[]): Promise<void>;

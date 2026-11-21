@@ -43,7 +43,7 @@ describe("drawer markup", () => {
     const settings = [
       els.chatSettings.systemPromptInput,
       els.chatSettings.videoReferencesSelect,
-      els.chatSettings.roleplayNames,
+      els.chatSettings.characterNames,
       els.chatSettings.modelPicker,
     ];
     const knowledge = [

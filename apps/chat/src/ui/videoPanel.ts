@@ -11,19 +11,26 @@ import {
 import type { AppElements, StatusLine } from "../dom";
 import {
   currentModel,
+  isRunningIn,
+  NEEDS_MODEL_TEXT,
   overviewFor,
   overviewText,
+  pendingFor,
+  pendingVideo,
+  removePendingVideo,
+  resolveModel,
   setLoadedVideo,
   setOverviewStatus,
   setPendingVideo,
+  shownVideo,
   updateChat,
   type AppState,
   type OverviewStatus,
 } from "../state";
 import { errorText } from "../text";
 import { formatTimestamp } from "../time";
-import type { Chat, ChatStore, ImageRef, VideoAttachment } from "../types";
-import { fileKey, probeAttachment } from "../video/render";
+import type { Chat, ChatStore, ImageRef, ModelInfo, VideoAttachment } from "../types";
+import { fileKey, probeAttachment, renderSheets } from "../video/render";
 import { resolveOverviewResolution, resolveSheetResolution } from "../video/resolution";
 import { renderOverview, type ToolContext } from "../video/tools";
 import { storedAudioOn } from "./composer";
@@ -42,7 +49,10 @@ export interface VideoView {
 
 export interface VideoPanel {
   restore(): Promise<void>;
+  // Adds the video to the message being written; the chat keeps its own video until it is sent.
   attach(file: File, handle?: FileSystemFileHandle): Promise<void>;
+  // Makes the sent video the chat's own, saving it before anything in memory changes.
+  commit(chatId: string, video: VideoAttachment): Promise<void>;
   reattach(): Promise<void>;
   // A video other than the chat's current one plays from a kept copy, leaving the chat as it is.
   seek(seconds: number, video?: VideoAttachment): void;
@@ -52,6 +62,7 @@ export interface VideoPanel {
   // Undefined while the mini-player shows an earlier video instead of the attached one.
   attachedPlaybackTime(): number | undefined;
   view(): VideoView;
+  pendingView(): VideoView;
   render(): void;
   renderCoverage(): void;
   overviewRendering(): boolean;
@@ -61,7 +72,6 @@ export interface VideoPanel {
 export interface VideoPanelDeps {
   store: ChatStore;
   status: StatusLine;
-  confirm(message: string): boolean;
   onChatChanged(): void;
   onVideoChanged(): void;
   onOverview(chatId: string, refs: ImageRef[]): void;
@@ -69,9 +79,11 @@ export interface VideoPanelDeps {
   studyStatus(): string;
   copyStatus(fileKey: string): string;
   loadCopy(fileKey: string): Promise<File | undefined>;
-  onAttached(file: File, video: VideoAttachment, replaced: VideoAttachment | undefined): void;
+  onAttached(file: File, video: VideoAttachment): void;
+  onCommitted(file: File, video: VideoAttachment, replaced: VideoAttachment | undefined): void;
   probe?: typeof probeAttachment;
   renderOverview?: typeof renderOverview;
+  renderSheets?: typeof renderSheets;
   readFrameTimes?: typeof readFrameTimes;
   audioWanted?: () => boolean;
   analyseAudio?: AnalyseAudio;
@@ -80,6 +92,15 @@ export interface VideoPanelDeps {
 interface LoadedFile {
   file: File;
   info: VideoInfo;
+}
+
+interface PendingFile extends LoadedFile {
+  video: VideoAttachment;
+  handle: FileSystemFileHandle | undefined;
+}
+
+interface SheetSource extends LoadedFile {
+  video: VideoAttachment;
 }
 
 interface Render {
@@ -106,6 +127,9 @@ interface VideoPanelContext {
   deps: VideoPanelDeps;
   objectUrl: string | null;
   files: Map<string, LoadedFile>;
+  // Dropped into the message being written, by chat, until sent or removed.
+  pendingFiles: Map<string, PendingFile>;
+  pendingUrl: { file: File; url: string } | null;
   renders: Map<string, Render>;
   // Keyed by File, so a changed video never reuses the old frame times and they go with it.
   frameTimes: WeakMap<File, number[] | undefined>;
@@ -125,10 +149,19 @@ export function toolContext(state: AppState, store: ChatStore): ToolContext | un
   const chat = state.currentChat;
   const model = currentModel(state);
   if (!chat?.video || state.video?.chatId !== chat.id || model === null) return undefined;
+  return sheetContext(chat, model, { ...state.video, video: chat.video }, store);
+}
+
+function sheetContext(
+  chat: Chat,
+  model: ModelInfo,
+  { file, info, video }: SheetSource,
+  store: ChatStore,
+): ToolContext {
   return {
-    file: state.video.file,
-    info: state.video.info,
-    video: chat.video,
+    file,
+    info,
+    video,
     resolution: resolveSheetResolution(chat.settings.sheetResolution, model).px,
     overviewResolution: (sheets) =>
       resolveOverviewResolution(chat.settings.sheetResolution, model, sheets).px,
@@ -137,19 +170,28 @@ export function toolContext(state: AppState, store: ChatStore): ToolContext | un
   };
 }
 
+function chatModel(state: AppState, chat: Chat): ModelInfo | null {
+  return chat.settings.modelId === "" ? null : resolveModel(state, chat.settings.modelId);
+}
+
 export function initVideoPanel(
   els: Pick<AppElements, "video">,
   state: AppState,
   deps: VideoPanelDeps,
 ): VideoPanel {
   const playing: VideoPanelContext["playing"] = { older: undefined };
-  const shown = () => playing.older?.video ?? state.currentChat?.video;
+  const shown = () => {
+    const chat = state.currentChat;
+    return playing.older?.video ?? (chat ? shownVideo(state, chat.id) : undefined);
+  };
   const ctx: VideoPanelContext = {
     els: els.video,
     state,
     deps,
     objectUrl: null,
     files: new Map(),
+    pendingFiles: new Map(),
+    pendingUrl: null,
     renders: new Map(),
     frameTimes: new WeakMap(),
     skipHandle: new Set(),
@@ -173,18 +215,34 @@ export function initVideoPanel(
   return {
     restore: () => restore(ctx),
     attach: (file, handle) => attach(ctx, file, handle),
+    commit: (chatId, video) => commit(ctx, chatId, video),
     reattach: () => requestReattach(ctx),
     seek: (seconds, video) => seekMoment(ctx, seconds, video),
     cue: (seconds) => openAtTimestamp(ctx, seconds, false),
     openPlayer: (seconds) => openPlayer(ctx, seconds),
-    attachedPlaybackTime: () => (playing.older ? undefined : els.video.miniPlayerVideo.currentTime),
-    view: () => ({ video: state.currentChat?.video, url: isMissing(ctx) ? null : ctx.objectUrl }),
+    attachedPlaybackTime: () =>
+      playing.older || showingPending(ctx) ? undefined : els.video.miniPlayerVideo.currentTime,
+    view: () => ({
+      video: state.currentChat?.video,
+      url: committedLoaded(ctx) ? ctx.objectUrl : null,
+    }),
+    pendingView: () => pendingView(ctx),
     render: () => render(ctx),
     renderCoverage: () =>
       coverage.update(state.messages, state.currentChat?.video?.durationSeconds),
     overviewRendering: () => currentRender(ctx) !== undefined,
     whenOverviewReady: () => currentRender(ctx)?.done ?? Promise.resolve(),
   };
+}
+
+function pendingView(ctx: VideoPanelContext): VideoView {
+  const pending = currentPendingFile(ctx);
+  return { video: pending?.video, url: pending ? pendingUrlOf(ctx, pending.file) : null };
+}
+
+// Null until render has made the URL for this file, so another chat's revoked URL is never used.
+function pendingUrlOf(ctx: VideoPanelContext, file: File): string | null {
+  return ctx.pendingUrl?.file === file ? ctx.pendingUrl.url : null;
 }
 
 function listen(ctx: VideoPanelContext): void {
@@ -213,19 +271,57 @@ function isCurrent(ctx: VideoPanelContext, chatId: string): boolean {
   return ctx.state.currentChat?.id === chatId;
 }
 
+function committedLoaded(ctx: VideoPanelContext): boolean {
+  const chat = ctx.state.currentChat;
+  return chat !== null && ctx.state.video?.chatId === chat.id;
+}
+
 function isMissing(ctx: VideoPanelContext): boolean {
   const chat = ctx.state.currentChat;
-  return chat?.video !== undefined && ctx.state.video?.chatId !== chat.id;
+  return (
+    chat?.video !== undefined && !committedLoaded(ctx) && currentPendingFile(ctx) === undefined
+  );
 }
 
 function attachedVideo(ctx: VideoPanelContext, chatId: string): VideoAttachment | undefined {
   return ctx.state.chats.find((chat) => chat.id === chatId)?.video;
 }
 
+function currentShownVideo(ctx: VideoPanelContext): VideoAttachment | undefined {
+  const chat = ctx.state.currentChat;
+  return chat ? shownVideo(ctx.state, chat.id) : undefined;
+}
+
+function pendingFileOf(ctx: VideoPanelContext, chatId: string): PendingFile | undefined {
+  const pending = ctx.pendingFiles.get(chatId);
+  const wanted = pendingVideo(pendingFor(ctx.state, chatId));
+  return pending && wanted?.fileKey === pending.video.fileKey ? pending : undefined;
+}
+
+function currentPendingFile(ctx: VideoPanelContext): PendingFile | undefined {
+  const chat = ctx.state.currentChat;
+  return chat ? pendingFileOf(ctx, chat.id) : undefined;
+}
+
+function showingPending(ctx: VideoPanelContext): boolean {
+  const url = ctx.pendingUrl?.url;
+  return url !== undefined && ctx.els.miniPlayerVideo.getAttribute("src") === url;
+}
+
+function sheetSource(ctx: VideoPanelContext, chatId: string): SheetSource | undefined {
+  const pending = pendingFileOf(ctx, chatId);
+  if (pending) return pending;
+  const video = attachedVideo(ctx, chatId);
+  const loaded = ctx.files.get(chatId);
+  return video && loaded && fileKey(loaded.file) === video.fileKey
+    ? { ...loaded, video }
+    : undefined;
+}
+
 function currentRender(ctx: VideoPanelContext): Render | undefined {
   const chat = ctx.state.currentChat;
   const pending = chat ? ctx.renders.get(chat.id) : undefined;
-  return pending && pending.fileKey === chat?.video?.fileKey ? pending : undefined;
+  return pending && pending.fileKey === currentShownVideo(ctx)?.fileKey ? pending : undefined;
 }
 
 async function saveChat(
@@ -252,8 +348,15 @@ async function restore(ctx: VideoPanelContext): Promise<void> {
     const copy = await ctx.deps.loadCopy(chat.video.fileKey);
     if (copy && (await reattachedFromCopy(ctx, chat.id, copy))) return;
     const handle = await ctx.deps.store.getVideoHandle(chat.id);
-    if (!handle || ctx.skipHandle.has(chat.id)) return;
-    if ((await handle.queryPermission?.({ mode: "read" })) !== "granted") return;
+    if (!handle || ctx.skipHandle.has(chat.id)) {
+      showStillMissing(ctx, chat.id, `This browser kept no copy of ${chat.video.name}.`);
+      return;
+    }
+    if ((await handle.queryPermission?.({ mode: "read" })) !== "granted") {
+      const why = `The browser needs your permission to read ${chat.video.name} again.`;
+      showStillMissing(ctx, chat.id, why);
+      return;
+    }
     if (!(await reattachFromHandle(ctx, chat.id, handle)) && isCurrent(ctx, chat.id)) {
       ctx.deps.status.show(`${chat.video.name} was moved or renamed. Use Reattach to find it.`);
     }
@@ -261,6 +364,12 @@ async function restore(ctx: VideoPanelContext): Promise<void> {
     if (isCurrent(ctx, chat.id)) {
       ctx.deps.status.show(`Could not reopen ${chat.video.name}: ${errorText(error)}`, "error");
     }
+  }
+}
+
+function showStillMissing(ctx: VideoPanelContext, chatId: string, why: string): void {
+  if (isCurrent(ctx, chatId) && isMissing(ctx)) {
+    ctx.deps.status.show(`${why} Click Reattach on the video to open it.`);
   }
 }
 
@@ -309,28 +418,73 @@ async function attach(
 ): Promise<void> {
   const chat = ctx.state.currentChat;
   if (!chat) return;
-  const previous = chat.video;
-  if (previous?.fileKey === fileKey(file)) {
+  const key = fileKey(file);
+  if (chat.video?.fileKey === key) {
+    dropPending(ctx, chat.id);
     if (handle) await saveHandle(ctx, chat.id, handle);
-    load(ctx, chat.id, { file, info: infoFrom(previous) });
+    load(ctx, chat.id, { file, info: infoFrom(chat.video) });
     return;
   }
-  if (ctx.state.running) {
+  if (isRunningIn(ctx.state, chat.id)) {
     ctx.deps.status.show("Stop or wait for the reply before changing the video.", "error");
     return;
   }
-  const replacing = `Replace ${previous?.name ?? ""} with ${file.name}? Its scene log is cleared.`;
-  if (previous && !ctx.deps.confirm(replacing)) return;
+  const same = pendingFileOf(ctx, chat.id);
+  if (same?.video.fileKey === key) {
+    ctx.pendingFiles.set(chat.id, { ...same, handle: handle ?? same.handle });
+    return;
+  }
   const probed = await probe(ctx, file);
-  const latest = ctx.state.currentChat;
-  if (!probed || latest?.id !== chat.id) return;
-  if (handle) await saveHandle(ctx, chat.id, handle);
-  else await ctx.deps.store.deleteVideoHandle(chat.id);
-  await saveChat(ctx, chat.id, (entry) => ({ ...entry, video: probed.attachment, sceneLog: [] }));
+  if (!probed || !ctx.state.chats.some((entry) => entry.id === chat.id)) return;
+  dropPending(ctx, chat.id);
+  ctx.pendingFiles.set(chat.id, { file, info: probed.info, video: probed.attachment, handle });
   setPendingVideo(ctx.state, chat.id, probed.attachment);
-  load(ctx, chat.id, { file, info: probed.info });
+  ctx.sessionFiles.set(key, file);
+  readFrameTimesOf(ctx, file);
+  render(ctx);
+  ctx.deps.onVideoChanged();
   startOverview(ctx, chat.id);
-  ctx.deps.onAttached(file, probed.attachment, previous);
+  ctx.deps.onAttached(file, probed.attachment);
+}
+
+function dropPending(ctx: VideoPanelContext, chatId: string): void {
+  removePendingVideo(ctx.state, chatId);
+  ctx.pendingFiles.delete(chatId);
+}
+
+// Removed pending videos are let go; the chat's own video was never touched.
+function dropStalePending(ctx: VideoPanelContext): void {
+  for (const [chatId, pending] of ctx.pendingFiles) {
+    if (pendingVideo(pendingFor(ctx.state, chatId))?.fileKey === pending.video.fileKey) continue;
+    ctx.pendingFiles.delete(chatId);
+  }
+}
+
+// Saved before memory changes, so a failed save leaves the chat and the message as they were.
+async function commit(
+  ctx: VideoPanelContext,
+  chatId: string,
+  video: VideoAttachment,
+): Promise<void> {
+  const pending = ctx.pendingFiles.get(chatId);
+  const latest = ctx.state.chats.find((chat) => chat.id === chatId);
+  if (pending?.video.fileKey !== video.fileKey || !latest) return;
+  const previous = latest.video;
+  // Scene notes carry no video key, so notes about the previous video would read as this one's.
+  const withVideo = (entry: Chat): Chat => ({
+    ...entry,
+    video,
+    sceneLog: entry.video?.fileKey === video.fileKey ? entry.sceneLog : [],
+  });
+  await ctx.deps.store.putChat(withVideo(latest));
+  if (pending.handle) await saveHandle(ctx, chatId, pending.handle);
+  else await ctx.deps.store.deleteVideoHandle(chatId);
+  // Applied again to the newest copy, so a change another writer saved meanwhile is kept.
+  await updateChat(ctx.state, ctx.deps.store, chatId, withVideo);
+  ctx.pendingFiles.delete(chatId);
+  load(ctx, chatId, { file: pending.file, info: pending.info });
+  ctx.deps.onChatChanged();
+  ctx.deps.onCommitted(pending.file, video, previous);
 }
 
 async function saveHandle(
@@ -443,6 +597,8 @@ function readFrameTimesOf(ctx: VideoPanelContext, file: File): void {
 }
 
 function loadedFrameTimes(ctx: VideoPanelContext): number[] | undefined {
+  const pending = currentPendingFile(ctx);
+  if (pending) return ctx.frameTimes.get(pending.file);
   const loaded = ctx.state.video;
   if (!loaded || loaded.chatId !== ctx.state.currentChat?.id) return undefined;
   return ctx.frameTimes.get(loaded.file);
@@ -457,11 +613,33 @@ function setUrl(ctx: VideoPanelContext, file: File | null): void {
   ctx.objectUrl = file ? URL.createObjectURL(file) : null;
 }
 
+// Keeps one object URL for the current chat's pending file, so its thumbnail and player share it.
+function syncPendingUrl(ctx: VideoPanelContext): void {
+  const file = currentPendingFile(ctx)?.file;
+  const previous = ctx.pendingUrl;
+  if (previous?.file === file) return;
+  if (previous) {
+    if (showingPending(ctx)) {
+      closePlayer(ctx);
+      ctx.els.miniPlayerVideo.removeAttribute("src");
+      ctx.player.reset();
+    }
+    URL.revokeObjectURL(previous.url);
+  }
+  ctx.pendingUrl = file ? { file, url: URL.createObjectURL(file) } : null;
+}
+
+function shownUrl(ctx: VideoPanelContext): string | null {
+  const pending = currentPendingFile(ctx);
+  if (pending) return pendingUrlOf(ctx, pending.file);
+  return isMissing(ctx) ? null : ctx.objectUrl;
+}
+
 function openPlayer(ctx: VideoPanelContext, seconds?: number, play = true): void {
   ctx.seekToken += 1;
-  const video = ctx.state.currentChat?.video;
-  const url = ctx.objectUrl;
-  if (!video || !url || isMissing(ctx)) {
+  const video = currentShownVideo(ctx);
+  const url = shownUrl(ctx);
+  if (!video || !url) {
     const where = seconds === undefined ? "play it" : `jump to ${formatTimestamp(seconds)}`;
     ctx.deps.status.show(`Reattach the video to ${where}.`);
     return;
@@ -469,6 +647,8 @@ function openPlayer(ctx: VideoPanelContext, seconds?: number, play = true): void
   releaseOlder(ctx);
   const { miniPlayer, miniPlayerTitle, miniPlayerVideo } = ctx.els;
   if (miniPlayerVideo.getAttribute("src") !== url) miniPlayerVideo.src = url;
+  // The coverage strip marks the chat's own video, not one waiting to be sent.
+  ctx.coverage.el.hidden = showingPending(ctx);
   miniPlayerTitle.textContent = video.name;
   miniPlayer.hidden = false;
   ctx.player.layout();
@@ -485,9 +665,12 @@ function openAtTimestamp(ctx: VideoPanelContext, seconds: number, play: boolean)
 }
 
 function seekMoment(ctx: VideoPanelContext, seconds: number, video?: VideoAttachment): void {
-  const current = ctx.state.currentChat?.video;
-  if (!video || video.fileKey === current?.fileKey) openAtTimestamp(ctx, seconds, true);
-  else void openOlder(ctx, video, seconds);
+  const target = video ?? ctx.state.currentChat?.video;
+  if (!target || target.fileKey === currentShownVideo(ctx)?.fileKey) {
+    openAtTimestamp(ctx, seconds, true);
+  } else {
+    void openOlder(ctx, target, seconds);
+  }
 }
 
 async function openOlder(
@@ -551,6 +734,9 @@ function closePlayer(ctx: VideoPanelContext): void {
 }
 
 function render(ctx: VideoPanelContext): void {
+  dropStalePending(ctx);
+  syncPendingUrl(ctx);
+  startWaitingOverviews(ctx);
   dropStaleAudio(ctx);
   renderChip(ctx);
 }
@@ -558,13 +744,15 @@ function render(ctx: VideoPanelContext): void {
 function renderChip(ctx: VideoPanelContext): void {
   const { chip, chipName, chipMeta } = ctx.els;
   const chat = ctx.state.currentChat;
-  const video = chat?.video;
+  const video = currentShownVideo(ctx);
   chip.hidden = !chat || !video;
   if (!chat || !video) return;
   const missing = isMissing(ctx);
   chip.classList.toggle("is-missing", missing);
   chipName.textContent = video.name;
-  const overview = overviewText(overviewFor(ctx.state, chat.id));
+  const status = overviewFor(ctx.state, chat.id);
+  const pending = pendingVideo(pendingFor(ctx.state, chat.id)) !== undefined;
+  const overview = status?.kind === "ready" && !pending ? "" : overviewText(status);
   const study = ctx.deps.studyStatus();
   const copy = ctx.deps.copyStatus(video.fileKey);
   const audio = ctx.audioPrep?.chatId === chat.id ? ctx.audioPrep.text : "";
@@ -578,16 +766,41 @@ function renderChip(ctx: VideoPanelContext): void {
     : `Open ${video.name} in the player`;
 }
 
+// An overview waiting for a model starts once the chat has one.
+function startWaitingOverviews(ctx: VideoPanelContext): void {
+  for (const [chatId, status] of ctx.state.overviews) {
+    const chat = ctx.state.chats.find((entry) => entry.id === chatId);
+    if (status.kind !== "needsModel" || overviewFor(ctx.state, chatId) !== status) continue;
+    if (chat && chatModel(ctx.state, chat) !== null) startOverview(ctx, chatId);
+  }
+}
+
 function startOverview(ctx: VideoPanelContext, chatId: string): void {
-  const toolCtx = toolContext(ctx.state, ctx.deps.store);
-  if (!toolCtx) return;
-  const key = toolCtx.video.fileKey;
-  const stillAttached = () => attachedVideo(ctx, chatId)?.fileKey === key;
+  const chat = ctx.state.chats.find((entry) => entry.id === chatId);
+  const source = sheetSource(ctx, chatId);
+  if (!chat || !source) return;
+  const key = source.video.fileKey;
+  const stillShown = () => shownVideo(ctx.state, chatId)?.fileKey === key;
   const report = (status: OverviewStatus) => {
-    if (!stillAttached()) return;
+    if (!stillShown()) return;
     setOverviewStatus(ctx.state, chatId, status);
     if (isCurrent(ctx, chatId)) renderChip(ctx);
     ctx.deps.onOverviewProgress();
+  };
+  const model = chatModel(ctx.state, chat);
+  if (model === null) {
+    report({ kind: "needsModel", fileKey: key });
+    if (isCurrent(ctx, chatId)) ctx.deps.status.show(`${NEEDS_MODEL_TEXT}.`);
+    return;
+  }
+  let rendered = false;
+  const renderFresh = ctx.deps.renderSheets ?? renderSheets;
+  const toolCtx: ToolContext = {
+    ...sheetContext(chat, model, source, ctx.deps.store),
+    render: (...args) => {
+      rendered = true;
+      return renderFresh(...args);
+    },
   };
   const render = ctx.deps.renderOverview ?? renderOverview;
   report({ kind: "rendering", fileKey: key, done: 0, total: 0 });
@@ -595,8 +808,13 @@ function startOverview(ctx: VideoPanelContext, chatId: string): void {
     report({ kind: "rendering", fileKey: key, done: finished, total });
   })
     .then((refs) => {
-      if (!stillAttached()) return;
-      report({ kind: "ready", fileKey: key, sheets: refs.length });
+      if (!stillShown()) return;
+      report({
+        kind: "ready",
+        fileKey: key,
+        sheets: refs.length,
+        ...(rendered ? {} : { reused: true as const }),
+      });
       ctx.deps.onOverview(chatId, refs);
       prepareAudio(ctx, chatId, toolCtx);
     })
@@ -618,7 +836,7 @@ function dropStaleAudio(ctx: VideoPanelContext): void {
   const prep = ctx.audioPrep;
   if (!prep) return;
   const still =
-    isCurrent(ctx, prep.chatId) && attachedVideo(ctx, prep.chatId)?.fileKey === prep.fileKey;
+    isCurrent(ctx, prep.chatId) && shownVideo(ctx.state, prep.chatId)?.fileKey === prep.fileKey;
   if (!still) stopAudioPrep(ctx);
 }
 

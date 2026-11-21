@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import indexHtml from "../index.html?raw";
+import { VENICE_BASE_URL } from "../src/api/client";
 import { createMemoryStore } from "../src/chat/store";
 import { queryElements, type AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
@@ -8,12 +9,13 @@ import {
   blankChat,
   createAppState,
   setChats,
+  setCurrentChat,
   setModels,
   setSettings,
   type AppState,
 } from "../src/state";
 import type { Chat, ChatStore, ModelInfo } from "../src/types";
-import { completedSteps, initWelcome, type WelcomeDeps } from "../src/ui/welcome";
+import { completedSteps, initWelcome, keyStepLabel, type WelcomeDeps } from "../src/ui/welcome";
 
 let els: AppElements;
 let state: AppState;
@@ -74,8 +76,8 @@ beforeEach(() => {
 describe("completedSteps", () => {
   it("ticks each step from the state", () => {
     expect([...completedSteps(state, false)]).toEqual([]);
-    setSettings(state, { ...state.settings, apiKey: "key" });
-    setModels(state, [model(DEFAULT_SETTINGS.defaultModelId)]);
+    setSettings(state, { ...state.settings, baseUrl: VENICE_BASE_URL, apiKey: "key" });
+    setModels(state, [model("listed")]);
     expect([...completedSteps(state, true)]).toEqual(["key", "test", "model"]);
     const video = { name: "v.mp4", fileKey: "v", durationSeconds: 1, width: 1, height: 1 };
     setChats(state, [chat("a", { video })]);
@@ -85,6 +87,30 @@ describe("completedSteps", () => {
   it("needs no key for a server that is not Venice", () => {
     setSettings(state, { ...state.settings, baseUrl: "http://localhost:1234/v1" });
     expect(completedSteps(state, false).has("key")).toBe(true);
+    expect(keyStepLabel(state)).toBe("Choose an API");
+  });
+
+  it("asks for an API first, and for a key only on Venice", () => {
+    setSettings(state, { ...state.settings, apiKey: "key" });
+    expect(completedSteps(state, false).has("key")).toBe(false);
+    expect(keyStepLabel(state)).toBe("Choose an API");
+    setSettings(state, { ...state.settings, baseUrl: VENICE_BASE_URL, apiKey: "" });
+    expect(completedSteps(state, false).has("key")).toBe(false);
+    expect(keyStepLabel(state)).toBe("Add your API key");
+  });
+
+  it("ticks the model step from the current chat's model, as the composer sees it", () => {
+    setSettings(state, { ...state.settings, baseUrl: "http://localhost:1234/v1" });
+    setCurrentChat(state, chat("a"), []);
+    expect(completedSteps(state, false).has("model")).toBe(false);
+    setModels(state, [model("listed")]);
+    expect(completedSteps(state, false).has("model")).toBe(true);
+    setCurrentChat(
+      state,
+      { ...chat("b"), settings: { ...chat("b").settings, modelId: "gone" } },
+      [],
+    );
+    expect(completedSteps(state, false).has("model")).toBe(false);
   });
 
   it("counts images waiting in the composer as media", () => {
@@ -97,7 +123,7 @@ describe("completedSteps", () => {
 
 describe("initWelcome", () => {
   it("shows the checklist on a fresh start, with the finished steps ticked", async () => {
-    setSettings(state, { ...state.settings, apiKey: "key" });
+    setSettings(state, { ...state.settings, baseUrl: VENICE_BASE_URL, apiKey: "key" });
     setChats(state, [chat("a")]);
     initWelcome(els, state, deps);
     await vi.waitFor(() => expect(els.welcome.el.hidden).toBe(false));
@@ -125,8 +151,8 @@ describe("initWelcome", () => {
   });
 
   it("hides once every step is done", () => {
-    setSettings(state, { ...state.settings, apiKey: "key" });
-    setModels(state, [model(DEFAULT_SETTINGS.defaultModelId)]);
+    setSettings(state, { ...state.settings, baseUrl: VENICE_BASE_URL, apiKey: "key" });
+    setModels(state, [model("listed")]);
     localStorage.setItem("vid2grid-chat-connection-test", "passed");
     addPending(state, "a", {
       kind: "image",
@@ -154,5 +180,13 @@ describe("initWelcome", () => {
     expect(onOpenSettings).toHaveBeenCalledTimes(2);
     stepAction("test").click();
     expect(onTestConnection).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("welcome key step", () => {
+  it("is labelled from the chosen API", () => {
+    initWelcome(els, state, deps);
+    const label = els.welcome.steps.querySelector('[data-step="key"] .welcome-label');
+    expect(label?.textContent).toBe("Choose an API");
   });
 });

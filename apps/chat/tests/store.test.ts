@@ -6,6 +6,7 @@ import type {
   Chat,
   ChatMessage,
   ChatStore,
+  Folder,
   ImageRef,
   UserMessage,
   VideoAudio,
@@ -251,6 +252,32 @@ describe.each(stores)("%s chat store swipes and cast", (_name, open) => {
   });
 });
 
+describe.each(stores)("%s chat store folders", (_name, open) => {
+  const trips: Folder = { id: "f1", name: "Trips", createdAt: 2, collapsed: true };
+  const cooking: Folder = { id: "f2", name: "Cooking", createdAt: 1 };
+
+  it("lists folders oldest first and replaces one on put", async () => {
+    const store = await open();
+    await store.putFolder(trips);
+    await store.putFolder(cooking);
+    expect(await store.listFolders()).toEqual([cooking, trips]);
+    await store.putFolder({ ...trips, name: "Holidays" });
+    expect((await store.listFolders()).map((folder) => folder.name)).toEqual([
+      "Cooking",
+      "Holidays",
+    ]);
+  });
+
+  it("deletes a folder without touching the chats filed in it", async () => {
+    const store = await open();
+    await store.putFolder(trips);
+    await store.putChat({ ...chat("a", 1), folderId: trips.id });
+    await store.deleteFolder(trips.id);
+    expect(await store.listFolders()).toEqual([]);
+    expect((await store.getChat("a"))?.folderId).toBe(trips.id);
+  });
+});
+
 function openVersion1(factory: IDBFactory, name: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = factory.open(name, 1);
@@ -343,6 +370,56 @@ function writeVersion3(db: IDBDatabase): Promise<void> {
   });
 }
 
+function openVersion4(factory: IDBFactory, name: string): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = factory.open(name, 4);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      db.createObjectStore("chats", { keyPath: "id" });
+      const messages = db.createObjectStore("messages", { keyPath: "seq", autoIncrement: true });
+      messages.createIndex("byChat", "chatId");
+      messages.createIndex("byMessage", ["chatId", "messageId"], { unique: true });
+      db.createObjectStore("images");
+      db.createObjectStore("sheetCache");
+      db.createObjectStore("videoHandles");
+      db.createObjectStore("timelines", { keyPath: "fileKey" });
+      db.createObjectStore("cast", { keyPath: "fileKey" });
+      db.createObjectStore("audio", { keyPath: "fileKey" });
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("open failed"));
+  });
+}
+
+function writeVersion4(db: IDBDatabase): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(["chats", "audio"], "readwrite");
+    transaction.objectStore("chats").put(chat("old", 3));
+    transaction.objectStore("audio").put(audio);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error ?? new Error("write failed"));
+  });
+}
+
+describe("IndexedDB chat store upgrade to folders", () => {
+  it("keeps a version 4 database's chats and audio, unfiled, and adds folders", async () => {
+    const factory = new IDBFactory();
+    const old = await openVersion4(factory, "upgrade-4");
+    await writeVersion4(old);
+    old.close();
+
+    const store = await openChatStore({ name: "upgrade-4", factory });
+
+    const [kept] = await store.listChats();
+    expect(kept).toEqual(chat("old", 3));
+    expect(kept?.folderId).toBeUndefined();
+    expect(await store.getAudio(audio.fileKey)).toEqual(audio);
+    expect(await store.listFolders()).toEqual([]);
+    await store.putFolder({ id: "f", name: "Trips", createdAt: 1 });
+    expect(await store.listFolders()).toHaveLength(1);
+  });
+});
+
 describe("IndexedDB chat store upgrade to audio", () => {
   it("keeps a version 3 database's chats, timelines and cast and adds audio", async () => {
     const factory = new IDBFactory();
@@ -413,12 +490,12 @@ describe("IndexedDB chat store upgrade", () => {
     await openChatStore({ name: "newer", factory });
 
     const newer = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = factory.open("newer", 5);
+      const request = factory.open("newer", 6);
       request.onblocked = () => reject(new Error("blocked"));
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error ?? new Error("open failed"));
     });
-    expect(newer.version).toBe(5);
+    expect(newer.version).toBe(6);
     newer.close();
   });
 });

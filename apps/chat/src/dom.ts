@@ -8,6 +8,7 @@ function queryChatChrome() {
   return {
     sidebar: {
       newChatButton: byId("newChatButton", HTMLButtonElement),
+      newFolderButton: byId("newFolderButton", HTMLButtonElement),
       searchInput: byId("chatSearchInput", HTMLInputElement),
       chatList: byId("chatList", HTMLUListElement),
       openSettingsButton: byId("openSettingsButton", HTMLButtonElement),
@@ -63,12 +64,14 @@ function queryChatSettings() {
       voiceSelect: byId("voiceSelect", HTMLSelectElement),
       voiceHint: byId("voiceHint", HTMLElement),
       videoReferencesSelect: byId("videoReferencesSelect", HTMLSelectElement),
-      roleplayNames: byId("roleplayNames", HTMLDetailsElement),
+      characterNames: byId("characterNames", HTMLDetailsElement),
       promptPreview: byId("promptPreview", HTMLElement),
       personaSelect: byId("personaSelect", HTMLSelectElement),
       savePersonaButton: byId("savePersonaButton", HTMLButtonElement),
-      updatePersonaButton: byId("updatePersonaButton", HTMLButtonElement),
-      deletePersonaButton: byId("deletePersonaButton", HTMLButtonElement),
+      managePresetsButton: byId("managePresetsButton", HTMLButtonElement),
+      presetEdited: byId("presetEdited", HTMLElement),
+      updatePresetButton: byId("updatePresetButton", HTMLButtonElement),
+      revertPresetButton: byId("revertPresetButton", HTMLButtonElement),
       modelPicker: byId("modelPicker", HTMLElement),
       temperatureInput: byId("temperatureInput", HTMLInputElement),
       reasoningEffortField: byId("reasoningEffortField", HTMLElement),
@@ -241,6 +244,28 @@ function queryConversationView() {
   };
 }
 
+function queryPresetManager() {
+  return {
+    presetManager: {
+      dialog: byId("presetManagerDialog", HTMLDialogElement),
+      list: byId("presetList", HTMLUListElement),
+      empty: byId("presetEmpty", HTMLElement),
+      editor: byId("presetEditor", HTMLElement),
+      nameInput: byId("presetNameInput", HTMLInputElement),
+      systemPromptInput: byId("presetSystemPromptInput", HTMLTextAreaElement),
+      characterNameInput: byId("presetCharacterNameInput", HTMLInputElement),
+      userNameInput: byId("presetUserNameInput", HTMLInputElement),
+      voiceSelect: byId("presetVoiceSelect", HTMLSelectElement),
+      voiceHint: byId("presetVoiceHint", HTMLElement),
+      videoReferencesSelect: byId("presetVideoReferencesSelect", HTMLSelectElement),
+      newButton: byId("newPresetButton", HTMLButtonElement),
+      duplicateButton: byId("duplicatePresetButton", HTMLButtonElement),
+      deleteButton: byId("deletePresetButton", HTMLButtonElement),
+      applyButton: byId("applyPresetButton", HTMLButtonElement),
+    },
+  };
+}
+
 export function queryElements() {
   return {
     main: byId("mainColumn", HTMLElement),
@@ -252,6 +277,7 @@ export function queryElements() {
     ...queryChatChrome(),
     ...queryStudyAndToast(),
     ...queryChatSettings(),
+    ...queryPresetManager(),
     ...queryDrawerPanels(),
     ...queryConversationView(),
     composer: {

@@ -3,7 +3,7 @@ import indexHtml from "../index.html?raw";
 import { createMemoryStore } from "../src/chat/store";
 import { queryElements, type AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
-import { blankChat, createAppState, type AppState } from "../src/state";
+import { blankChat, createAppState, setPendingVideo, type AppState } from "../src/state";
 import type { ChatStore } from "../src/types";
 import { formatBytes, initVideoCopies, type VideoStorage } from "../src/ui/videoCopies";
 
@@ -19,7 +19,7 @@ function fakeStorage() {
   let finish: () => void = () => undefined;
   let report: (written: number, total: number) => void = () => undefined;
   const fake = {
-    supported: () => true,
+    supported: (): boolean => true,
     save: vi.fn(
       (
         _key: string,
@@ -104,9 +104,45 @@ describe("saving", () => {
     expect(storage.fake.save).not.toHaveBeenCalled();
   });
 
+  it("asks about a large file on drop and writes it on send without asking again", () => {
+    const kept = copies();
+    kept.approve(bigFile(5000), "k1");
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(storage.fake.save).not.toHaveBeenCalled();
+    kept.save(bigFile(5000), "k1");
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(storage.fake.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes nothing on send when the copy was declined on drop", () => {
+    confirm.mockReturnValue(false);
+    const kept = copies();
+    kept.approve(bigFile(5000), "k1");
+    kept.save(bigFile(5000), "k1");
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(storage.fake.save).not.toHaveBeenCalled();
+  });
+
+  it("asks nothing on drop for a small file", () => {
+    copies().approve(bigFile(10), "k1");
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
   it("keeps nothing when copies are switched off", () => {
     state = createAppState({ ...DEFAULT_SETTINGS, keepVideoCopies: false });
     copies().save(bigFile(10), "k1");
+    expect(storage.fake.save).not.toHaveBeenCalled();
+  });
+
+  it("says once when the browser cannot keep copies", () => {
+    storage.fake.supported = () => false;
+    const kept = copies();
+    kept.save(bigFile(10), "k1");
+    kept.save(bigFile(10), "k2");
+    expect(status.show).toHaveBeenCalledTimes(1);
+    expect(status.show).toHaveBeenCalledWith(
+      "This browser cannot keep copies of videos, so attach the file again after a restart.",
+    );
     expect(storage.fake.save).not.toHaveBeenCalled();
   });
 });
@@ -121,6 +157,13 @@ describe("releasing", () => {
     await store.deleteChat("branch");
     await kept.release("k1");
     expect(storage.fake.remove).toHaveBeenCalledWith("k1");
+  });
+
+  it("keeps a copy whose video is waiting to be sent in some chat", async () => {
+    const video = { name: "beach.mp4", fileKey: "k1", durationSeconds: 1, width: 1, height: 1 };
+    setPendingVideo(state, "other", video);
+    await copies().release("k1");
+    expect(storage.fake.remove).not.toHaveBeenCalled();
   });
 
   it("aborts a save still writing and waits for it before deleting", async () => {

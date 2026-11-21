@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_SETTINGS } from "../src/settings";
 import { blankChat, removeChat, replaceChat, setCurrentChat } from "../src/state";
 import type * as StudyModule from "../src/video/study";
 import { runStudy } from "../src/video/study";
@@ -21,6 +20,7 @@ import {
   restartItem,
   setInput,
   setup,
+  STUDY_MODEL_ID,
   startStudy,
   state,
   store,
@@ -49,7 +49,7 @@ describe("resuming after a reload", () => {
   }
 
   it("plans a ranged study's remaining windows from the plan saved on its timeline", async () => {
-    const plan = planFor(DEFAULT_SETTINGS.defaultModelId, ranged);
+    const plan = planFor(STUDY_MODEL_ID, ranged);
     vi.mocked(runStudy).mockImplementationOnce(async (deps) => {
       const progress = { ...deps.timeline, nextWindow: 1 };
       await deps.saveTimeline(progress);
@@ -76,7 +76,7 @@ describe("resuming after a reload", () => {
     const plan = expectedPlan();
     await store.putTimeline({
       ...timeline([{ startSeconds: 0, endSeconds: 5, text: "She walks in" }]),
-      modelId: DEFAULT_SETTINGS.defaultModelId,
+      modelId: STUDY_MODEL_ID,
       nextWindow: 1,
       windowCount: plan.windows.length,
     });
@@ -114,7 +114,7 @@ describe("the study control", () => {
     const plan = expectedPlan();
     await store.putTimeline({
       ...timeline([{ startSeconds: 0, endSeconds: 5, text: "She walks in" }]),
-      modelId: DEFAULT_SETTINGS.defaultModelId,
+      modelId: STUDY_MODEL_ID,
       nextWindow: 1,
       windowCount: plan.windows.length,
     });

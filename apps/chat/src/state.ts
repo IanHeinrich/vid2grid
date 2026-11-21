@@ -14,9 +14,14 @@ export type PendingAttachment =
   | { kind: "video"; video: VideoAttachment };
 
 export type OverviewStatus =
+  | { kind: "needsModel"; fileKey: string }
   | { kind: "rendering"; fileKey: string; done: number; total: number }
-  | { kind: "ready"; fileKey: string; sheets: number }
+  // Reused: the sheets came from the cache, so this video was seen before.
+  | { kind: "ready"; fileKey: string; sheets: number; reused?: true }
   | { kind: "failed"; fileKey: string; error: string };
+
+export const NEEDS_MODEL_TEXT = "Choose a model to prepare the overview";
+export const REUSED_TEXT = "Seen before, overview reused";
 
 export interface LoadedVideo {
   chatId: string;
@@ -35,7 +40,9 @@ export interface AppState {
   readonly pending: ReadonlyMap<string, readonly PendingAttachment[]>;
   readonly overviews: ReadonlyMap<string, OverviewStatus>;
   readonly video: LoadedVideo | null;
+  // The current chat's reply; runningChats holds every chat with one still running or stopping.
   readonly running: boolean;
+  readonly runningChats: ReadonlySet<string>;
 }
 
 type WritableAppState = { -readonly [K in keyof AppState]: AppState[K] };
@@ -52,6 +59,7 @@ export function createAppState(settings: GlobalSettings): AppState {
     overviews: new Map(),
     video: null,
     running: false,
+    runningChats: new Set(),
   };
 }
 
@@ -111,6 +119,7 @@ export function setCurrentChat(
   state.currentChat = chat;
   state.messages = messages;
   state.video = null;
+  state.running = chat !== null && state.runningChats.has(chat.id);
 }
 
 export function upsertMessage(state: WritableAppState, message: ChatMessage): void {
@@ -200,6 +209,24 @@ export function pendingVideo(pending: readonly PendingAttachment[]): VideoAttach
   return undefined;
 }
 
+// The overview belongs to the pending video, so it goes with it.
+export function removePendingVideo(state: WritableAppState, chatId: string): void {
+  setPendingFor(
+    state,
+    chatId,
+    pendingFor(state, chatId).filter(
+      (attachment) => attachment.kind !== "video" && attachment.kind !== "overview",
+    ),
+  );
+}
+
+// A video dropped into the message being written shows in place of the chat's own until sent.
+export function shownVideo(state: AppState, chatId: string): VideoAttachment | undefined {
+  return (
+    pendingVideo(pendingFor(state, chatId)) ?? state.chats.find((chat) => chat.id === chatId)?.video
+  );
+}
+
 export function setOverviewStatus(
   state: WritableAppState,
   chatId: string,
@@ -213,16 +240,18 @@ export function setOverviewStatus(
 
 export function overviewFor(state: AppState, chatId: string): OverviewStatus | undefined {
   const status = state.overviews.get(chatId);
-  const video = state.chats.find((chat) => chat.id === chatId)?.video;
-  return status && status.fileKey === video?.fileKey ? status : undefined;
+  return status && status.fileKey === shownVideo(state, chatId)?.fileKey ? status : undefined;
 }
 
-// A finished overview needs no label; only progress and failure are worth showing.
+// A finished overview needs no label unless it was reused, which would otherwise look instant.
 export function overviewText(status: OverviewStatus | undefined): string {
   switch (status?.kind) {
     case undefined:
-    case "ready":
       return "";
+    case "needsModel":
+      return NEEDS_MODEL_TEXT;
+    case "ready":
+      return status.reused ? REUSED_TEXT : "";
     case "rendering":
       return status.total > 0
         ? `Overview ${Math.round((status.done / status.total) * 100)}%`
@@ -240,8 +269,21 @@ export function setLoadedVideo(state: WritableAppState, video: LoadedVideo | nul
   state.video = video;
 }
 
-export function setRunning(state: WritableAppState, running: boolean): void {
-  state.running = running;
+export function setRunning(
+  state: WritableAppState,
+  running: boolean,
+  chatId = state.currentChat?.id,
+): void {
+  if (chatId === undefined) return;
+  const chats = new Set(state.runningChats);
+  if (running) chats.add(chatId);
+  else chats.delete(chatId);
+  state.runningChats = chats;
+  state.running = state.currentChat !== null && chats.has(state.currentChat.id);
+}
+
+export function isRunningIn(state: AppState, chatId: string): boolean {
+  return state.runningChats.has(chatId);
 }
 
 export function pendingImages(pending: readonly PendingAttachment[]): ImageRef[] {
@@ -257,8 +299,14 @@ export function pendingImages(pending: readonly PendingAttachment[]): ImageRef[]
   });
 }
 
+// Only Venice reports privacy, so elsewhere the private-only setting would hide every model.
+export function reportsPrivacy(models: readonly ModelInfo[]): boolean {
+  return models.some((model) => model.privacy !== "unknown");
+}
+
 export function visionModels(models: readonly ModelInfo[], privateOnly: boolean): ModelInfo[] {
-  return models.filter((model) => model.vision && (!privateOnly || model.privacy === "private"));
+  const onlyPrivate = privateOnly && reportsPrivacy(models);
+  return models.filter((model) => model.vision && (!onlyPrivate || model.privacy === "private"));
 }
 
 export function effectiveDefaultModelId(
@@ -301,15 +349,22 @@ export function resolveModel(state: AppState, modelId: string): ModelInfo {
   );
 }
 
+// A chat made before the models loaded has no model of its own and follows the default.
+export function chatModelId(state: AppState, chat: Chat): string {
+  return chat.settings.modelId || defaultModelId(state);
+}
+
 export function currentModel(state: AppState): ModelInfo | null {
-  const modelId = state.currentChat?.settings.modelId ?? "";
+  const modelId = state.currentChat ? chatModelId(state, state.currentChat) : "";
   return modelId === "" ? null : resolveModel(state, modelId);
 }
 
 export function sendBlocker(state: AppState): string | null {
   if (state.currentChat === null) return "Start a new chat from the sidebar.";
-  if (isVenice(state.settings.baseUrl) && state.settings.apiKey.trim() === "") {
-    return "Add your Venice API key in Settings to start chatting.";
+  const { baseUrl, apiKey } = state.settings;
+  if (baseUrl.trim() === "") return "Choose an API in Settings to start chatting.";
+  if (isVenice(baseUrl) && apiKey.trim() === "") {
+    return "Add your API key in Settings to start chatting.";
   }
   if (currentModel(state) === null) return "Choose a model in Chat settings.";
   return null;

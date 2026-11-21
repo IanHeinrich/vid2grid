@@ -1,6 +1,6 @@
 import { summarizeStory } from "../chat/summary";
 import type { AppElements } from "../dom";
-import { updateChat, type AppState } from "../state";
+import { chatModelId, updateChat, type AppState } from "../state";
 import { errorText } from "../text";
 import type { Chat, ChatStore, StorySoFar, StreamChat } from "../types";
 import { createModelTask, modelCallDeps, type ModelTask } from "./modelTask";
@@ -111,7 +111,7 @@ async function summarize(ctx: MemoryContext): Promise<void> {
   const story = await ctx.task.run("Summarizing the older messages…", (signal) =>
     summarizeStory(
       {
-        ...modelCallDeps(ctx.state, ctx.deps.streamChat, chat.settings.modelId, signal),
+        ...modelCallDeps(ctx.state, ctx.deps.streamChat, chatModelId(ctx.state, chat), signal),
         ...(ctx.deps.now ? { now: ctx.deps.now } : {}),
       },
       { chat: ctx.state.chats.find((entry) => entry.id === chat.id) ?? chat, messages },

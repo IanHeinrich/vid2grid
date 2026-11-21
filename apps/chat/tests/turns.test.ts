@@ -8,10 +8,12 @@ import { ANSWER_NOW_NOTE } from "../src/chat/history";
 import { createMemoryStore } from "../src/chat/store";
 import { STORY_SYSTEM_PROMPT } from "../src/chat/summary";
 import { queryElements, type AppElements } from "../src/dom";
+import { VENICE_BASE_URL } from "../src/api/client";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import {
   blankChat,
   createAppState,
+  isRunningIn,
   replaceChat,
   setCurrentChat,
   setLoadedVideo,
@@ -47,6 +49,14 @@ vi.mock("../src/chat/agentLoop", async (importOriginal) => {
   const actual = await importOriginal<typeof AgentLoop>();
   return { ...actual, runTurn: vi.fn(actual.runTurn) };
 });
+
+const MODEL = "vision-model";
+const SETTINGS = {
+  ...DEFAULT_SETTINGS,
+  baseUrl: VENICE_BASE_URL,
+  apiKey: "key",
+  defaultModelId: MODEL,
+};
 
 let els: AppElements;
 let state: AppState;
@@ -85,7 +95,7 @@ async function* pendingUntilAbort(signal: AbortSignal): AsyncGenerator<StreamEve
 }
 
 async function seed(messages: ChatMessage[], chatExtra: Partial<Chat> = {}): Promise<void> {
-  const chat = { ...blankChat(DEFAULT_SETTINGS.defaultModelId, "chat", 1), ...chatExtra };
+  const chat = { ...blankChat(MODEL, "chat", 1), ...chatExtra };
   await store.putChat(chat);
   for (const message of messages) await store.putMessage("chat", message);
   replaceChat(state, chat);
@@ -122,7 +132,7 @@ function lastTurnDeps() {
 beforeEach(() => {
   document.body.innerHTML = indexHtml;
   els = queryElements();
-  state = createAppState({ ...DEFAULT_SETTINGS, apiKey: "key" });
+  state = createAppState(SETTINGS);
   store = createMemoryStore();
   status = { show: vi.fn(), clear: vi.fn() };
   toast = { show: vi.fn() };
@@ -175,9 +185,7 @@ describe("replay", () => {
     await turns().replay();
     const user = (await store.listMessages("chat")).find((message) => message.id === "U2");
     if (user?.role !== "user") throw new Error("No user message");
-    expect(user.alternates).toEqual([
-      { messages: [A2], modelId: DEFAULT_SETTINGS.defaultModelId, createdAt: A2.createdAt },
-    ]);
+    expect(user.alternates).toEqual([{ messages: [A2], modelId: MODEL, createdAt: A2.createdAt }]);
     expect(user.replyIndex).toBe(1);
     expect(state.messages.find((message) => message.id === "U2")).toEqual(user);
   });
@@ -306,6 +314,43 @@ describe("answer now", () => {
   });
 });
 
+describe("running per chat", () => {
+  it("lets another chat send while one chat's reply is still running", async () => {
+    await seed([U1]);
+    const running = turns();
+    streamChat.mockImplementationOnce((_api, _request, signal) => pendingUntilAbort(signal));
+    const first = running.run(() => Promise.resolve({}));
+    await vi.waitFor(() => expect(streamChat).toHaveBeenCalledTimes(1));
+    expect(state.running).toBe(true);
+    const other = blankChat(MODEL, "other", 2);
+    await store.putChat(other);
+    replaceChat(state, other);
+    setCurrentChat(state, other, []);
+    expect(state.running).toBe(false);
+    const prepare = vi.fn(() => Promise.resolve({}));
+    await running.run(prepare);
+    expect(prepare).toHaveBeenCalled();
+    expect(isRunningIn(state, "chat")).toBe(true);
+    setCurrentChat(state, state.chats.find((chat) => chat.id === "chat") ?? null, [U1]);
+    running.stop();
+    await first;
+    expect(isRunningIn(state, "chat")).toBe(false);
+  });
+
+  it("refuses a second turn in the chat whose reply is running", async () => {
+    await seed([U1]);
+    const running = turns();
+    streamChat.mockImplementationOnce((_api, _request, signal) => pendingUntilAbort(signal));
+    const first = running.run(() => Promise.resolve({}));
+    await vi.waitFor(() => expect(streamChat).toHaveBeenCalledTimes(1));
+    const prepare = vi.fn(() => Promise.resolve({}));
+    await running.run(prepare);
+    expect(prepare).not.toHaveBeenCalled();
+    running.stop();
+    await first;
+  });
+});
+
 describe("retrying", () => {
   it("leaves an error line with Retry, which reruns without deleting the message", async () => {
     await seed([U1]);
@@ -343,7 +388,7 @@ describe("retrying", () => {
 
 function smallModel(): ModelInfo {
   return {
-    id: DEFAULT_SETTINGS.defaultModelId,
+    id: MODEL,
     name: "Small",
     vision: true,
     tools: true,

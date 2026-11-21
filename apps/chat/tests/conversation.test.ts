@@ -187,7 +187,7 @@ describe("answers", () => {
     );
   });
 
-  it("renders roleplay markdown in assistant messages", () => {
+  it("renders action and dialogue markdown in assistant messages", () => {
     const conversation = initConversation(els, deps());
     conversation.show(assistant("a1", '*waves* "Hello" at [0:05]'));
     const text = list().querySelector(".message.assistant .message-text");

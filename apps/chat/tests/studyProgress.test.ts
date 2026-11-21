@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_SETTINGS } from "../src/settings";
 import { zoomOfferText } from "../src/ui/study/studyProgress";
 import type * as StudyModule from "../src/video/study";
 import { runStudy, runZoom, type ZoomDeps } from "../src/video/study";
@@ -15,6 +14,7 @@ import {
   progressingStudy,
   resetStudy,
   setup,
+  STUDY_MODEL_ID,
   startStudy,
   store,
   VIDEO,
@@ -148,7 +148,7 @@ describe("the zoom pass in the progress card", () => {
     const card = els.study.progress;
     await vi.waitFor(() => expect(card.title.textContent).toBe(`Study done: ${windows} windows`));
     expect(card.zoomButton.hidden).toBe(false);
-    expect(card.zoomButton.textContent).toBe(offerFor(FLAGS, DEFAULT_SETTINGS.defaultModelId));
+    expect(card.zoomButton.textContent).toBe(offerFor(FLAGS, STUDY_MODEL_ID));
     const running = hangingZoom();
     card.zoomButton.click();
     await vi.waitFor(() => expect(card.title.textContent).toBe("Zooming into unclear moments"));

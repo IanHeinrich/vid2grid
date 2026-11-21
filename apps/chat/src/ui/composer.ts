@@ -11,6 +11,7 @@ import { effortFor, roundsFor } from "../chat/thoroughness";
 import type { AppElements, StatusLine } from "../dom";
 import {
   addPending,
+  chatModelId,
   clearPending,
   currentModel,
   currentPending,
@@ -20,9 +21,11 @@ import {
   pendingImages,
   pendingVideo,
   removePending,
+  removePendingVideo,
   resolveModel,
   sendBlocker,
   setPendingPinned,
+  shownVideo,
   updateChat,
   videoSummary,
   type AppState,
@@ -42,7 +45,7 @@ import type {
 } from "../types";
 import { resolveSheetResolution } from "../video/resolution";
 import { iconButton, pinToggle } from "./buttons";
-import type { TurnRequest, Turns } from "./turns";
+import type { Turns } from "./turns";
 import type { VideoPanel } from "./videoPanel";
 
 const MAX_INPUT_HEIGHT_PX = 240;
@@ -91,7 +94,10 @@ export interface Composer {
 export interface ComposerDeps {
   store: ChatStore;
   status: StatusLine;
-  video: Pick<VideoPanel, "overviewRendering" | "whenOverviewReady" | "view">;
+  video: Pick<
+    VideoPanel,
+    "overviewRendering" | "whenOverviewReady" | "view" | "pendingView" | "commit"
+  >;
   turns: Pick<Turns, "run" | "stop" | "answerNow">;
   // A timestamp check runs beside the turn, so Stop ends it too.
   stopChecks(): void;
@@ -170,7 +176,8 @@ export function initComposer(
 }
 
 function audioVideoKey(ctx: ComposerContext): string | undefined {
-  return ctx.state.currentChat?.video?.fileKey;
+  const chat = ctx.state.currentChat;
+  return chat ? shownVideo(ctx.state, chat.id)?.fileKey : undefined;
 }
 
 function audioOn(ctx: ComposerContext): boolean {
@@ -542,7 +549,7 @@ function pendingItem(
   index: number,
 ): HTMLLIElement {
   const chatId = ctx.state.currentChat?.id ?? "";
-  if (attachment.kind === "video") return videoItem(ctx, attachment.video, index);
+  if (attachment.kind === "video") return videoItem(ctx, attachment.video);
   const item = document.createElement("li");
   item.className = `pending-item pending-${attachment.kind}`;
   const first = attachment.kind === "image" ? attachment.ref : attachment.refs[0];
@@ -569,13 +576,19 @@ function pendingItem(
       }),
     );
   }
-  item.append(removeButton(ctx, index, label.textContent));
+  item.append(
+    removeButton(ctx, label.textContent, (chatId) => removePending(ctx.state, chatId, index)),
+  );
   return item;
 }
 
-function removeButton(ctx: ComposerContext, index: number, what: string): HTMLButtonElement {
+function removeButton(
+  ctx: ComposerContext,
+  what: string,
+  remove: (chatId: string) => void,
+): HTMLButtonElement {
   return iconButton("pending-remove", `Remove ${what}`, "×", () => {
-    removePending(ctx.state, ctx.state.currentChat?.id ?? "", index);
+    remove(ctx.state.currentChat?.id ?? "");
     pendingChanged(ctx);
   });
 }
@@ -585,10 +598,11 @@ function progressText(ctx: ComposerContext): string {
   return chat ? overviewText(overviewFor(ctx.state, chat.id)) : "";
 }
 
-function videoItem(ctx: ComposerContext, video: VideoAttachment, index: number): HTMLLIElement {
+function videoItem(ctx: ComposerContext, video: VideoAttachment): HTMLLIElement {
   const item = document.createElement("li");
   item.className = "pending-item pending-video";
-  const view = ctx.deps.video.view();
+  const pending = ctx.deps.video.pendingView();
+  const view = pending.video?.fileKey === video.fileKey ? pending : ctx.deps.video.view();
   if (view.url && view.video?.fileKey === video.fileKey) {
     const thumb = document.createElement("video");
     thumb.className = "pending-thumb";
@@ -603,7 +617,11 @@ function videoItem(ctx: ComposerContext, video: VideoAttachment, index: number):
   const progress = document.createElement("span");
   progress.className = "pending-progress";
   progress.textContent = progressText(ctx);
-  item.append(label, progress, removeButton(ctx, index, label.textContent));
+  item.append(
+    label,
+    progress,
+    removeButton(ctx, label.textContent, (chatId) => removePendingVideo(ctx.state, chatId)),
+  );
   return item;
 }
 
@@ -639,7 +657,7 @@ async function addImages(ctx: ComposerContext, files: readonly File[]): Promise<
   const downscale = ctx.deps.downscale ?? downscaleImage;
   for (const file of files) {
     try {
-      const model = resolveModel(ctx.state, chat.settings.modelId);
+      const model = resolveModel(ctx.state, chatModelId(ctx.state, chat));
       const { px } = resolveSheetResolution(chat.settings.sheetResolution, model);
       const { blob } = await downscale(file, px);
       const id = await ctx.deps.store.putImage(blob);
@@ -671,7 +689,12 @@ async function submit(ctx: ComposerContext): Promise<void> {
   if (!waitsForOverview && !hasContent(ctx, chat.id)) return;
   await ctx.deps.turns.run(async (signal) => {
     if (waitsForOverview && !(await waitForOverview(ctx, signal))) return undefined;
-    return takeMessage(ctx, chat.id);
+    const taken = readMessage(ctx, chat.id);
+    if (!taken) return undefined;
+    // Saved before anything is cleared, so a failure leaves the message as it was.
+    if (taken.message.video) await ctx.deps.video.commit(chat.id, taken.message.video);
+    clearTaken(ctx, chat.id, taken);
+    return { message: taken.message };
   });
 }
 
@@ -694,8 +717,13 @@ function takeInput(
   };
 }
 
-// Reads and clears the input in one place, so text typed while the overview finished is kept.
-function takeMessage(ctx: ComposerContext, chatId: string): TurnRequest | undefined {
+interface TakenMessage {
+  message: UserMessage;
+  pending: readonly PendingAttachment[];
+}
+
+// Read once the overview is done, so text typed while it finished goes out too.
+function readMessage(ctx: ComposerContext, chatId: string): TakenMessage | undefined {
   const { state, deps } = ctx;
   const model = currentModel(state);
   if (state.currentChat?.id !== chatId || model === null) return undefined;
@@ -728,11 +756,20 @@ function takeMessage(ctx: ComposerContext, chatId: string): TurnRequest | undefi
     );
     return undefined;
   }
-  ctx.els.messageInput.value = "";
-  fitInput(ctx.els.messageInput);
-  clearPending(state, chatId);
+  return { message, pending: pendingFor(state, chatId) };
+}
+
+// Only what was sent is cleared: input typed or items added since stay for the next message.
+function clearTaken(ctx: ComposerContext, chatId: string, taken: TakenMessage): void {
+  const { messageInput } = ctx.els;
+  if (messageInput.value.trim() === taken.message.text) {
+    messageInput.value = "";
+    fitInput(messageInput);
+  }
+  const left = pendingFor(ctx.state, chatId).filter((item) => !taken.pending.includes(item));
+  clearPending(ctx.state, chatId);
+  for (const item of left) addPending(ctx.state, chatId, item);
   pendingChanged(ctx);
   renderControls(ctx);
-  deps.status.clear();
-  return { message };
+  ctx.deps.status.clear();
 }

@@ -1,6 +1,6 @@
 import { condenseSceneLog } from "../chat/summary";
 import type { AppElements } from "../dom";
-import { updateChat, type AppState } from "../state";
+import { chatModelId, updateChat, type AppState } from "../state";
 import { errorText } from "../text";
 import { formatTimestamp, parseTimestamp } from "../time";
 import type { ChatStore, SceneNote, StreamChat } from "../types";
@@ -155,7 +155,7 @@ async function condense(ctx: SceneLogContext): Promise<void> {
   ctx.preview = null;
   const notes = await ctx.task.run("Condensing the scene log…", (signal) =>
     condenseSceneLog(
-      modelCallDeps(ctx.state, ctx.deps.streamChat, chat.settings.modelId, signal),
+      modelCallDeps(ctx.state, ctx.deps.streamChat, chatModelId(ctx.state, chat), signal),
       from,
       durationOf(ctx, from),
     ),

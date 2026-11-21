@@ -194,6 +194,25 @@ describe("scene log editing", () => {
   });
 });
 
+describe("scene log model", () => {
+  it("condenses with the default model for a chat that has no model of its own", async () => {
+    state = createAppState({ ...DEFAULT_SETTINGS, defaultModelId: "default-model" });
+    const chat: Chat = { ...blankChat("", "chat", 1), sceneLog: notes, video: VIDEO };
+    replaceChat(state, chat);
+    setCurrentChat(state, chat, []);
+    const models: string[] = [];
+    panel(async function* (_api, request) {
+      models.push(request.model);
+      await Promise.resolve();
+      yield { type: "text", delta: "[0:05] Merged" };
+      yield { type: "done", finishReason: "stop" };
+    });
+    els.sceneLog.condenseButton.click();
+    await vi.waitFor(() => expect(els.sceneLog.preview.hidden).toBe(false));
+    expect(models).toEqual(["default-model"]);
+  });
+});
+
 describe("scene log condensing", () => {
   it("previews a condensed log and saves it only when accepted", async () => {
     await openChat(notes);

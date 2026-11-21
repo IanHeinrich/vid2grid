@@ -1,6 +1,6 @@
 import { isVenice } from "../api/client";
 import type { AppElements } from "../dom";
-import type { AppState } from "../state";
+import { chatModelId, defaultModelId, type AppState } from "../state";
 import type { ChatStore } from "../types";
 import { lastTestPassed } from "./connectionTest";
 import { icon } from "./icons";
@@ -47,12 +47,22 @@ function hasMedia(state: AppState): boolean {
   );
 }
 
+function needsKey(state: AppState): boolean {
+  const { apiKey, baseUrl } = state.settings;
+  return isVenice(baseUrl) && apiKey.trim() === "";
+}
+
+export function keyStepLabel(state: AppState): string {
+  return needsKey(state) ? "Add your API key" : "Choose an API";
+}
+
 export function completedSteps(state: AppState, testPassed: boolean): Set<WelcomeStep> {
-  const { apiKey, baseUrl, defaultModelId } = state.settings;
+  const chat = state.currentChat;
+  const chosen = chat ? chatModelId(state, chat) : defaultModelId(state);
   const done: Record<WelcomeStep, boolean> = {
-    key: apiKey.trim() !== "" || !isVenice(baseUrl),
+    key: state.settings.baseUrl.trim() !== "" && !needsKey(state),
     test: testPassed,
-    model: state.models.some((model) => model.id === defaultModelId),
+    model: state.models.some((model) => model.id === chosen),
     media: hasMedia(state),
   };
   return new Set(STEPS.filter((step) => done[step]));
@@ -113,6 +123,8 @@ function render(ctx: WelcomeContext): void {
     item.querySelector(".welcome-check")?.replaceChildren(...(isDone ? [icon("check", 14)] : []));
     const action = item.querySelector<HTMLButtonElement>(".welcome-action");
     if (action) action.hidden = isDone;
+    const label = item.querySelector(".welcome-label");
+    if (step === "key" && label) label.textContent = keyStepLabel(state);
   }
 }
 
