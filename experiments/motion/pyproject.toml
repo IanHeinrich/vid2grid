@@ -1,0 +1,34 @@
+[project]
+name = "vid2grid-motion-experiment"
+version = "0.1.0"
+description = "Which motion views help vision-language models answer motion questions"
+requires-python = ">=3.11"
+dependencies = [
+    "av>=14,<20",
+    "httpx>=0.27",
+    "numpy>=1.26",
+    "opencv-python-headless>=5.1.0.95",
+    "Pillow>=10.1",
+    "pyarrow>=26.0.1",
+    "vid2grid",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.2", "ruff>=0.5"]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+vid2grid = { path = "../../apps/python-library", editable = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RET", "PTH", "C4", "RUF", "TC", "PLE", "PLW"]
