@@ -19,8 +19,9 @@ single pair of hands. Each line names where the full rule lives.
   files, or one `packages/browser/src/<area>/` directory (`audio/`,
   `capture/`, `probe/`, `render/`, `shared/` or `transcribe/`) plus the
   `packages/browser/tests/*.test.ts` files covering it, or one
-  `apps/chat/src/<area>/` directory (`api/`, `video/`, `attachments/`, `chat/`
-  or `ui/`) plus the `apps/chat/tests/*.test.ts` files covering it, or
+  `apps/chat/src/<area>/` directory (`api/`, `chat/`, `video/`, `audio/`,
+  `attachments/`, `app/` or one `ui/<folder>/`) plus the
+  `apps/chat/tests/*.test.ts` files covering it, or
   `apps/node-library/src/` plus `apps/node-library/tests/`, or
   `apps/node-cli/src/` plus `apps/node-cli/tests/`, or
   `apps/python-library/src/vid2grid/` (except `_core.js`) plus the
@@ -32,7 +33,7 @@ single pair of hands. Each line names where the full rule lives.
   `apps/web/index.html` (all UI markup), `apps/web/src/main.ts` (the
   wiring), `apps/web/src/style.css`, `apps/web/src/state.ts`,
   `apps/web/package.json`, `apps/chat/index.html`, `apps/chat/src/main.ts`,
-  `apps/chat/src/style.css`, `apps/chat/src/state.ts`,
+  `apps/chat/src/styles/index.css`, `apps/chat/src/state.ts`,
   `apps/chat/src/types.ts`, `apps/chat/package.json`, root `package.json`,
   root `package-lock.json`,
   `.prettierignore`, `.prettierrc.json`, `packages/core/package.json`,
