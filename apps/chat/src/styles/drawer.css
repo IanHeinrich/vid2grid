@@ -1,0 +1,331 @@
+.chat-drawer {
+  position: fixed;
+  inset: 0 0 0 auto;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  width: min(420px, 100vw);
+  border-left: 1px solid var(--border);
+  background: var(--bg-sidebar);
+  box-shadow: var(--panel-shadow);
+  animation: drawer-in 180ms ease-out;
+}
+
+/* Below the mini-player and the toast, so a seek or an Undo stays in reach. */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 19;
+  background: rgb(0 0 0 / 40%);
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@media (min-width: 1280px) {
+  .chat-drawer {
+    position: static;
+    flex-shrink: 0;
+    width: 400px;
+    box-shadow: none;
+    animation: none;
+  }
+
+  .drawer-backdrop {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-drawer {
+    animation: none;
+  }
+}
+
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.drawer-title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.drawer-close {
+  padding: 0.1rem 0.45rem;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.drawer-close:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.drawer-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.drawer-tab {
+  padding: 0.25rem 0.5rem;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.drawer-tab:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.drawer-tab[aria-selected="true"] {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.drawer-tab:focus-visible,
+.drawer-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Two rows, one per group: its label, then its tabs. */
+.knowledge-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, max-content);
+  align-items: center;
+  justify-content: start;
+}
+
+.knowledge-tab-group {
+  padding-right: 0.25rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.knowledge-video {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.9rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.knowledge-video[hidden] {
+  display: none;
+}
+
+.knowledge-video > p {
+  margin: 0;
+}
+
+.drawer-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+.drawer-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.drawer-panel > p {
+  margin: 0;
+}
+
+.drawer-subhead {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.drawer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.persona-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.preset-picker {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.preset-picker .field {
+  flex: 1;
+  min-width: 0;
+}
+
+.preset-edited {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.preset-edited-label {
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  color: var(--muted);
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.character-names {
+  font-size: 0.875rem;
+}
+
+.character-names summary {
+  color: var(--text);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.character-names p {
+  margin: 0.5rem 0;
+}
+
+.prompt-preview {
+  max-height: 10rem;
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  overflow-y: auto;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.task-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.task-status .is-error {
+  color: var(--danger);
+}
+
+.condense-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.condense-preview p {
+  margin: 0;
+}
+
+.cast-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cast-card {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.cast-card.is-editing {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border-color: var(--accent);
+}
+
+.cast-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.cast-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cast-description {
+  margin: 0.2rem 0 0;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+/* Only a textarea can be resized, so the shared rule can carry it. */
+.field input,
+.field select,
+.field textarea {
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 0.95rem;
+  resize: vertical;
+}
+
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}

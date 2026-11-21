@@ -1,0 +1,190 @@
+.scene-log-list {
+  margin: 0;
+  padding-left: 0;
+  font-size: 0.9rem;
+  list-style: none;
+}
+
+.scene-log-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  padding: 0.15rem 0;
+}
+
+.scene-log-list li.is-editing {
+  flex-wrap: wrap;
+}
+
+.scene-log-list .note-time {
+  flex: none;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.note-time-input {
+  width: 5.5rem;
+  padding: 0.15rem 0.35rem;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--bg);
+  font-variant-numeric: tabular-nums;
+}
+
+.drawer-panel [aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.study-estimate {
+  margin: 0;
+}
+
+.study-window-value {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.field input[type="range"] {
+  padding: 0;
+  border: none;
+  background: none;
+  accent-color: var(--accent);
+}
+
+.field [aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.study-range {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.study-range legend {
+  margin-bottom: 0.25rem;
+  padding: 0;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.study-range-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.study-range-actions .button {
+  padding: 0.25rem 0.7rem;
+  font-size: 0.875rem;
+}
+
+.study-progress {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.4rem 0.75rem;
+  width: calc(min(860px, 100%) - 2.5rem);
+  margin: 0 auto 0.25rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  font-size: 0.875rem;
+}
+
+.study-progress-text {
+  min-width: 0;
+}
+
+.study-progress-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.study-progress-detail {
+  margin: 0.1rem 0 0;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.study-progress-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.study-progress-actions .button {
+  padding: 0.25rem 0.7rem;
+  font-size: 0.875rem;
+}
+
+.study-progress-bar {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 0.35rem;
+  accent-color: var(--accent);
+}
+
+.timeline-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.15rem 0.35rem;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.note-edit {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.note-edit:hover {
+  color: var(--text);
+}
+
+.scene-log-list span {
+  flex: 1;
+}
+
+.timeline-audio {
+  margin-top: 1rem;
+}
+
+.timeline-zoom {
+  margin: 0 0 0.5rem;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.875rem;
+}
+
+.timeline-unclear .timeline-text {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.scene-log-list .timeline-zoomed {
+  flex: none;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.note-delete {
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.note-delete:hover {
+  color: var(--danger);
+}

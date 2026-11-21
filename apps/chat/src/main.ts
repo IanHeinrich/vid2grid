@@ -1,4 +1,4 @@
-import "./style.css";
+import "./styles/index.css";
 import { getBalance, isVenice, listModels, streamChat } from "./api/client";
 import { classifyFile } from "./attachments/images";
 import { openChatStore } from "./chat/store";

@@ -9,7 +9,7 @@ export type SettingsTab = (typeof SETTINGS_TABS)[number];
 export const KNOWLEDGE_TABS = ["summary", "scene", "timeline", "people"] as const;
 export type KnowledgeTab = (typeof KNOWLEDGE_TABS)[number];
 
-// Matches the style.css breakpoint where a drawer sits beside the conversation.
+// Matches the styles/drawer.css breakpoint where a drawer sits beside the conversation.
 const WIDE_QUERY = "(min-width: 1280px)";
 const FOCUSABLE =
   "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex='-1'])";

@@ -1,0 +1,57 @@
+/* Coverage strip: which parts of the video the model has seen */
+
+.coverage-strip {
+  padding: 0.2rem 0;
+}
+
+.coverage-track {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-raised);
+  cursor: pointer;
+}
+
+.coverage-segment {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 2px;
+  border-radius: 3px;
+  background: var(--accent);
+  opacity: var(--density, 1);
+}
+
+.coverage-track:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.coverage-cursor {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 3px;
+  margin-left: -1.5px;
+  border-radius: 1px;
+  background: var(--accent);
+  display: none;
+}
+
+.coverage-track:focus-visible .coverage-cursor {
+  display: block;
+}
+
+.coverage-playhead {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--text);
+}
+
+.mini-player .coverage-strip {
+  padding: 0.3rem 0.5rem;
+}

@@ -1,0 +1,85 @@
+.message.assistant.is-retry {
+  align-self: flex-end;
+}
+
+.error-retry {
+  flex-shrink: 0;
+  padding: 0.1rem 0.6rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.usage-line {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+
+.usage-context.is-warn {
+  color: var(--anonymized);
+}
+
+.usage-context.is-danger {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.balance {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.5rem 1rem 0;
+  font-size: 0.875rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.balance-text {
+  color: var(--text);
+}
+
+.balance.is-unavailable .balance-text {
+  color: var(--muted);
+}
+
+.balance.is-out,
+.balance.is-out .balance-text {
+  color: var(--danger);
+}
+
+.stored-videos h4 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.stored-video-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stored-video-list li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  column-gap: 0.75rem;
+  font-size: 0.875rem;
+}
+
+.stored-video-list li button {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+}
+
+.stored-video-name {
+  overflow-wrap: anywhere;
+}

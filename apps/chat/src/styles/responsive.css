@@ -1,0 +1,42 @@
+/* Below this the header buttons keep only their icons, so the title gets the room. */
+@media (max-width: 900px) {
+  .chat-header {
+    gap: 0.5rem;
+  }
+
+  .header-label,
+  .video-chip-name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 1000px) {
+  .sidebar {
+    width: 210px;
+  }
+
+  .video-chip {
+    max-width: 35%;
+  }
+
+  .deep-toggle {
+    padding: 0 0.4rem;
+  }
+}
+
+/* Touch screens have no hover, so the message actions stay visible there. */
+@media (hover: none), (max-width: 1000px) {
+  .message-action.icon-action,
+  .model-star {
+    opacity: 1;
+  }
+
+  .message-action.icon-action:disabled {
+    opacity: 0.35;
+  }
+}

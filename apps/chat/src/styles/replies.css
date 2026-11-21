@@ -1,0 +1,179 @@
+/* Reply receipts, swipes, compare and timestamp checks */
+
+.reply-footer:empty,
+.reply-checks:empty {
+  display: none;
+}
+
+.message.is-editing > .reply-footer,
+.message.is-editing > .reply-checks {
+  display: none;
+}
+
+.reply-notice {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.reply-receipt {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.reply-receipt p {
+  margin: 0.15rem 0 0;
+}
+
+.unseen-flag {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--anonymized);
+}
+
+.message-action.unseen-check {
+  margin-left: 0.25rem;
+  padding: 0 0.5rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.reply-swipe {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  margin-right: 0.25rem;
+  color: var(--text);
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.message-action.swipe-action {
+  display: inline-grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.message-action.swipe-action:hover:not(:disabled) {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.reply-model {
+  margin-right: 0.25rem;
+  padding: 0 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.compare-popover {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: fit-content;
+  margin-top: 0.3rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  box-shadow: var(--panel-shadow);
+  font-size: 0.875rem;
+}
+
+.compare-popover-label {
+  color: var(--muted);
+}
+
+.claim-checks {
+  margin: 0.4rem 0 0.2rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--border);
+  font-size: 0.875rem;
+}
+
+.claim-checks.is-running {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.claim-checks-stop {
+  padding: 0 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-style: normal;
+  cursor: pointer;
+}
+
+.claim-checks-heading {
+  margin: 0 0 0.2rem;
+  color: var(--muted);
+}
+
+.claim-check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.claim-check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.claim-mark {
+  width: 1rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.claim-check.is-confirmed .claim-mark {
+  color: var(--private);
+}
+
+.claim-check.is-contradicted .claim-mark {
+  color: var(--danger);
+}
+
+.claim-check.is-unclear .claim-mark {
+  color: var(--muted);
+}
+
+.claim-times {
+  display: inline-flex;
+  gap: 0.2rem;
+}
+
+.claim-text {
+  color: var(--text);
+}
+
+.claim-reason {
+  color: var(--muted);
+}

@@ -1,0 +1,146 @@
+/* Sidebar folders */
+
+.sidebar-new {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.sidebar-new #newChatButton {
+  flex: 1;
+}
+
+.chat-list {
+  min-height: 100%;
+}
+
+.chat-list.is-drop-target,
+.chat-folder.is-drop-target {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+
+.chat-folder {
+  margin-bottom: 0.4rem;
+}
+
+.chat-folder-header {
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+}
+
+.chat-folder-header:hover {
+  background: var(--bg-raised);
+}
+
+.chat-folder-header:hover .chat-actions,
+.chat-folder-header:focus-within .chat-actions {
+  visibility: visible;
+}
+
+.chat-folder-header.is-renaming .chat-actions {
+  display: none;
+}
+
+.chat-folder-toggle {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.4rem 0.6rem;
+  border: none;
+  background: none;
+  color: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-folder-toggle:disabled {
+  cursor: default;
+}
+
+.chat-folder-toggle .icon {
+  flex: none;
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+
+.chat-folder.is-collapsed .chat-folder-toggle .icon {
+  transform: rotate(-90deg);
+}
+
+.chat-folder-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chat-folder-count {
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.chat-folder-list {
+  padding-left: 0.75rem;
+}
+
+.chat-folder-empty {
+  padding: 0.3rem 0.6rem;
+}
+
+.folder-delete:hover {
+  color: var(--danger);
+}
+
+.chat-move {
+  position: relative;
+}
+
+.chat-move-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 10rem;
+  max-width: 16rem;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 15%);
+}
+
+.chat-move-option {
+  padding: 0.35rem 0.6rem;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.chat-move-option:hover,
+.chat-move-option:focus-visible {
+  background: var(--bg-raised);
+}
+
+.chat-move-option[aria-checked="true"] {
+  font-weight: 600;
+}
+
+.base-url-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
