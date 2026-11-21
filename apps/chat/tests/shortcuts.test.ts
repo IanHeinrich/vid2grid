@@ -83,6 +83,17 @@ describe("chat shortcuts", () => {
     expect(newChat).toHaveBeenCalledTimes(1);
   });
 
+  it("leaves a focused field before Ctrl+Alt+N, so its edit saves into the chat it was typed in", () => {
+    const order: string[] = [];
+    const prompt = els.chatSettings.systemPromptInput;
+    prompt.focus();
+    prompt.addEventListener("blur", () => order.push("blur"));
+    els.sidebar.newChatButton.addEventListener("click", () => order.push("new chat"));
+    press({ code: "KeyN", key: "n", ctrlKey: true, altKey: true }, prompt);
+    expect(order).toEqual(["blur", "new chat"]);
+    expect(document.activeElement).toBe(prompt);
+  });
+
   it("opens chat settings on the Instructions tab with the prompt focused on Ctrl+,", () => {
     els.drawer.tabList.querySelector<HTMLButtonElement>("[data-tab='model']")?.click();
     press({ key: ",", ctrlKey: true });

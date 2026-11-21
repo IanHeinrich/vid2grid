@@ -187,8 +187,9 @@ async function switchTo(
   invalidateUndo(ctx);
   const switched = switchReply(state.messages, user.id, index, chat.settings.modelId);
   if (!switched) return;
-  if (switched.removeIds.length > 0) await deps.store.deleteMessages(chat.id, switched.removeIds);
+  // Saved first: until it is, the shown reply exists only in the messages about to be removed.
   await deps.store.putMessage(chat.id, switched.user);
+  if (switched.removeIds.length > 0) await deps.store.deleteMessages(chat.id, switched.removeIds);
   for (const message of switched.restore) await deps.store.putMessage(chat.id, message);
   if (state.currentChat?.id !== chat.id) return;
   removeMessages(state, switched.removeIds);

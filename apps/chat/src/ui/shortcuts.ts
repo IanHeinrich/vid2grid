@@ -72,7 +72,7 @@ function onKey(ctx: ShortcutContext, event: KeyboardEvent): void {
     return;
   } else if (ctrl && event.altKey && event.code === "KeyN") {
     event.preventDefault();
-    ctx.els.sidebar.newChatButton.click();
+    newChat(ctx);
   } else if (ctrl && event.altKey && event.code === "KeyK") {
     event.preventDefault();
     ctx.deps.knowledge.open();
@@ -80,6 +80,14 @@ function onKey(ctx: ShortcutContext, event: KeyboardEvent): void {
     event.preventDefault();
     openChatSettings(ctx);
   }
+}
+
+// Fields save on blur, so a field left focused would commit its edit after the chat changed.
+function newChat(ctx: ShortcutContext): void {
+  const focused = document.activeElement;
+  if (focused instanceof HTMLElement) focused.blur();
+  ctx.els.sidebar.newChatButton.click();
+  if (focused instanceof HTMLElement) focused.focus();
 }
 
 function openChatSettings(ctx: ShortcutContext): void {

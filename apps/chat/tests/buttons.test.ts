@@ -33,4 +33,12 @@ describe("inlineEdit", () => {
     input.dispatchEvent(new FocusEvent("blur"));
     expect(finish).toHaveBeenCalledWith(true);
   });
+
+  it("ignores the Enter that confirms an IME composition", () => {
+    const input = document.createElement("input");
+    const finish = vi.fn();
+    inlineEdit(input, finish);
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", isComposing: true }));
+    expect(finish).not.toHaveBeenCalled();
+  });
 });

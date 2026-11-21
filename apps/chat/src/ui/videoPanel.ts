@@ -254,7 +254,10 @@ function listen(ctx: VideoPanelContext): void {
   reattachInput.addEventListener("change", () => {
     const file = reattachInput.files?.[0];
     reattachInput.value = "";
-    if (file) void attach(ctx, file);
+    if (!file) return;
+    attach(ctx, file).catch((error: unknown) => {
+      ctx.deps.status.show(`Could not attach ${file.name}: ${errorText(error)}`, "error");
+    });
   });
   miniPlayerClose.addEventListener("click", () => closePlayer(ctx));
 }
@@ -669,7 +672,9 @@ function seekMoment(ctx: VideoPanelContext, seconds: number, video?: VideoAttach
   if (!target || target.fileKey === currentShownVideo(ctx)?.fileKey) {
     openAtTimestamp(ctx, seconds, true);
   } else {
-    void openOlder(ctx, target, seconds);
+    openOlder(ctx, target, seconds).catch((error: unknown) => {
+      ctx.deps.status.show(`Could not open ${target.name}: ${errorText(error)}`, "error");
+    });
   }
 }
 

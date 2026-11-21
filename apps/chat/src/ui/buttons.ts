@@ -70,6 +70,7 @@ export function inlineEdit(input: HTMLInputElement, finish: (save: boolean) => v
     finish(save);
   };
   input.addEventListener("keydown", (event) => {
+    if (event.isComposing) return;
     if (event.key === "Enter") settle(true);
     if (event.key !== "Escape") return;
     event.preventDefault();

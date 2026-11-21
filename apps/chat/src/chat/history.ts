@@ -568,7 +568,7 @@ export function buildRequest(input: BuildRequestInput): ChatRequest {
   const listTools = input.allowTools && model.tools && tools.length > 0;
   const noTools = input.finalRound || input.answerNow === true;
   return {
-    model: chat.settings.modelId,
+    model: model.id,
     messages,
     // Tools stay listed on the final round so history with tool calls still matches the template.
     ...(listTools ? { tools: [...tools] } : {}),

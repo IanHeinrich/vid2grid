@@ -141,6 +141,8 @@ function finishEdit(ctx: SceneLogContext, saved: SceneNote | null): void {
   const editing = ctx.editing;
   ctx.editing = null;
   render(ctx);
+  // The rebuilt list dropped the focused control; leaving focus on the body escapes the drawer.
+  ctx.els.addButton.focus();
   if (!saved || editing === null) return;
   const { chatId, note } = editing;
   saveQuietly(ctx, chatId, (log) =>
@@ -271,6 +273,7 @@ function editItem(ctx: SceneLogContext, note: SceneNote | null): HTMLLIElement {
   };
   for (const input of [time, text]) {
     input.addEventListener("keydown", (event) => {
+      if (event.isComposing) return;
       if (event.key === "Enter") save();
       if (event.key !== "Escape") return;
       event.preventDefault();

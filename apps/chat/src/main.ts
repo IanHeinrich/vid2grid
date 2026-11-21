@@ -3,6 +3,7 @@ import { getBalance, isVenice, listModels, streamChat } from "./api/client";
 import { classifyFile } from "./attachments/images";
 import { openChatStore } from "./chat/store";
 import { initStatus, queryElements, type AppElements, type StatusLine } from "./dom";
+import { latestCalls } from "./latest";
 import { loadSettings, type GlobalSettings } from "./settings";
 import {
   addPending,
@@ -458,14 +459,24 @@ async function persistMessage(app: App, message: ChatMessage): Promise<void> {
   await app.store.putMessage(chat.id, message);
 }
 
+const startOpen = latestCalls();
+let openingChatId: string | undefined;
+
 async function openChat(app: App, chatId: string): Promise<void> {
   const { state, store } = app;
-  if (state.currentChat?.id === chatId) return;
+  if (state.currentChat?.id === chatId) {
+    // Another click on a chat still being set up leaves that open to finish.
+    if (openingChatId !== chatId) startOpen();
+    return;
+  }
+  const isLatest = startOpen();
+  openingChatId = chatId;
   app.turns.stop();
   app.actions.invalidateUndo();
   const chat = state.chats.find((entry) => entry.id === chatId) ?? (await store.getChat(chatId));
-  if (!chat) return;
+  if (!chat || !isLatest()) return;
   const messages = await store.listMessages(chatId);
+  if (!isLatest()) return;
   setCurrentChat(state, chat, messages);
   fillChatModel(app);
   app.conversation.reset(messages);
@@ -473,7 +484,7 @@ async function openChat(app: App, chatId: string): Promise<void> {
   app.status.clear();
   app.refresh();
   await app.video.restore();
-  app.composer.render();
+  if (isLatest()) app.composer.render();
 }
 
 function openChatSafely(app: App, chatId: string): void {
@@ -498,13 +509,19 @@ function shouldLoadModels(settings: GlobalSettings): boolean {
   return settings.baseUrl.trim() !== "" && (settings.apiKey !== "" || !isVenice(settings.baseUrl));
 }
 
+const startModelLoad = latestCalls();
+
+// A newer load owns the model list, so an older one that settles late changes nothing.
 async function loadModels(app: App, settings: GlobalSettings): Promise<readonly ModelInfo[]> {
+  const isLatest = startModelLoad();
   try {
     const models = await listModels(settings, { fallbackMaxImages: settings.fallbackMaxImages });
+    if (!isLatest()) return app.state.models;
     setModels(app.state, models);
     fillChatModel(app);
     return models;
   } catch (error) {
+    if (!isLatest()) return app.state.models;
     setModelsError(app.state, errorText(error));
     throw error;
   } finally {

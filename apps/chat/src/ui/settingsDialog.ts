@@ -533,15 +533,13 @@ function render(ctx: ChatSettingsContext): void {
   const model = currentModel(ctx.state);
   if (!chat) return;
   const { settings } = chat;
-  renderPersona(ctx, settings);
+  const switched = chat.id !== ctx.renderedChatId;
+  renderPersona(ctx, settings, switched);
   ctx.picker.render();
-  if (document.activeElement !== panel.temperatureInput) {
-    panel.temperatureInput.value =
-      settings.temperature === undefined ? "" : String(settings.temperature);
-  }
-  if (document.activeElement !== panel.maxRoundsInput) {
-    panel.maxRoundsInput.value = settings.maxRounds === undefined ? "" : String(settings.maxRounds);
-  }
+  const temperature = settings.temperature === undefined ? "" : String(settings.temperature);
+  setUnlessFocused(panel.temperatureInput, temperature, switched);
+  const maxRounds = settings.maxRounds === undefined ? "" : String(settings.maxRounds);
+  setUnlessFocused(panel.maxRoundsInput, maxRounds, switched);
   const efforts = model?.reasoningEffortOptions ?? [];
   panel.reasoningEffortField.hidden = efforts.length === 0;
   panel.reasoningEffortSelect.replaceChildren(
@@ -553,15 +551,20 @@ function render(ctx: ChatSettingsContext): void {
   renderSheetResolution(panel, settings, resolveModel(ctx.state, settings.modelId));
 }
 
-function setUnlessFocused(input: HTMLInputElement | HTMLTextAreaElement, value: string): void {
-  if (document.activeElement !== input) input.value = value;
+// A focused field keeps what is being typed, unless that was typed for the chat before a switch.
+function setUnlessFocused(
+  input: HTMLInputElement | HTMLTextAreaElement,
+  value: string,
+  switched: boolean,
+): void {
+  if (switched || document.activeElement !== input) input.value = value;
 }
 
-function renderPersona(ctx: ChatSettingsContext, settings: ChatSettings): void {
+function renderPersona(ctx: ChatSettingsContext, settings: ChatSettings, switched: boolean): void {
   const panel = ctx.els.chatSettings;
-  setUnlessFocused(panel.systemPromptInput, settings.systemPrompt);
-  setUnlessFocused(panel.characterNameInput, settings.characterName ?? "");
-  setUnlessFocused(panel.userNameInput, settings.userName ?? "");
+  setUnlessFocused(panel.systemPromptInput, settings.systemPrompt, switched);
+  setUnlessFocused(panel.characterNameInput, settings.characterName ?? "", switched);
+  setUnlessFocused(panel.userNameInput, settings.userName ?? "", switched);
   const voice = settings.voice ?? "analyst";
   panel.voiceSelect.value = voice;
   panel.voiceHint.textContent = VOICE_HINTS[voice];

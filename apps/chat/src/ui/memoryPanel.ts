@@ -23,6 +23,7 @@ interface MemoryContext {
   state: AppState;
   deps: MemoryDeps;
   task: ModelTask;
+  renderedChatId: string | undefined;
 }
 
 export function initMemoryPanel(
@@ -39,6 +40,7 @@ export function initMemoryPanel(
       () => render(ctx),
       () => state.currentChat?.id,
     ),
+    renderedChatId: undefined,
   };
   listen(ctx);
   render(ctx);
@@ -131,7 +133,10 @@ function render(ctx: MemoryContext): void {
   const chat = ctx.state.currentChat;
   const story = chat?.storySoFar;
   ctx.task.sync();
-  if (document.activeElement !== storyInput) storyInput.value = story?.text ?? "";
+  // A focused field keeps what is being typed, unless that was typed for the chat before a switch.
+  const switched = chat?.id !== ctx.renderedChatId;
+  ctx.renderedChatId = chat?.id;
+  if (switched || document.activeElement !== storyInput) storyInput.value = story?.text ?? "";
   storyInput.readOnly = story === undefined;
   storyInput.placeholder = story
     ? ""

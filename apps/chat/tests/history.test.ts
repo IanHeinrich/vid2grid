@@ -1058,6 +1058,11 @@ describe("buildRequest without vision", () => {
 });
 
 describe("buildRequest options", () => {
+  it("names the model it was given, even when the chat names none", () => {
+    const chat = { ...baseChat, settings: { ...baseChat.settings, modelId: "" } };
+    expect(buildRequest(input({ chat })).model).toBe(model.id);
+  });
+
   it("includes tools only when allowed, supported and present", () => {
     expect(buildRequest(input({})).tools).toEqual([lookTool]);
     expect(buildRequest(input({ allowTools: false }))).not.toHaveProperty("tools");

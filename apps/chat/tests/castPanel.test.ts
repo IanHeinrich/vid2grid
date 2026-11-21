@@ -228,6 +228,49 @@ describe("cast panel editing", () => {
   });
 });
 
+describe("cast panel edit keys and focus", () => {
+  it("keeps the card unchanged when Enter is pressed on Cancel", async () => {
+    await store.putCast({ fileKey: "beach", cards: [MARA], updatedAt: 1 });
+    await openChat();
+    panel();
+    await vi.waitFor(() => expect(names()).toEqual(["Mara"]));
+    clickButton(els.cast.list, "Edit");
+    editor().name.value = "Mara Vance";
+    const cancel = [...els.cast.list.querySelectorAll("button")].find(
+      (el) => el.textContent === "Cancel",
+    );
+    cancel?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    cancel?.click();
+    expect(names()).toEqual(["Mara"]);
+    expect(await savedCards()).toEqual([MARA]);
+  });
+
+  it("does not save on the Enter that confirms an IME composition", async () => {
+    await openChat();
+    panel();
+    els.cast.addButton.click();
+    const { name } = editor();
+    name.value = "Theo";
+    name.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true }),
+    );
+    expect(els.cast.list.querySelector(".cast-name-input")).toBe(name);
+    expect(await savedCards()).toBeUndefined();
+  });
+
+  it("returns focus to the Add button after Save or Cancel", async () => {
+    await openChat();
+    panel();
+    els.cast.addButton.click();
+    clickButton(els.cast.list, "Cancel");
+    expect(document.activeElement).toBe(els.cast.addButton);
+    els.cast.addButton.click();
+    editor().name.value = "Theo";
+    clickButton(els.cast.list, "Save");
+    expect(document.activeElement).toBe(els.cast.addButton);
+  });
+});
+
 describe("cast panel editing across chats", () => {
   it("drops an open editor when the chat switches to another video", async () => {
     await openChat();
