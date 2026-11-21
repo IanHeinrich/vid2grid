@@ -46,8 +46,8 @@ import {
   type ListenContext,
   type ToolContext,
 } from "../video/tools";
-import type { StatusLine } from "../ui/status";
-import type { Toast } from "../ui/toast";
+import type { StatusLine } from "../ui/shared/status";
+import type { Toast } from "../ui/shared/toast";
 import { modelCallDeps } from "./modelCallDeps";
 import { estimateTokens } from "./requestEstimate";
 import { toolContext } from "./toolContext";

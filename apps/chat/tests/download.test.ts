@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { safeFilename } from "../src/ui/download";
+import { safeFilename } from "../src/ui/shared/download";
 
 describe("safeFilename", () => {
   it("makes titles safe to use as file names", () => {

@@ -1,17 +1,17 @@
-import { isAbortError, orWhenAborted } from "../abort";
-import { sendBlocker } from "../app/sendBlocker";
-import type { Turns } from "../app/turns";
-import { downscaleImage } from "../attachments/images";
+import { isAbortError, orWhenAborted } from "../../abort";
+import { sendBlocker } from "../../app/sendBlocker";
+import type { Turns } from "../../app/turns";
+import { downscaleImage } from "../../attachments/images";
 import {
   cachedAudioCoverage,
   loadAudio,
   onAudioChanged,
   settingsLabels,
-} from "../audio/videoAudio";
-import { pinsExceedCap } from "../chat/imageSelection";
-import { chatModelId, currentModel, resolveModel } from "../chat/models";
-import { effortFor, roundsFor, withEffort } from "../chat/thoroughness";
-import type { AppElements } from "../dom";
+} from "../../audio/videoAudio";
+import { pinsExceedCap } from "../../chat/imageSelection";
+import { chatModelId, currentModel, resolveModel } from "../../chat/models";
+import { effortFor, roundsFor, withEffort } from "../../chat/thoroughness";
+import type { AppElements } from "../../dom";
 import {
   addPending,
   clearPending,
@@ -27,8 +27,8 @@ import {
   updateChat,
   type AppState,
   type PendingAttachment,
-} from "../state";
-import { errorText, plural } from "../text";
+} from "../../state";
+import { errorText, plural } from "../../text";
 import type {
   AudioCoverage,
   ChatMessage,
@@ -39,13 +39,13 @@ import type {
   Thoroughness,
   UserMessage,
   VideoAttachment,
-} from "../types";
-import { resolveSheetResolution } from "../video/resolution";
-import { iconButton, pinToggle } from "./buttons";
-import { attachMenu } from "./menu";
-import type { StatusLine } from "./status";
-import { overviewText, videoSummary } from "./video/overviewText";
-import type { VideoPanel } from "./video/videoPanel";
+} from "../../types";
+import { resolveSheetResolution } from "../../video/resolution";
+import { iconButton, pinToggle } from "../shared/buttons";
+import { attachMenu } from "../shared/menu";
+import type { StatusLine } from "../shared/status";
+import { overviewText, videoSummary } from "../video/overviewText";
+import type { VideoPanel } from "../video/videoPanel";
 
 const MAX_INPUT_HEIGHT_PX = 240;
 const AUDIO_KEY = "vid2grid-chat-audio";

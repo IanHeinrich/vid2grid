@@ -4,7 +4,7 @@ import { exportBackup, type Backup } from "../src/chat/exportChat";
 import { createMemoryStore } from "../src/chat/store";
 import type { AppElements } from "../src/dom";
 import type { ChatStore } from "../src/types";
-import { initBackup } from "../src/ui/backup";
+import { initBackup } from "../src/ui/settings/backup";
 import { mountPage } from "./support/page";
 
 const NOW = Date.UTC(2026, 10, 19);

@@ -14,7 +14,12 @@ import {
   type AppState,
 } from "../src/state";
 import type { Chat, ChatStore } from "../src/types";
-import { completedSteps, initWelcome, keyStepLabel, type WelcomeDeps } from "../src/ui/welcome";
+import {
+  completedSteps,
+  initWelcome,
+  keyStepLabel,
+  type WelcomeDeps,
+} from "../src/ui/shell/welcome";
 import { model } from "./support/factories";
 import { mountPage } from "./support/page";
 

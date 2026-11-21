@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { blankChat } from "../src/chat/chats";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import type { Chat, Folder, VideoAttachment } from "../src/types";
-import { groupChats, matchesSearch, sectionChats } from "../src/ui/chatSections";
+import { groupChats, matchesSearch, sectionChats } from "../src/ui/shell/chatSections";
 
 const NOW = new Date(2026, 10, 19, 15, 0).getTime();
 const DAY = 24 * 60 * 60 * 1000;

@@ -12,7 +12,7 @@ import {
   videoStorageSupported,
   type StoredVideoInfo,
 } from "../../video/videoStore";
-import type { StatusLine } from "../status";
+import type { StatusLine } from "../shared/status";
 
 export interface VideoStorage {
   supported(): boolean;

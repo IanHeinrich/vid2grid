@@ -1,4 +1,4 @@
-import { formatTimestamp } from "../time";
+import { formatTimestamp } from "../../time";
 import { icon } from "./icons";
 
 export function smallButton(

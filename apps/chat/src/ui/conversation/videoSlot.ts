@@ -1,5 +1,5 @@
 import type { VideoAttachment } from "../../types";
-import { smallButton } from "../buttons";
+import { smallButton } from "../shared/buttons";
 import { createCoverageStrip } from "../video/coverageStrip";
 import { videoSummary } from "../video/overviewText";
 import type { ConversationContext, VideoSlot } from "./context";

@@ -3,7 +3,7 @@ import { formatTokens } from "../../chat/tokenEstimate";
 import { plural } from "../../text";
 import { formatSpan, formatTimestamp } from "../../time";
 import type { AssistantMessage, ImageRef, ToolCall, ToolMessage } from "../../types";
-import { seekButton } from "../buttons";
+import { seekButton } from "../shared/buttons";
 
 const MAX_LISTED_MOMENTS = 4;
 export const STALL_SECONDS = 90;

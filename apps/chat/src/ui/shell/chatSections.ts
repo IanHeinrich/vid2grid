@@ -1,4 +1,4 @@
-import type { Chat, Folder } from "../types";
+import type { Chat, Folder } from "../../types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const GROUP_LABELS = [

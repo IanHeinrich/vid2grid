@@ -1,7 +1,7 @@
-import type { AccountBalance, BalanceUnavailable } from "../api/client";
-import type { AppElements } from "../dom";
-import type { AppState } from "../state";
-import type { ApiSettings } from "../types";
+import type { AccountBalance, BalanceUnavailable } from "../../api/client";
+import type { AppElements } from "../../dom";
+import type { AppState } from "../../state";
+import type { ApiSettings } from "../../types";
 
 const REFRESH_MS = 60_000;
 const ADMIN_KEY_HINT =

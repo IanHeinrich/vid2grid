@@ -1,7 +1,7 @@
 import { latestCalls } from "../latest";
 import { setCurrentChat } from "../state";
 import type { Chat } from "../types";
-import type { StatusLine } from "../ui/status";
+import type { StatusLine } from "../ui/shared/status";
 import type { MessageActions } from "./messageActions";
 import { fillChatModel, type FillChatModelDeps } from "./modelList";
 import type { Turns, TurnView } from "./turns";

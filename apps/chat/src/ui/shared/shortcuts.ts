@@ -1,5 +1,5 @@
-import type { AppElements } from "../dom";
-import type { ChatDrawer, KnowledgeDrawer } from "./chatDrawer";
+import type { AppElements } from "../../dom";
+import type { ChatDrawer, KnowledgeDrawer } from "../shell/chatDrawer";
 import { dismissOnOutside } from "./menu";
 
 export interface ShortcutDeps {

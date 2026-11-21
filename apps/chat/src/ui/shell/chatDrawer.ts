@@ -1,7 +1,7 @@
-import type { AppElements } from "../dom";
-import type { AppState } from "../state";
-import { headerLabel } from "./buttons";
-import { icon, type IconName } from "./icons";
+import type { AppElements } from "../../dom";
+import type { AppState } from "../../state";
+import { headerLabel } from "../shared/buttons";
+import { icon, type IconName } from "../shared/icons";
 
 export const SETTINGS_TABS = ["persona", "model"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];

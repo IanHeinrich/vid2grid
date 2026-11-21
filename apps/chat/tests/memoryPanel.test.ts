@@ -5,7 +5,7 @@ import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { createAppState, replaceChat, setCurrentChat, type AppState } from "../src/state";
 import type { Chat, ChatMessage, ChatStore, StorySoFar, StreamChat } from "../src/types";
-import { initMemoryPanel } from "../src/ui/memoryPanel";
+import { initMemoryPanel } from "../src/ui/knowledge/memoryPanel";
 import { mountPage, stillToast } from "./support/page";
 import { replyWith } from "./support/streams";
 

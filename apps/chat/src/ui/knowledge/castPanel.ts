@@ -1,11 +1,11 @@
-import { mergeCast, suggestCast } from "../chat/cast";
-import { latestOverview } from "../chat/imageSelection";
-import { chatModelId } from "../chat/models";
-import { blobToDataUrl } from "../dataUrl";
-import type { AppElements } from "../dom";
-import { currentPending, type AppState } from "../state";
-import { errorText } from "../text";
-import { formatTimestamp, parseTimestamp } from "../time";
+import { mergeCast, suggestCast } from "../../chat/cast";
+import { latestOverview } from "../../chat/imageSelection";
+import { chatModelId } from "../../chat/models";
+import { blobToDataUrl } from "../../dataUrl";
+import type { AppElements } from "../../dom";
+import { currentPending, type AppState } from "../../state";
+import { errorText } from "../../text";
+import { formatTimestamp, parseTimestamp } from "../../time";
 import type {
   CastCard,
   ChatStore,
@@ -13,12 +13,13 @@ import type {
   StreamChat,
   VideoAttachment,
   VideoCast,
-} from "../types";
-import { editKeys, iconButton, seekButton, smallButton } from "./buttons";
-import type { ChatVideo } from "./video/knowledgeVideos";
-import { modelCallDeps } from "../app/modelCallDeps";
-import { createModelTask, type ModelTask } from "./modelTask";
-import { offerUndo, type Toast, type ToastHandle } from "./toast";
+} from "../../types";
+import { editKeys, iconButton, seekButton, smallButton } from "../shared/buttons";
+import type { ChatVideo } from "../video/knowledgeVideos";
+import { modelCallDeps } from "../../app/modelCallDeps";
+import { createModelTask, type ModelTask } from "../shared/modelTask";
+import { offerUndo } from "../../app/undo";
+import type { Toast, ToastHandle } from "../shared/toast";
 
 export interface CastPanel {
   render(): void;

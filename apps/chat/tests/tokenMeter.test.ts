@@ -4,7 +4,7 @@ import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { createAppState, setCurrentChat, setModels, type AppState } from "../src/state";
 import type { ModelInfo } from "../src/types";
-import { initUsageMeter } from "../src/ui/tokenMeter";
+import { initUsageMeter } from "../src/ui/shell/tokenMeter";
 import { model as baseModel } from "./support/factories";
 import { mountPage } from "./support/page";
 import { MESSAGES } from "./support/usageFixtures";

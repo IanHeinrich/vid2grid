@@ -1,4 +1,4 @@
-import { errorText } from "../text";
+import { errorText } from "../../text";
 
 export interface ModelTaskEls {
   status: HTMLElement;

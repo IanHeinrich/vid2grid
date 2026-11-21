@@ -3,12 +3,12 @@ import {
   listModels as fetchModels,
   type AccountBalance,
   type BalanceUnavailable,
-} from "../api/client";
-import { isVenice } from "../api/venice";
-import type { AppElements } from "../dom";
-import type { AppState } from "../state";
-import { errorText, plural } from "../text";
-import type { ApiSettings, ModelInfo } from "../types";
+} from "../../api/client";
+import { isVenice } from "../../api/venice";
+import type { AppElements } from "../../dom";
+import type { AppState } from "../../state";
+import { errorText, plural } from "../../text";
+import type { ApiSettings, ModelInfo } from "../../types";
 
 const RESULT_KEY = "vid2grid-chat-connection-test";
 export const NO_API_TEXT = "Choose an API first: pick one above or enter its base URL.";

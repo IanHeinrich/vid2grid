@@ -1,14 +1,15 @@
-import { chatModelId } from "../chat/models";
-import { condenseSceneLog } from "../chat/summary";
-import type { AppElements } from "../dom";
-import { updateChat, type AppState } from "../state";
-import { errorText } from "../text";
-import { formatTimestamp, parseTimestamp, timedLine } from "../time";
-import type { ChatStore, SceneNote, StreamChat } from "../types";
-import { editKeys, iconButton, seekButton, smallButton } from "./buttons";
-import { modelCallDeps } from "../app/modelCallDeps";
-import { createModelTask, type ModelTask } from "./modelTask";
-import { offerUndo, type Toast } from "./toast";
+import { chatModelId } from "../../chat/models";
+import { condenseSceneLog } from "../../chat/summary";
+import type { AppElements } from "../../dom";
+import { updateChat, type AppState } from "../../state";
+import { errorText } from "../../text";
+import { formatTimestamp, parseTimestamp, timedLine } from "../../time";
+import type { ChatStore, SceneNote, StreamChat } from "../../types";
+import { editKeys, iconButton, seekButton, smallButton } from "../shared/buttons";
+import { modelCallDeps } from "../../app/modelCallDeps";
+import { createModelTask, type ModelTask } from "../shared/modelTask";
+import { offerUndo } from "../../app/undo";
+import type { Toast } from "../shared/toast";
 
 export interface SceneLogPanel {
   render(): void;

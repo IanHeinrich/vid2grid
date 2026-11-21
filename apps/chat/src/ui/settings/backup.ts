@@ -1,8 +1,8 @@
-import { exportBackup, importBackup, type ImportCounts } from "../chat/exportChat";
-import type { AppElements } from "../dom";
-import { errorText, plural } from "../text";
-import type { ChatStore } from "../types";
-import type { Toast } from "./toast";
+import { exportBackup, importBackup, type ImportCounts } from "../../chat/exportChat";
+import type { AppElements } from "../../dom";
+import { errorText, plural } from "../../text";
+import type { ChatStore } from "../../types";
+import type { Toast } from "../shared/toast";
 
 export interface BackupDeps {
   store: ChatStore;

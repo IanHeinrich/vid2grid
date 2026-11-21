@@ -1,10 +1,10 @@
 import { currentReplyIndex, replyCount } from "../../chat/alternates";
 import { extractTimedClaims } from "../../chat/verify";
 import type { AssistantMessage, ChatMessage, UserMessage } from "../../types";
-import { iconButton, smallButton } from "../buttons";
-import { icon, type IconName } from "../icons";
-import { dismissOnOutside } from "../menu";
-import { createModelPicker } from "../modelPicker";
+import { iconButton, smallButton } from "../shared/buttons";
+import { icon, type IconName } from "../shared/icons";
+import { dismissOnOutside } from "../shared/menu";
+import { createModelPicker } from "../modelPicker/modelPicker";
 import { answerOf } from "./activity";
 import {
   isLatest,

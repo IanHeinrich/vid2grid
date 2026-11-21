@@ -7,7 +7,7 @@ import { pendingFor, pendingVideo, shownVideo, type AppState } from "../../state
 import type { ChatStore, ImageRef, VideoAttachment } from "../../types";
 import { fileKey, type probeAttachment, type renderSheets } from "../../video/render";
 import type { renderOverview } from "../../video/tools";
-import type { StatusLine } from "../status";
+import type { StatusLine } from "../shared/status";
 import type { CoverageStrip } from "./coverageStrip";
 import type { MiniPlayer } from "./miniPlayer";
 

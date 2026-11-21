@@ -3,7 +3,7 @@ import type { AccountBalance, BalanceUnavailable } from "../src/api/client";
 import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { createAppState, setSettings, type AppState } from "../src/state";
-import { balanceText, initBalance, sourceText } from "../src/ui/balance";
+import { balanceText, initBalance, sourceText } from "../src/ui/shell/balance";
 import { mountPage } from "./support/page";
 
 let els: AppElements;

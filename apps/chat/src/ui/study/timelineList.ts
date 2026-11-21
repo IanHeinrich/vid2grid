@@ -1,8 +1,8 @@
 import { errorText } from "../../text";
 import { formatTimestamp } from "../../time";
 import type { TimelineEntry, UnclearSpan, VideoTimeline } from "../../types";
-import { iconButton, inlineEdit, seekButton, smallButton } from "../buttons";
-import { offerUndo } from "../toast";
+import { iconButton, inlineEdit, seekButton, smallButton } from "../shared/buttons";
+import { offerUndo } from "../../app/undo";
 import {
   changed,
   currentTimeline,

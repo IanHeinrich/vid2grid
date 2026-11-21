@@ -8,8 +8,8 @@ import {
   initKnowledgeDrawer,
   type ChatDrawer,
   type KnowledgeDrawer,
-} from "../src/ui/chatDrawer";
-import { initShortcuts } from "../src/ui/shortcuts";
+} from "../src/ui/shell/chatDrawer";
+import { initShortcuts } from "../src/ui/shared/shortcuts";
 import { mountPage } from "./support/page";
 
 let els: AppElements;

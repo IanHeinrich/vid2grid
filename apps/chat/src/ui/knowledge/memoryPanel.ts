@@ -1,12 +1,13 @@
-import { chatModelId } from "../chat/models";
-import { summarizeStory } from "../chat/summary";
-import type { AppElements } from "../dom";
-import { updateChat, type AppState } from "../state";
-import { errorText } from "../text";
-import type { Chat, ChatStore, StorySoFar, StreamChat } from "../types";
-import { modelCallDeps } from "../app/modelCallDeps";
-import { createModelTask, type ModelTask } from "./modelTask";
-import { offerUndo, type Toast } from "./toast";
+import { chatModelId } from "../../chat/models";
+import { summarizeStory } from "../../chat/summary";
+import type { AppElements } from "../../dom";
+import { updateChat, type AppState } from "../../state";
+import { errorText } from "../../text";
+import type { Chat, ChatStore, StorySoFar, StreamChat } from "../../types";
+import { modelCallDeps } from "../../app/modelCallDeps";
+import { createModelTask, type ModelTask } from "../shared/modelTask";
+import { offerUndo } from "../../app/undo";
+import type { Toast } from "../shared/toast";
 
 export interface MemoryPanel {
   render(): void;

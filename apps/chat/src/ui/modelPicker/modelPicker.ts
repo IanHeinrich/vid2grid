@@ -1,8 +1,8 @@
-import { reportsPrivacy } from "../chat/models";
-import { part } from "../dom";
-import type { ModelInfo } from "../types";
-import { icon } from "./icons";
-import { dismissOnOutside } from "./menu";
+import { reportsPrivacy } from "../../chat/models";
+import { part } from "../../dom";
+import type { ModelInfo } from "../../types";
+import { icon } from "../shared/icons";
+import { dismissOnOutside } from "../shared/menu";
 import {
   isFilterName,
   isSortOrder,

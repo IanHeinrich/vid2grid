@@ -5,7 +5,7 @@ import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { createAppState, replaceChat, setCurrentChat, type AppState } from "../src/state";
 import type { Chat, ChatStore, SceneNote, StreamChat, VideoAttachment } from "../src/types";
-import { initSceneLog, sceneLogTokens } from "../src/ui/sceneLog";
+import { initSceneLog, sceneLogTokens } from "../src/ui/knowledge/sceneLog";
 import { mountPage, stillToast } from "./support/page";
 import { replyWith } from "./support/streams";
 

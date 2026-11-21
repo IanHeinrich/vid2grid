@@ -3,7 +3,7 @@ import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS, loadSettings } from "../src/settings";
 import { createAppState, setModels, type AppState } from "../src/state";
 import type { ModelInfo } from "../src/types";
-import { initSettingsDialog } from "../src/ui/settingsDialog";
+import { initSettingsDialog } from "../src/ui/settings/settingsDialog";
 import { model as baseModel } from "./support/factories";
 import { mountPage } from "./support/page";
 import { pickerIds, pickRow, triggerName } from "./support/picker";

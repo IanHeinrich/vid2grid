@@ -10,7 +10,7 @@ import {
   SETTINGS_TABS,
   type ChatDrawer,
   type KnowledgeDrawer,
-} from "../src/ui/chatDrawer";
+} from "../src/ui/shell/chatDrawer";
 import { mountPage } from "./support/page";
 
 let els: AppElements;

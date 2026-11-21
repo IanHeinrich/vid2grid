@@ -1,6 +1,6 @@
-import { withName, withVideoReferences } from "../chat/personas";
-import { effectiveVideoReferences } from "../chat/prompts";
-import type { ChatSettings, VideoReferences, Voice } from "../types";
+import { withName, withVideoReferences } from "../../chat/personas";
+import { effectiveVideoReferences } from "../../chat/prompts";
+import type { ChatSettings, VideoReferences, Voice } from "../../types";
 
 export const VOICE_HINTS: Record<Voice, string> = {
   analyst: "Plain, direct answers about what the video shows.",

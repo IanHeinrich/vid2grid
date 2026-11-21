@@ -1,6 +1,6 @@
-import { isVenice } from "../api/venice";
-import { effectiveDefaultModelId, visionModels } from "../chat/models";
-import type { AppElements } from "../dom";
+import { isVenice } from "../../api/venice";
+import { effectiveDefaultModelId, visionModels } from "../../chat/models";
+import type { AppElements } from "../../dom";
 import {
   DEFAULT_BACKGROUND_SOUND_LABELS,
   DEFAULT_SOUND_LABELS,
@@ -8,12 +8,12 @@ import {
   saveSettings,
   withKey,
   type GlobalSettings,
-} from "../settings";
-import { setSettings, type AppState } from "../state";
-import { errorText } from "../text";
-import type { ModelInfo } from "../types";
-import { createModelPicker } from "./modelPicker";
-import { storedPickerSettings } from "./pickerModel";
+} from "../../settings";
+import { setSettings, type AppState } from "../../state";
+import { errorText } from "../../text";
+import type { ModelInfo } from "../../types";
+import { createModelPicker } from "../modelPicker/modelPicker";
+import { storedPickerSettings } from "../modelPicker/pickerModel";
 
 export interface SettingsDialog {
   open(): void;

@@ -3,7 +3,7 @@ import type { AppElements } from "../../dom";
 import { formatTimestamp } from "../../time";
 import type { ImageRef, ImageStore } from "../../types";
 import { imageCaption, sheetCellTimes } from "./captions";
-import { setPinState } from "../buttons";
+import { setPinState } from "../shared/buttons";
 
 const MAX_ZOOM = 6;
 const ZOOM_STEP = 1.25;

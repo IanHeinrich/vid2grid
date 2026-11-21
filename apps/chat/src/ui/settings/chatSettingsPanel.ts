@@ -1,6 +1,6 @@
-import { DEEP_MAX_ROUNDS as MAX_ROUNDS_LIMIT } from "../chat/agentLoop";
-import { currentModel, resolveModel } from "../chat/models";
-import { applyPersonaNames } from "../chat/prompts";
+import { DEEP_MAX_ROUNDS as MAX_ROUNDS_LIMIT } from "../../chat/agentLoop";
+import { currentModel, resolveModel } from "../../chat/models";
+import { applyPersonaNames } from "../../chat/prompts";
 import {
   applyPersona,
   chatPersona,
@@ -12,14 +12,14 @@ import {
   withName,
   withVideoReferences,
   type Persona,
-} from "../chat/personas";
-import { withEffort } from "../chat/thoroughness";
-import type { AppElements } from "../dom";
-import { updateChat, type AppState } from "../state";
-import { errorText } from "../text";
-import type { ChatSettings, ChatStore, EarlierImages, ModelInfo } from "../types";
-import { resolveSheetResolution } from "../video/resolution";
-import { createModelPicker, type ModelPicker } from "./modelPicker";
+} from "../../chat/personas";
+import { withEffort } from "../../chat/thoroughness";
+import type { AppElements } from "../../dom";
+import { updateChat, type AppState } from "../../state";
+import { errorText } from "../../text";
+import type { ChatSettings, ChatStore, EarlierImages, ModelInfo } from "../../types";
+import { resolveSheetResolution } from "../../video/resolution";
+import { createModelPicker, type ModelPicker } from "../modelPicker/modelPicker";
 import {
   listenToPersonaFields,
   readVideoReferences,
@@ -27,9 +27,10 @@ import {
   renderPersonaFields,
   setUnlessFocused,
 } from "./personaFields";
-import { storedPickerSettings } from "./pickerModel";
+import { storedPickerSettings } from "../modelPicker/pickerModel";
 import { initPresetManager, type PresetManager } from "./presetManager";
-import { offerUndo, type Toast } from "./toast";
+import { offerUndo } from "../../app/undo";
+import type { Toast } from "../shared/toast";
 
 export interface ChatSettingsPanel {
   render(): void;

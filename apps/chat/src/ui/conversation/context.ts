@@ -9,8 +9,8 @@ import type {
   VideoAttachment,
 } from "../../types";
 import type { CoverageStrip } from "../video/coverageStrip";
-import type { ModelPicker } from "../modelPicker";
-import type { PickerSettings } from "../pickerModel";
+import type { ModelPicker } from "../modelPicker/modelPicker";
+import type { PickerSettings } from "../modelPicker/pickerModel";
 import type { VideoView } from "../video/context";
 import type { TurnStep } from "./activity";
 import type { Lightbox } from "./lightbox";

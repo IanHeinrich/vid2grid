@@ -13,9 +13,9 @@ import {
   type AppState,
 } from "../src/state";
 import type { ChatSettings, ChatStore, ModelInfo } from "../src/types";
-import { initChatSettings, parseMaxRounds } from "../src/ui/chatSettingsPanel";
-import { VOICE_HINTS } from "../src/ui/personaFields";
-import type { Toast } from "../src/ui/toast";
+import { initChatSettings, parseMaxRounds } from "../src/ui/settings/chatSettingsPanel";
+import { VOICE_HINTS } from "../src/ui/settings/personaFields";
+import type { Toast } from "../src/ui/shared/toast";
 import { model as baseModel } from "./support/factories";
 import { mountPage, stillToast } from "./support/page";
 import { pickRow, triggerName } from "./support/picker";

@@ -13,7 +13,7 @@ import type {
   StreamChat,
   VideoAttachment,
 } from "../src/types";
-import { initCastPanel, type CastPanelDeps } from "../src/ui/castPanel";
+import { initCastPanel, type CastPanelDeps } from "../src/ui/knowledge/castPanel";
 import { mountPage, stillToast } from "./support/page";
 import { replyWith } from "./support/streams";
 

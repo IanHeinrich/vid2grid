@@ -20,7 +20,7 @@ import {
   type AppState,
 } from "../src/state";
 import type { ChatSettings, ChatStore, ModelInfo, StreamChat, UserMessage } from "../src/types";
-import { initComposer, type Composer, type ComposerDeps } from "../src/ui/composer";
+import { initComposer, type Composer, type ComposerDeps } from "../src/ui/composer/composer";
 import { initTurns } from "../src/app/turns";
 import { upload } from "./support/factories";
 import { mountPage } from "./support/page";

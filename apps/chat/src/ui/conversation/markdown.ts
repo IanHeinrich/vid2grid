@@ -4,7 +4,7 @@ import {
   type CitationOptions,
   type TimestampMatch,
 } from "../../time";
-import { seekButton } from "../buttons";
+import { seekButton } from "../shared/buttons";
 import "./markdown.css";
 
 export interface MarkdownOptions {

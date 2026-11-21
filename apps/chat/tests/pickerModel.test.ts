@@ -11,7 +11,7 @@ import {
   pickerSections,
   type FilterName,
   type PickerView,
-} from "../src/ui/pickerModel";
+} from "../src/ui/modelPicker/pickerModel";
 import { model } from "./support/factories";
 import { firstModel, MODELS } from "./support/picker";
 

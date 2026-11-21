@@ -1,7 +1,7 @@
-import { blankChat } from "../chat/chats";
-import { chatToMarkdown } from "../chat/exportChat";
-import { defaultModelId } from "../chat/models";
-import type { AppElements } from "../dom";
+import { blankChat } from "../../chat/chats";
+import { chatToMarkdown } from "../../chat/exportChat";
+import { defaultModelId } from "../../chat/models";
+import type { AppElements } from "../../dom";
 import {
   currentPending,
   pendingFor,
@@ -9,16 +9,17 @@ import {
   replaceChat,
   updateChat,
   type AppState,
-} from "../state";
-import { errorText, plural } from "../text";
-import type { Chat, ChatMessage, ChatStore, Folder } from "../types";
-import { iconButton, inlineEdit } from "./buttons";
+} from "../../state";
+import { errorText, plural } from "../../text";
+import type { Chat, ChatMessage, ChatStore, Folder } from "../../types";
+import { iconButton, inlineEdit } from "../shared/buttons";
 import { byFolderName, sectionChats, type ChatGroup, type FolderSection } from "./chatSections";
-import { downloadBlob, safeFilename } from "./download";
-import { icon } from "./icons";
-import { attachMenu } from "./menu";
-import type { StatusLine } from "./status";
-import { offerUndo, type Toast } from "./toast";
+import { downloadBlob, safeFilename } from "../shared/download";
+import { icon } from "../shared/icons";
+import { attachMenu } from "../shared/menu";
+import type { StatusLine } from "../shared/status";
+import { offerUndo } from "../../app/undo";
+import type { Toast } from "../shared/toast";
 
 const NEW_FOLDER_NAME = "New folder";
 const DRAG_TYPE = "application/x-vid2grid-chat";

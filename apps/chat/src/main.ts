@@ -18,47 +18,47 @@ import { loadSettings } from "./settings";
 import { addPending, createAppState, setChats, type AppState } from "./state";
 import { errorText } from "./text";
 import type { ChatStore, ImageRef, VideoAttachment } from "./types";
-import { initBackup } from "./ui/backup";
-import { initBalance, type Balance } from "./ui/balance";
-import { initCastPanel, type CastPanel } from "./ui/castPanel";
+import { initBackup } from "./ui/settings/backup";
+import { initBalance, type Balance } from "./ui/shell/balance";
+import { initCastPanel, type CastPanel } from "./ui/knowledge/castPanel";
 import {
   initChatDrawer,
   initKnowledgeDrawer,
   type ChatDrawer,
   type KnowledgeDrawer,
-} from "./ui/chatDrawer";
+} from "./ui/shell/chatDrawer";
 import {
   initChatSettings,
   type ChatSettingsDeps,
   type ChatSettingsPanel,
-} from "./ui/chatSettingsPanel";
-import { initComposer, type Composer, type ComposerDeps } from "./ui/composer";
-import { initConnectionTest, type ConnectionTest } from "./ui/connectionTest";
+} from "./ui/settings/chatSettingsPanel";
+import { initComposer, type Composer, type ComposerDeps } from "./ui/composer/composer";
+import { initConnectionTest, type ConnectionTest } from "./ui/settings/connectionTest";
 import {
   initConversation,
   type Conversation,
   type ConversationDeps,
 } from "./ui/conversation/conversation";
-import { downloadBlob } from "./ui/download";
-import { listenForDrops } from "./ui/fileDrop";
+import { downloadBlob } from "./ui/shared/download";
+import { listenForDrops } from "./ui/shell/fileDrop";
 import {
   initSettingsDialog,
   type SettingsDialog,
   type SettingsDialogDeps,
-} from "./ui/settingsDialog";
-import { initSidebar, type Sidebar, type SidebarDeps } from "./ui/sidebar";
+} from "./ui/settings/settingsDialog";
+import { initSidebar, type Sidebar, type SidebarDeps } from "./ui/shell/sidebar";
 import { initVideoPicker, type VideoPicker } from "./ui/video/knowledgeVideos";
-import { initMemoryPanel, type MemoryPanel } from "./ui/memoryPanel";
-import { storedPickerSettings } from "./ui/pickerModel";
-import { initSceneLog, type SceneLogPanel } from "./ui/sceneLog";
+import { initMemoryPanel, type MemoryPanel } from "./ui/knowledge/memoryPanel";
+import { storedPickerSettings } from "./ui/modelPicker/pickerModel";
+import { initSceneLog, type SceneLogPanel } from "./ui/knowledge/sceneLog";
 import { initStudy, type Study, type StudyDeps } from "./ui/study/studyPanel";
-import { initShortcuts } from "./ui/shortcuts";
-import { initStatus, type StatusLine } from "./ui/status";
-import { initToast, type Toast } from "./ui/toast";
+import { initShortcuts } from "./ui/shared/shortcuts";
+import { initStatus, type StatusLine } from "./ui/shared/status";
+import { initToast, type Toast } from "./ui/shared/toast";
 import { initVideoCopies, type VideoCopies } from "./ui/video/videoCopies";
-import { initUsageMeter, type UsageMeter } from "./ui/tokenMeter";
+import { initUsageMeter, type UsageMeter } from "./ui/shell/tokenMeter";
 import { initVideoPanel, type VideoPanel, type VideoPanelDeps } from "./ui/video/videoPanel";
-import { initWelcome, type Welcome } from "./ui/welcome";
+import { initWelcome, type Welcome } from "./ui/shell/welcome";
 
 interface App {
   state: AppState;

@@ -12,7 +12,7 @@ import {
   reportLines,
   testConnection,
   type ConnectionProbes,
-} from "../src/ui/connectionTest";
+} from "../src/ui/settings/connectionTest";
 import { model as baseModel } from "./support/factories";
 import { mountPage } from "./support/page";
 

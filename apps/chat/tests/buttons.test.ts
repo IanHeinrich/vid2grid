@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { editKeys, iconButton, inlineEdit } from "../src/ui/buttons";
+import { editKeys, iconButton, inlineEdit } from "../src/ui/shared/buttons";
 
 describe("iconButton", () => {
   it("names the button by its label for both the tooltip and screen readers", () => {

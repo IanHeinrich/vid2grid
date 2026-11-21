@@ -3,7 +3,7 @@ import type { AppElements } from "../../dom";
 import { formatTimestamp } from "../../time";
 import type { ChatMessage, VideoAttachment } from "../../types";
 import { answerOf, describeCall, waitingStatus, type RequestStart } from "./activity";
-import { smallButton } from "../buttons";
+import { smallButton } from "../shared/buttons";
 import {
   dispose,
   upsertStep,

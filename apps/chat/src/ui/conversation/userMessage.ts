@@ -1,6 +1,6 @@
 import { messageThoroughness } from "../../chat/thoroughness";
 import type { AssistantMessage, UserMessage } from "../../types";
-import { editKeys, pinToggle, smallButton } from "../buttons";
+import { editKeys, pinToggle, smallButton } from "../shared/buttons";
 import { answerOf } from "./activity";
 import { imageCaption } from "./captions";
 import {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import indexHtml from "../index.html?raw";
 import { queryElements } from "../src/dom";
-import { initStatus } from "../src/ui/status";
+import { initStatus } from "../src/ui/shared/status";
 
 describe("initStatus", () => {
   it("shows errors marked and clears them", () => {

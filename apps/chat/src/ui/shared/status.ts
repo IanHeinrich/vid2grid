@@ -1,4 +1,4 @@
-import type { AppElements } from "../dom";
+import type { AppElements } from "../../dom";
 
 export interface StatusLine {
   show(message: string, kind?: "info" | "error"): void;

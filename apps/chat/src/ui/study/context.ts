@@ -23,10 +23,10 @@ import {
 } from "../../video/study";
 import type { ToolContext } from "../../video/tools";
 import type { ChatVideo } from "../video/knowledgeVideos";
-import type { MenuHandle } from "../menu";
-import type { ModelPicker } from "../modelPicker";
-import type { StatusLine } from "../status";
-import type { Toast, ToastHandle } from "../toast";
+import type { MenuHandle } from "../shared/menu";
+import type { ModelPicker } from "../modelPicker/modelPicker";
+import type { StatusLine } from "../shared/status";
+import type { Toast, ToastHandle } from "../shared/toast";
 
 export interface StudyDeps {
   store: ChatStore;

@@ -7,7 +7,7 @@ import {
   type TimedAudioLine,
 } from "../../audio/videoAudio";
 import { errorText } from "../../text";
-import { seekButton } from "../buttons";
+import { seekButton } from "../shared/buttons";
 import { seekShown, shownVideo, type StudyContext } from "./context";
 
 const SHOWN_LINES = 20;

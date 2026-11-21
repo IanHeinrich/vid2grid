@@ -1,7 +1,7 @@
-import { saveSettings, type GlobalSettings } from "../settings";
-import { setSettings, type AppState } from "../state";
-import type { ModelInfo } from "../types";
-import { resolveSheetResolution } from "../video/resolution";
+import { saveSettings, type GlobalSettings } from "../../settings";
+import { setSettings, type AppState } from "../../state";
+import type { ModelInfo } from "../../types";
+import { resolveSheetResolution } from "../../video/resolution";
 
 export type SortOrder = "recommended" | "price" | "context" | "name";
 export type FilterName = "private" | "uncensored" | "recommended" | "reasoning" | "audio" | "beta";

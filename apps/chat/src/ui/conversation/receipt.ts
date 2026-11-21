@@ -2,7 +2,7 @@ import { usageCostUsd } from "../../api/usage";
 import { formatCost, formatTokens, usageTotals } from "../../chat/tokenEstimate";
 import { plural } from "../../text";
 import type { ChatMessage, ModelInfo, TurnReceipt } from "../../types";
-import { seekButton, smallButton } from "../buttons";
+import { seekButton, smallButton } from "../shared/buttons";
 
 export interface ReceiptActions {
   onSeek: (seconds: number) => void;

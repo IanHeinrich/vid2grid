@@ -1,10 +1,10 @@
-import { isVenice } from "../api/venice";
-import { chatModelId, defaultModelId } from "../chat/models";
-import type { AppElements } from "../dom";
-import type { AppState } from "../state";
-import type { ChatStore } from "../types";
-import { lastTestPassed } from "./connectionTest";
-import { icon } from "./icons";
+import { isVenice } from "../../api/venice";
+import { chatModelId, defaultModelId } from "../../chat/models";
+import type { AppElements } from "../../dom";
+import type { AppState } from "../../state";
+import type { ChatStore } from "../../types";
+import { lastTestPassed } from "../settings/connectionTest";
+import { icon } from "../shared/icons";
 
 const DISMISSED_KEY = "vid2grid-chat-welcome-dismissed";
 

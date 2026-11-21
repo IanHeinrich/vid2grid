@@ -1,7 +1,8 @@
-import { deletePersona, listPersonas, savePersona, type Persona } from "../chat/personas";
-import type { AppElements } from "../dom";
+import { deletePersona, listPersonas, savePersona, type Persona } from "../../chat/personas";
+import type { AppElements } from "../../dom";
 import { listenToPersonaFields, renderPersonaFields, setUnlessFocused } from "./personaFields";
-import { offerUndo, type Toast } from "./toast";
+import { offerUndo } from "../../app/undo";
+import type { Toast } from "../shared/toast";
 
 export interface PresetManager {
   open(options?: { presetId?: string | undefined; focusName?: boolean }): void;

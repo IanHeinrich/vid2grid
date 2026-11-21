@@ -25,8 +25,9 @@ import type {
   UserMessage,
 } from "../types";
 import { createToolRunner, type ToolContext } from "../video/tools";
-import type { StatusLine } from "../ui/status";
-import { offerUndo, type Toast, type ToastHandle } from "../ui/toast";
+import type { StatusLine } from "../ui/shared/status";
+import type { Toast, ToastHandle } from "../ui/shared/toast";
+import { offerUndo } from "./undo";
 import { modelCallDeps } from "./modelCallDeps";
 
 const REATTACH_TO_CHECK = "Reattach the video to check the timestamps.";

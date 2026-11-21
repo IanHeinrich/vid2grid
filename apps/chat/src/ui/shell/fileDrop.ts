@@ -1,4 +1,4 @@
-import type { DroppedFile } from "../app/attachFiles";
+import type { DroppedFile } from "../../app/attachFiles";
 
 // Handles must be requested while the drop event is dispatching; the items go stale after it.
 export function droppedFiles(transfer: DataTransfer): DroppedFile[] {

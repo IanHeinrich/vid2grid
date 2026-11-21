@@ -5,8 +5,8 @@ import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { createAppState, replaceChat, setChats, setCurrentChat, type AppState } from "../src/state";
 import type { Chat, ChatStore, Folder, VideoAttachment } from "../src/types";
-import { initSidebar, type SidebarDeps } from "../src/ui/sidebar";
-import { initToast } from "../src/ui/toast";
+import { initSidebar, type SidebarDeps } from "../src/ui/shell/sidebar";
+import { initToast } from "../src/ui/shared/toast";
 import { mountPage } from "./support/page";
 
 const SETTINGS = {

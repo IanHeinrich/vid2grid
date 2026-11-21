@@ -6,7 +6,7 @@ import type { GlobalSettings } from "../settings";
 import { setModels, setModelsError, updateChat, type AppState } from "../state";
 import { errorText } from "../text";
 import type { ChatStore, ModelInfo } from "../types";
-import type { StatusLine } from "../ui/status";
+import type { StatusLine } from "../ui/shared/status";
 
 export interface ModelList {
   load(settings: GlobalSettings): Promise<readonly ModelInfo[]>;

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DroppedFile } from "../src/app/attachFiles";
-import { droppedFiles, listenForDrops } from "../src/ui/fileDrop";
+import { droppedFiles, listenForDrops } from "../src/ui/shell/fileDrop";
 
 function item(file: File | null, handle?: Promise<FileSystemHandle | null>) {
   return {

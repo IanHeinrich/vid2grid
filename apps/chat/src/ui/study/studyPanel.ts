@@ -14,11 +14,11 @@ import {
   type ZoomDeps,
 } from "../../video/study";
 import type { ToolContext } from "../../video/tools";
-import { headerLabel } from "../buttons";
-import { icon, type IconName } from "../icons";
-import { attachMenu } from "../menu";
-import { createModelPicker } from "../modelPicker";
-import { storedPickerSettings } from "../pickerModel";
+import { headerLabel } from "../shared/buttons";
+import { icon, type IconName } from "../shared/icons";
+import { attachMenu } from "../shared/menu";
+import { createModelPicker } from "../modelPicker/modelPicker";
+import { storedPickerSettings } from "../modelPicker/pickerModel";
 import { modelCallDeps } from "../../app/modelCallDeps";
 import {
   changed,

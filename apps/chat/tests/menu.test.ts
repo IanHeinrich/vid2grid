@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { attachMenu, dismissOnOutside, type MenuParts } from "../src/ui/menu";
+import { attachMenu, dismissOnOutside, type MenuParts } from "../src/ui/shared/menu";
 
 let control: HTMLDivElement;
 let button: HTMLButtonElement;
