@@ -1,0 +1,231 @@
+{
+  "python_render|median|default": {
+    "wall_s": 98.64851620001718,
+    "peak_rss_mb": 134.25390625,
+    "frames": 2307,
+    "sheets": 257,
+    "timings_ms": {
+      "extracting": 92786,
+      "rendering": 5375
+    },
+    "warnings": []
+  },
+  "python_render|median|sparse16": {
+    "wall_s": 2.392157299997052,
+    "peak_rss_mb": 124.10546875,
+    "frames": 16,
+    "sheets": 2,
+    "timings_ms": {
+      "extracting": 1844,
+      "rendering": 64
+    },
+    "warnings": []
+  },
+  "python_render|longest|default": {
+    "wall_s": 48.40916519999155,
+    "peak_rss_mb": 133.03125,
+    "frames": 3540,
+    "sheets": 394,
+    "timings_ms": {
+      "extracting": 37357,
+      "rendering": 10472
+    },
+    "warnings": []
+  },
+  "python_render|longest|sparse16": {
+    "wall_s": 1.037198099977104,
+    "peak_rss_mb": 115.32421875,
+    "frames": 16,
+    "sheets": 2,
+    "timings_ms": {
+      "extracting": 362,
+      "rendering": 87
+    },
+    "warnings": []
+  },
+  "python_render|long_2h|default": {
+    "wall_s": 252.94106179999653,
+    "peak_rss_mb": 171.07421875,
+    "frames": 7414,
+    "sheets": 824,
+    "timings_ms": {
+      "extracting": 236640,
+      "rendering": 15563
+    },
+    "warnings": []
+  },
+  "python_render|long_2h|sparse16": {
+    "wall_s": 1.392872600001283,
+    "peak_rss_mb": 126.63671875,
+    "frames": 16,
+    "sheets": 2,
+    "timings_ms": {
+      "extracting": 856,
+      "rendering": 64
+    },
+    "warnings": []
+  },
+  "node_render|median|default": {
+    "wall_s": 74.90680789999897,
+    "peak_rss_mb": 334.09375,
+    "sheets": 257,
+    "returncode": 0,
+    "stderr": [
+      "2307 frames on 257 sheets: extract 66095 ms, render 16374 ms"
+    ]
+  },
+  "node_render|median|sparse16": {
+    "wall_s": 66.0676158000133,
+    "peak_rss_mb": 267.31640625,
+    "sheets": 2,
+    "returncode": 0,
+    "stderr": [
+      "16 frames on 2 sheets: extract 65832 ms, render 118 ms"
+    ]
+  },
+  "node_render|longest|default": {
+    "wall_s": 112.78829960001167,
+    "peak_rss_mb": 279.84765625,
+    "sheets": 394,
+    "returncode": 0,
+    "stderr": [
+      "3540 frames on 394 sheets: extract 100399 ms, render 25771 ms"
+    ]
+  },
+  "node_render|longest|sparse16": {
+    "wall_s": 94.49615579997771,
+    "peak_rss_mb": 222.6484375,
+    "sheets": 2,
+    "returncode": 0,
+    "stderr": [
+      "16 frames on 2 sheets: extract 94251 ms, render 114 ms"
+    ]
+  },
+  "node_render|long_2h|default": {
+    "wall_s": 236.2282903000014,
+    "peak_rss_mb": 329.74609375,
+    "sheets": 824,
+    "returncode": 0,
+    "stderr": [
+      "7414 frames on 824 sheets: extract 212007 ms, render 51773 ms"
+    ]
+  },
+  "node_render|long_2h|sparse16": {
+    "wall_s": 195.2830435000069,
+    "peak_rss_mb": 273.875,
+    "sheets": 2,
+    "returncode": 0,
+    "stderr": [
+      "16 frames on 2 sheets: extract 195013 ms, render 121 ms"
+    ]
+  },
+  "demux_pyav|median|packets": {
+    "wall_s": 0.5297136000008322,
+    "peak_rss_mb": 45.20703125,
+    "packets": 69166,
+    "keyframes": 817,
+    "mean_keyframe_gap_s": 2.821446078431373,
+    "max_keyframe_gap_s": 7.007000000000062,
+    "seconds_with_bytes": 2308
+  },
+  "demux_pyav|longest|packets": {
+    "wall_s": 0.5953871000092477,
+    "peak_rss_mb": 47.9453125,
+    "packets": 106204,
+    "keyframes": 803,
+    "mean_keyframe_gap_s": 4.4103491271820445,
+    "max_keyframe_gap_s": 7.0,
+    "seconds_with_bytes": 3541
+  },
+  "demux_pyav|long_2h|packets": {
+    "wall_s": 1.3432548999844585,
+    "peak_rss_mb": 61.76953125,
+    "packets": 222225,
+    "keyframes": 2289,
+    "mean_keyframe_gap_s": 3.2391721590909093,
+    "max_keyframe_gap_s": 7.007000000000517,
+    "seconds_with_bytes": 7415
+  },
+  "demux_ffprobe|median|packets": {
+    "wall_s": 0.40325070000835694,
+    "peak_rss_mb": 27.1171875,
+    "packets": 69166,
+    "keyframes": 817
+  },
+  "demux_ffprobe|longest|packets": {
+    "wall_s": 0.49149210000177845,
+    "peak_rss_mb": 29.7109375,
+    "packets": 106204,
+    "keyframes": 803
+  },
+  "demux_ffprobe|long_2h|packets": {
+    "wall_s": 1.1848560999787878,
+    "peak_rss_mb": 42.7734375,
+    "packets": 222225,
+    "keyframes": 2289
+  },
+  "plan|median|default": {
+    "wall_s": 0.443969299987657,
+    "peak_rss_mb": 46.77734375,
+    "plan_s": 0.0590774999873247,
+    "frames": 2307,
+    "sheets": 257,
+    "warnings": []
+  },
+  "plan|longest|default": {
+    "wall_s": 0.45219499999075197,
+    "peak_rss_mb": 61.0625,
+    "plan_s": 0.06390740000642836,
+    "frames": 3540,
+    "sheets": 394,
+    "warnings": []
+  },
+  "plan|long_2h|default": {
+    "wall_s": 0.5089918999874499,
+    "peak_rss_mb": 94.7734375,
+    "plan_s": 0.11970609999843873,
+    "frames": 7414,
+    "sheets": 824,
+    "warnings": []
+  },
+  "whisper|median|tiny:cpu": {
+    "wall_s": 152.53429199999664,
+    "peak_rss_mb": 1996.1484375,
+    "audio_s": 2307.8545,
+    "segments": 1616,
+    "decode_s": 2.625792900013039,
+    "load_s": 4.057621299987659,
+    "transcribe_s": 145.20195040002,
+    "real_time_factor": 0.06291642319739828
+  },
+  "whisper|median|tiny:cuda": {
+    "wall_s": 56.19929520000005,
+    "peak_rss_mb": 2116.3359375,
+    "audio_s": 2307.8545,
+    "segments": 1487,
+    "decode_s": 2.5942973000055645,
+    "load_s": 0.9133697999932338,
+    "transcribe_s": 51.94301610000548,
+    "real_time_factor": 0.02250705843891176
+  },
+  "whisper|median|base:cpu": {
+    "wall_s": 213.4954114999855,
+    "peak_rss_mb": 2138.30078125,
+    "audio_s": 2307.8545,
+    "segments": 1008,
+    "decode_s": 2.596248900023056,
+    "load_s": 4.149368799990043,
+    "transcribe_s": 206.0629501999938,
+    "real_time_factor": 0.0892876696516153
+  },
+  "whisper|median|base:cuda": {
+    "wall_s": 72.71554589999141,
+    "peak_rss_mb": 2211.0,
+    "audio_s": 2307.8545,
+    "segments": 1584,
+    "decode_s": 2.574403100006748,
+    "load_s": 0.9513804000162054,
+    "transcribe_s": 68.43652739998652,
+    "real_time_factor": 0.0296537443759936
+  }
+}

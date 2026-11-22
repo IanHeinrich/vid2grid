@@ -1,0 +1,33 @@
+[project]
+name = "vid2grid-long-video-experiment"
+version = "0.1.0"
+description = "How the chat overview should be shaped for long videos"
+requires-python = ">=3.11"
+dependencies = [
+    "av>=14,<20",
+    "httpx>=0.27",
+    "Pillow>=10.1",
+    "pyarrow>=26.0.1",
+    "vid2grid",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.2", "ruff>=0.5"]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+vid2grid = { path = "../../apps/python-library", editable = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["baselines"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RET", "PTH", "C4", "RUF", "TC", "PLE", "PLW"]

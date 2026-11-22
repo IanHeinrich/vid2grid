@@ -1,0 +1,23 @@
+[project]
+name = "vid2grid-long-video-baselines"
+version = "0.1.0"
+description = "Speed and memory baselines for vid2grid on videos of 30 minutes to 2 hours"
+requires-python = ">=3.11"
+dependencies = [
+    "psutil>=6",
+    "vid2grid[transcribe]",
+]
+
+[dependency-groups]
+dev = ["ruff>=0.5"]
+# CTranslate2 on Windows needs these beside it to run on CUDA.
+cuda = ["nvidia-cublas-cu12==12.8.4.1", "nvidia-cudnn-cu12==9.10.2.21"]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+vid2grid = { path = "../../../apps/python-library", editable = true }
+
+[tool.ruff]
+line-length = 100

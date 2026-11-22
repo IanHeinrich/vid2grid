@@ -1,0 +1,33 @@
+{
+  "_note": "USD per 1M input and output tokens. The Venice price is copied from the motion experiment's pricing.json (Venice's /models model_spec, 2026-11-21); the Gemini price is that file's estimate. image_tokens_per_mpx, image_tokens, chars_per_token and expected_output feed the dry run and budget gate, and were measured on this experiment's first video: Qwen3-VL bills 32 px patches (about 977 tokens per megapixel, 4096 for a 2048 px square sheet), Gemini bills about 1100 tokens an image at its default media resolution whatever the size, and both count subtitle text at about 2.8 characters a token.",
+  "venice": {
+    "qwen3-vl-235b-a22b": {
+      "input": 0.21,
+      "output": 1.9,
+      "estimate": false,
+      "max_tokens": 300,
+      "expected_output": 15,
+      "image_tokens_per_mpx": 977,
+      "extra": {
+        "venice_parameters": {
+          "include_venice_system_prompt": false
+        }
+      },
+      "chars_per_token": 2.8
+    }
+  },
+  "gemini": {
+    "gemini-3.1-flash-lite": {
+      "input": 0.25,
+      "output": 1.5,
+      "estimate": true,
+      "max_tokens": 2000,
+      "expected_output": 150,
+      "image_tokens": 1120,
+      "extra": {
+        "reasoning_effort": "low"
+      },
+      "chars_per_token": 2.8
+    }
+  }
+}
