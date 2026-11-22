@@ -117,6 +117,15 @@ describe("modelFacts", () => {
       Privacy: "Unknown",
     });
   });
+
+  it("does not claim end-to-end encryption the app does not perform", () => {
+    const facts = Object.fromEntries(
+      modelFacts(model("sealed", { privacy: "private", e2ee: true })),
+    );
+    expect(facts["Privacy"]).toBe(
+      "Private; offers end-to-end encryption, which this app doesn't use",
+    );
+  });
 });
 
 describe("pickerSections", () => {
