@@ -185,8 +185,8 @@ async function release(ctx: CopiesContext, fileKey: string): Promise<void> {
   if (!ctx.storage.supported()) return;
   const pending = [...ctx.state.pending.values()].map(pendingVideo);
   if (pending.some((video) => video?.fileKey === fileKey)) return;
-  const chats = await ctx.deps.store.listChats();
-  if (chats.some((chat) => chat.video?.fileKey === fileKey)) return;
+  const videoKeys = await ctx.deps.store.listVideoKeysByChat();
+  if ([...videoKeys.values()].some((keys) => keys.includes(fileKey))) return;
   await stopWriting(ctx, fileKey);
   await ctx.storage.remove(fileKey);
 }
@@ -205,10 +205,11 @@ async function renderList(ctx: CopiesContext): Promise<void> {
     storedVideoList.replaceChildren();
     return;
   }
-  const [copies, estimate, chats] = await Promise.all([
+  const [copies, estimate, chats, videoKeys] = await Promise.all([
     ctx.storage.list(),
     ctx.storage.estimate(),
     ctx.deps.store.listChats(),
+    ctx.deps.store.listVideoKeysByChat(),
   ]);
   const used = estimate.usageBytes === undefined ? "" : formatBytes(estimate.usageBytes);
   const quota = estimate.quotaBytes === undefined ? "" : ` of ${formatBytes(estimate.quotaBytes)}`;
@@ -222,7 +223,7 @@ async function renderList(ctx: CopiesContext): Promise<void> {
   storedVideoList.replaceChildren(
     ...copies.map((copy) => {
       const users = chats
-        .filter((chat) => chat.video?.fileKey === copy.fileKey)
+        .filter((chat) => videoKeys.get(chat.id)?.includes(copy.fileKey))
         .map((chat) => chat.title);
       return storedItem(ctx, copy, users);
     }),

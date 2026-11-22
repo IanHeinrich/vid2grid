@@ -1,6 +1,7 @@
 import { blankChat } from "../../chat/chats";
 import { chatToMarkdown } from "../../chat/exportChat";
 import { defaultModelId } from "../../chat/models";
+import { videoKeysOf } from "../../chat/store";
 import type { AppElements } from "../../dom";
 import {
   currentPending,
@@ -39,7 +40,7 @@ export interface SidebarDeps {
   onCurrentDeleted(): void;
   onDeleted(chat: Chat): void;
   // The undo window has passed, so what the chat alone held can be let go.
-  onDeleteFinal(chat: Chat): void;
+  onDeleteFinal(videoKeys: string[]): void;
   onRenamed(): void;
   onOpenSettings(): void;
   onFocusComposer(): void;
@@ -508,12 +509,13 @@ async function deleteChat(ctx: SidebarContext, chatId: string): Promise<void> {
   }
   deps.onDeleted(chat);
   if (wasCurrent) deps.onCurrentDeleted();
+  const videoKeys = videoKeysOf(chat, deleted.messages);
   offerUndo(deps.toast, `Deleted "${chat.title}"`, {
     undo: () => restoreChat(ctx, deleted),
-    expired: () => deps.onDeleteFinal(chat),
+    expired: () => deps.onDeleteFinal(videoKeys),
     failed: (error) => {
       deps.toast.show(`Could not restore the chat: ${errorText(error)}`);
-      deps.onDeleteFinal(chat);
+      deps.onDeleteFinal(videoKeys);
     },
   });
 }

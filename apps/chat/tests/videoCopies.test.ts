@@ -157,6 +157,56 @@ describe("releasing", () => {
     expect(storage.fake.remove).toHaveBeenCalledWith("k1");
   });
 
+  it("keeps a copy an older message in the same chat still uses", async () => {
+    const older = { name: "beach.mp4", fileKey: "k1", durationSeconds: 1, width: 1, height: 1 };
+    const latest = { ...older, name: "city.mp4", fileKey: "k2" };
+    await store.putChat({ ...blankChat("m", "chat", 1), video: latest });
+    await store.putMessage("chat", {
+      id: "u1",
+      createdAt: 1,
+      role: "user",
+      text: "look",
+      images: [],
+      video: older,
+    });
+    await copies().release("k1");
+    expect(storage.fake.remove).not.toHaveBeenCalled();
+  });
+
+  it("keeps a copy an older message in another chat still uses", async () => {
+    const video = { name: "beach.mp4", fileKey: "k1", durationSeconds: 1, width: 1, height: 1 };
+    await store.putChat(blankChat("m", "other", 1));
+    await store.putMessage("other", {
+      id: "u1",
+      createdAt: 1,
+      role: "user",
+      text: "look",
+      images: [],
+      video,
+    });
+    await copies().release("k1");
+    expect(storage.fake.remove).not.toHaveBeenCalled();
+  });
+
+  it("deletes a copy once its last message is gone", async () => {
+    const video = { name: "beach.mp4", fileKey: "k1", durationSeconds: 1, width: 1, height: 1 };
+    await store.putChat(blankChat("m", "chat", 1));
+    await store.putMessage("chat", {
+      id: "u1",
+      createdAt: 1,
+      role: "user",
+      text: "look",
+      images: [],
+      video,
+    });
+    const kept = copies();
+    await kept.release("k1");
+    expect(storage.fake.remove).not.toHaveBeenCalled();
+    await store.deleteMessages("chat", ["u1"]);
+    await kept.release("k1");
+    expect(storage.fake.remove).toHaveBeenCalledWith("k1");
+  });
+
   it("keeps a copy whose video is waiting to be sent in some chat", async () => {
     const video = { name: "beach.mp4", fileKey: "k1", durationSeconds: 1, width: 1, height: 1 };
     setPendingVideo(state, "other", video);
@@ -201,6 +251,41 @@ describe("stored videos list", () => {
     expect(storage.fake.remove).not.toHaveBeenCalled();
     item?.querySelector("button")?.click();
     await vi.waitFor(() => expect(storage.fake.remove).toHaveBeenCalledWith("k1"));
+  });
+
+  it("lists a chat whose older message is the only user of a copy", async () => {
+    const older = { name: "beach.mp4", fileKey: "k1", durationSeconds: 1, width: 1, height: 1 };
+    const latest = { ...older, name: "city.mp4", fileKey: "k2" };
+    await store.putChat({ ...blankChat("m", "chat", 1), title: "Beach day", video: latest });
+    await store.putMessage("chat", {
+      id: "u1",
+      createdAt: 1,
+      role: "user",
+      text: "look",
+      images: [],
+      video: older,
+    });
+    await copies().renderList();
+    const item = els.settingsDialog.storedVideoList.querySelector("li");
+    expect(item?.textContent).toContain("Used by Beach day");
+  });
+
+  it("warns before removing a copy only an older message uses", async () => {
+    const video = { name: "beach.mp4", fileKey: "k1", durationSeconds: 1, width: 1, height: 1 };
+    await store.putChat({ ...blankChat("m", "chat", 1), title: "Beach day" });
+    await store.putMessage("chat", {
+      id: "u1",
+      createdAt: 1,
+      role: "user",
+      text: "look",
+      images: [],
+      video,
+    });
+    confirm.mockReturnValueOnce(false);
+    await copies().renderList();
+    els.settingsDialog.storedVideoList.querySelector("button")?.click();
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("Beach day will need"));
+    expect(storage.fake.remove).not.toHaveBeenCalled();
   });
 
   it("removes a copy no chat uses without asking", async () => {

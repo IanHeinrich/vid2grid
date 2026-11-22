@@ -4,9 +4,10 @@ import { createMemoryStore } from "../src/chat/store";
 import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { createAppState, replaceChat, setChats, setCurrentChat, type AppState } from "../src/state";
-import type { Chat, ChatStore, Folder, VideoAttachment } from "../src/types";
+import type { Chat, ChatMessage, ChatStore, Folder, VideoAttachment } from "../src/types";
 import { initSidebar, type SidebarDeps } from "../src/ui/shell/sidebar";
 import { initToast } from "../src/ui/shared/toast";
+import { initVideoCopies, type VideoStorage } from "../src/ui/video/videoCopies";
 import { mountPage } from "./support/page";
 
 const SETTINGS = {
@@ -28,7 +29,7 @@ function makeSpies() {
     onDeletingCurrent: vi.fn(),
     onCurrentDeleted: vi.fn(),
     onDeleted: vi.fn(),
-    onDeleteFinal: vi.fn(),
+    onDeleteFinal: vi.fn<(videoKeys: string[]) => void>(),
     onRenamed: vi.fn(),
     onOpenSettings: vi.fn(),
     onFocusComposer: vi.fn(),
@@ -74,6 +75,21 @@ function readText(blob: Blob): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error("read failed"));
     reader.readAsText(blob);
   });
+}
+
+function userMessage(
+  id: string,
+  createdAt: number,
+  video: VideoAttachment | undefined,
+): ChatMessage {
+  return {
+    id,
+    createdAt,
+    role: "user",
+    text: id,
+    images: [],
+    ...(video ? { video } : {}),
+  };
 }
 
 async function seed(
@@ -215,7 +231,76 @@ describe("undoing a deleted chat", () => {
     click(itemFor("a"), ".chat-delete");
     await vi.waitFor(() => expect(els.toast.el.hidden).toBe(false));
     timers.forEach((run) => run());
-    expect(spies.onDeleteFinal).toHaveBeenCalledWith(expect.objectContaining({ id: "a" }));
+    expect(spies.onDeleteFinal).toHaveBeenCalledWith([]);
+  });
+
+  it("hands over every video the chat used, once each, when the undo toast expires", async () => {
+    const city = { ...BEACH, name: "city.mp4", fileKey: "city" };
+    await seed("a", 1, "Chat A", { video: city });
+    await store.putMessage("a", userMessage("u1", 1, BEACH));
+    await store.putMessage("a", userMessage("u2", 2, city));
+    await store.putMessage("a", userMessage("u3", 3, undefined));
+    initSidebar(els, state, deps);
+    click(itemFor("a"), ".chat-delete");
+    await vi.waitFor(() => expect(els.toast.el.hidden).toBe(false));
+    timers.forEach((run) => run());
+    expect(spies.onDeleteFinal).toHaveBeenCalledTimes(1);
+    expect(spies.onDeleteFinal.mock.calls[0]?.[0]?.sort()).toEqual(["beach", "city"]);
+  });
+
+  it("hands over the videos too when restoring the chat fails", async () => {
+    await seed("a", 1, "Chat A", { video: BEACH });
+    await store.putMessage("a", userMessage("u1", 1, BEACH));
+    initSidebar(els, state, deps);
+    click(itemFor("a"), ".chat-delete");
+    await vi.waitFor(() => expect(els.toast.el.hidden).toBe(false));
+    store.putChat = () => Promise.reject(new Error("Disk full"));
+    els.toast.action.click();
+    await vi.waitFor(() => expect(spies.onDeleteFinal).toHaveBeenCalledWith(["beach"]));
+  });
+
+  it("releases nothing while the undo window is open or after an undo", async () => {
+    await seed("a", 1, "Chat A", { video: BEACH });
+    await store.putMessage("a", userMessage("u1", 1, BEACH));
+    setCurrentChat(state, state.chats[0] ?? null, []);
+    initSidebar(els, state, deps);
+    click(itemFor("a"), ".chat-delete");
+    await vi.waitFor(() => expect(els.toast.el.hidden).toBe(false));
+    expect(spies.onDeleteFinal).not.toHaveBeenCalled();
+    els.toast.action.click();
+    await vi.waitFor(() => expect(spies.onOpen).toHaveBeenCalledWith("a"));
+    timers.forEach((run) => run());
+    expect(spies.onDeleteFinal).not.toHaveBeenCalled();
+  });
+
+  it("removes the copies of a deleted chat's videos, but not one another chat still uses", async () => {
+    const city = { ...BEACH, name: "city.mp4", fileKey: "city" };
+    const remove = vi.fn(() => Promise.resolve());
+    const storage = {
+      supported: () => true,
+      remove,
+    } as unknown as VideoStorage;
+    const copies = initVideoCopies(els, state, {
+      store,
+      status: { show: vi.fn(), clear: vi.fn() },
+      confirm: vi.fn(() => true),
+      onProgress: vi.fn(),
+      storage,
+    });
+    deps.onDeleteFinal = (videoKeys) => {
+      for (const fileKey of videoKeys) void copies.release(fileKey);
+    };
+    await seed("a", 2, "Chat A", { video: city });
+    await seed("b", 1, "Chat B", { video: city });
+    await store.putMessage("a", userMessage("u1", 1, BEACH));
+    await store.putMessage("a", userMessage("u2", 2, city));
+    await store.putMessage("b", userMessage("u3", 1, city));
+    initSidebar(els, state, deps);
+    click(itemFor("a"), ".chat-delete");
+    await vi.waitFor(() => expect(els.toast.el.hidden).toBe(false));
+    timers.forEach((run) => run());
+    await vi.waitFor(() => expect(remove).toHaveBeenCalledWith("beach"));
+    expect(remove).toHaveBeenCalledTimes(1);
   });
 
   it("puts the chat back and says so when deleting fails", async () => {
