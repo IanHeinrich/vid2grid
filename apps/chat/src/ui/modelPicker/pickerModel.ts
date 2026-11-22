@@ -188,7 +188,10 @@ export function modelFacts(model: ModelInfo): [string, string][] {
     ["Max images", String(model.maxImages)],
     ["Auto resolution", `${resolveSheetResolution("auto", model).px} px`],
     ["Reasoning effort", effort],
-    ["Privacy", `${PRIVACY_TEXT[model.privacy]}${model.e2ee ? ", end-to-end encrypted" : ""}`],
+    [
+      "Privacy",
+      `${PRIVACY_TEXT[model.privacy]}${model.e2ee ? "; offers end-to-end encryption, which this app doesn't use" : ""}`,
+    ],
   );
   if (model.quantization !== undefined) facts.push(["Quantization", model.quantization]);
   facts.push(
