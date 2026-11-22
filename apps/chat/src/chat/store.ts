@@ -101,6 +101,30 @@ function oldestFirst(a: Folder, b: Folder): number {
   return a.createdAt - b.createdAt;
 }
 
+type MessageOfChat = Pick<MessageRecord, "chatId" | "message">;
+
+function videoKeysByChat(
+  chats: readonly Chat[],
+  records: readonly MessageOfChat[],
+): Map<string, string[]> {
+  const keys = new Map<string, Set<string>>();
+  const add = (chatId: string, fileKey: string): void => {
+    keys.set(chatId, (keys.get(chatId) ?? new Set<string>()).add(fileKey));
+  };
+  for (const chat of chats) if (chat.video) add(chat.id, chat.video.fileKey);
+  for (const { chatId, message } of records) {
+    if (message.role === "user" && message.video) add(chatId, message.video.fileKey);
+  }
+  return new Map(
+    [...keys].map(([chatId, fileKeys]): [string, string[]] => [chatId, [...fileKeys]]),
+  );
+}
+
+export function videoKeysOf(chat: Chat, messages: readonly ChatMessage[]): string[] {
+  const records = messages.map((message) => ({ chatId: chat.id, message }));
+  return videoKeysByChat([chat], records).get(chat.id) ?? [];
+}
+
 class IndexedDbChatStore implements ChatStore {
   constructor(private readonly db: IDBDatabase) {}
 
@@ -125,6 +149,15 @@ class IndexedDbChatStore implements ChatStore {
       const keys = messages.index(BY_CHAT).getAllKeys(id);
       keys.onsuccess = () => keys.result.forEach((key) => messages.delete(key));
     });
+  }
+
+  async listVideoKeysByChat(): Promise<Map<string, string[]>> {
+    const transaction = this.db.transaction([CHATS, MESSAGES], "readonly");
+    const [chats, records] = await Promise.all([
+      requestResult(transaction.objectStore(CHATS).getAll() as IDBRequest<Chat[]>),
+      requestResult(transaction.objectStore(MESSAGES).getAll() as IDBRequest<MessageRecord[]>),
+    ]);
+    return videoKeysByChat(chats, records);
   }
 
   async listFolders(): Promise<Folder[]> {
@@ -273,6 +306,7 @@ export function createMemoryStore(): ChatStore {
         messages.delete(id);
         handles.delete(id);
       }),
+    listVideoKeysByChat: () => Promise.resolve(memoryVideoKeys(chats, messages)),
     listFolders: () => Promise.resolve([...folders.values()].map(copy).sort(oldestFirst)),
     putFolder: (folder) => resolved(() => folders.set(folder.id, copy(folder))),
     deleteFolder: (id) => resolved(() => folders.delete(id)),
@@ -307,6 +341,16 @@ export function createMemoryStore(): ChatStore {
     putVideoHandle: (chatId, handle) => resolved(() => handles.set(chatId, handle)),
     deleteVideoHandle: (chatId) => resolved(() => handles.delete(chatId)),
   };
+}
+
+function memoryVideoKeys(
+  chats: ReadonlyMap<string, Chat>,
+  messages: ReadonlyMap<string, ReadonlyMap<string, ChatMessage>>,
+): Map<string, string[]> {
+  const records = [...messages].flatMap(([chatId, chatMessages]) =>
+    [...chatMessages.values()].map((message) => ({ chatId, message })),
+  );
+  return videoKeysByChat([...chats.values()], records);
 }
 
 function resolved(apply: () => unknown): Promise<void> {

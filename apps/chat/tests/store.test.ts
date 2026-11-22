@@ -9,6 +9,7 @@ import type {
   Folder,
   ImageRef,
   UserMessage,
+  VideoAttachment,
   VideoAudio,
   VideoCast,
   VideoTimeline,
@@ -142,6 +143,46 @@ describe.each(stores)("%s chat store chats and messages", (_name, open) => {
     await store.deleteMessages("a", ["drop-1", "drop-2", "missing"]);
     expect((await store.listMessages("a")).map((m) => m.id)).toEqual(["keep"]);
     expect((await store.listMessages("b")).map((m) => m.id)).toEqual(["drop-1"]);
+  });
+});
+
+function video(fileKey: string): VideoAttachment {
+  return { name: `${fileKey}.mp4`, fileKey, durationSeconds: 1, width: 1, height: 1 };
+}
+
+function videoMessage(id: string, createdAt: number, fileKey: string): UserMessage {
+  return { id, createdAt, role: "user", text: id, images: [], video: video(fileKey) };
+}
+
+describe.each(stores)("%s chat store video keys", (_name, open) => {
+  it("lists, per chat, every fileKey its chat or messages refer to, once each", async () => {
+    const store = await open();
+    await store.putChat({ ...chat("a", 1), video: video("latest") });
+    await store.putChat(chat("b", 2));
+    await store.putMessage("a", videoMessage("a-1", 1, "older"));
+    await store.putMessage("a", videoMessage("a-2", 2, "latest"));
+    await store.putMessage("b", videoMessage("b-1", 1, "other"));
+    await store.putMessage("b", videoMessage("b-2", 2, "older"));
+    await store.putMessage("b", userMessage("b-3", 3));
+    const keys = await store.listVideoKeysByChat();
+    expect([...keys.keys()].sort()).toEqual(["a", "b"]);
+    expect(keys.get("a")?.sort()).toEqual(["latest", "older"]);
+    expect(keys.get("b")?.sort()).toEqual(["older", "other"]);
+  });
+
+  it("lists nothing when no chat or message has a video", async () => {
+    const store = await open();
+    await store.putChat(chat("a", 1));
+    await store.putMessage("a", userMessage("a-1", 1));
+    expect((await store.listVideoKeysByChat()).size).toBe(0);
+  });
+
+  it("forgets the videos of a deleted chat", async () => {
+    const store = await open();
+    await store.putChat({ ...chat("a", 1), video: video("latest") });
+    await store.putMessage("a", videoMessage("a-1", 1, "older"));
+    await store.deleteChat("a");
+    expect((await store.listVideoKeysByChat()).size).toBe(0);
   });
 });
 

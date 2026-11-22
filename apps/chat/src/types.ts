@@ -368,6 +368,8 @@ export interface ChatStore extends ImageStore, SheetCache {
   getChat(id: string): Promise<Chat | undefined>;
   putChat(chat: Chat): Promise<void>;
   deleteChat(id: string): Promise<void>;
+  // Per chat id, the fileKey of every video its chat or messages refer to; chats with none are absent.
+  listVideoKeysByChat(): Promise<Map<string, string[]>>;
   listFolders(): Promise<Folder[]>;
   putFolder(folder: Folder): Promise<void>;
   deleteFolder(id: string): Promise<void>;

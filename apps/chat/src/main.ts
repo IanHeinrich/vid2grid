@@ -179,9 +179,9 @@ function sidebarDeps(
       app().actions.invalidateUndo();
     },
     onDeleted: () => app().study.render(),
-    onDeleteFinal: (chat) => {
-      if (chat.video) {
-        surface(app(), "remove the stored video", app().copies.release(chat.video.fileKey));
+    onDeleteFinal: (videoKeys) => {
+      for (const fileKey of videoKeys) {
+        surface(app(), "remove the stored video", app().copies.release(fileKey));
       }
     },
     onCurrentDeleted: () => openFallbackSafely(app()),
