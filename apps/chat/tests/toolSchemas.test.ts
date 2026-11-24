@@ -72,3 +72,52 @@ describe("guidance", () => {
     expect(guidance).not.toMatch(/video|look|frames|note|grid/);
   });
 });
+
+describe("with a looking model", () => {
+  const LOOKING: ToolSituation = { ...VIDEO, vision: false, looking: true };
+
+  function properties(situation: ToolSituation, name: string): unknown {
+    const found = toolOffer(situation).tools.find((schema) => schema.function.name === name);
+    return found?.function.parameters["properties"];
+  }
+
+  it("offers ask in place of recall, and zoom whatever the writer sees", () => {
+    expect(names(LOOKING)).toEqual(["look", "frames", "note", "ask", "zoom"]);
+    expect(names({ ...LOOKING, listen: true }).at(-1)).toBe("listen");
+    expect(names({ ...LOOKING, videoLoaded: false })).toEqual(["ask", "zoom"]);
+    expect(names({ ...LOOKING, videoLoaded: false, images: false })).toEqual([]);
+    expect(names({ ...LOOKING, vision: true })).toEqual(names(LOOKING));
+  });
+
+  it("lets look, frames and zoom carry a question, which is never required", () => {
+    for (const name of ["look", "frames", "zoom"]) {
+      expect(properties(LOOKING, name)).toHaveProperty("question");
+      expect(properties(VIDEO, name)).not.toHaveProperty("question");
+    }
+    expect(properties(LOOKING, "note")).not.toHaveProperty("question");
+    expect(properties({ ...LOOKING, videoLoaded: false }, "zoom")).toHaveProperty("question");
+    const required = toolOffer(LOOKING).tools.flatMap(({ function: { name, parameters } }) =>
+      name === "ask" ? [] : [parameters["required"]],
+    );
+    expect(required.flat()).not.toContain("question");
+  });
+
+  it("says the writer cannot see pictures and should ask rather than guess", () => {
+    for (const situation of [LOOKING, { ...LOOKING, videoLoaded: false }]) {
+      const { guidance } = toolOffer(situation);
+      expect(guidance).toContain("You cannot see pictures yourself.");
+      expect(guidance).toContain("call ask with a question and the pictures' names");
+      expect(guidance).toContain("use zoom");
+      expect(guidance).not.toContain("recall");
+    }
+    expect(toolOffer(LOOKING).guidance).toContain("use note for anything worth remembering");
+  });
+
+  it("changes nothing when it is off", () => {
+    expect(toolOffer({ ...VIDEO, looking: false })).toEqual(toolOffer(VIDEO));
+    expect(toolOffer({ ...IMAGES, looking: false })).toEqual(toolOffer(IMAGES));
+    expect(toolOffer(VIDEO).guidance).toContain(
+      "Every frame has its timestamp printed on it.\nOlder images become text stubs; recall one by its stub's name, and use note for anything worth remembering.\nWhen a detail is too small to read, use zoom.",
+    );
+  });
+});

@@ -1,5 +1,6 @@
 import type { AnalyseAudio } from "../../audio/videoAudio";
-import { resolveModel } from "../../chat/models";
+import { pickedStudyModel, studyModel } from "../../app/lookingConnection";
+import { lookingModelId } from "../../chat/seen";
 import type { AppElements } from "../../dom";
 import type { AppState } from "../../state";
 import type {
@@ -55,6 +56,8 @@ interface RunningBase {
   chatId: string;
   fileKey: string;
   controller: AbortController;
+  // As it was before this run, whose first finished step is what makes the model its own.
+  studied: VideoTimeline;
   timeline: VideoTimeline;
   model: ModelInfo;
   stopping: boolean;
@@ -124,6 +127,8 @@ export interface StudyContext {
   restart: boolean;
   pendingUndo: ToastHandle | null;
   choice: { modelId: string };
+  // By video, the model picked in the dialog this session and the server it was picked on.
+  picked: Map<string, { modelId: string; server: string }>;
   picker: ModelPicker;
   render(): void;
 }
@@ -201,6 +206,28 @@ function videoGeometry(ctx: StudyContext, model: ModelInfo): VideoGeometry | und
   };
 }
 
+function studyServer({ state }: StudyContext): string {
+  const chat = state.currentChat;
+  if (!chat || lookingModelId(chat) === undefined) return "";
+  return `looking ${chat.settings.lookingBaseUrl ?? ""}`;
+}
+
+export function rememberPick(ctx: StudyContext, fileKey: string, modelId: string): void {
+  ctx.picked.set(fileKey, { modelId, server: studyServer(ctx) });
+}
+
+export function pickedModel(ctx: StudyContext, modelId: string): ModelInfo {
+  return pickedStudyModel(ctx.state, ctx.state.currentChat, modelId);
+}
+
+// What a study goes on with: the model picked for it, where its pictures would still go there.
+export function modelFor(ctx: StudyContext, { fileKey, modelId }: VideoTimeline): ModelInfo {
+  const picked = ctx.picked.get(fileKey);
+  return picked?.modelId === modelId && picked.server === studyServer(ctx)
+    ? pickedModel(ctx, modelId)
+    : studyModel(ctx.state, ctx.state.currentChat, modelId);
+}
+
 export function planFor(
   ctx: StudyContext,
   model: ModelInfo,
@@ -216,7 +243,7 @@ export function unzoomed(timeline: VideoTimeline | undefined): UnclearSpan[] {
 
 export function zoomPlanFor(ctx: StudyContext, timeline: VideoTimeline): ZoomPlan | undefined {
   if (unzoomed(timeline).length === 0) return undefined;
-  const geometry = videoGeometry(ctx, resolveModel(ctx.state, timeline.modelId));
+  const geometry = videoGeometry(ctx, modelFor(ctx, timeline));
   const startSeconds = timeline.plan?.startSeconds;
   const endSeconds = timeline.plan?.endSeconds;
   const plan =

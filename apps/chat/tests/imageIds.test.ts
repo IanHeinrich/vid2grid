@@ -127,3 +127,42 @@ describe("checkedVideoKeys", () => {
     expect(() => checkedVideoKeys([], messages)).toThrow(REFUSED);
   });
 });
+
+describe("what was seen in a message", () => {
+  const note = { kind: "described", imageIds: ["gone"], modelId: "eyes", text: "A dog." };
+
+  it("keeps no image of its own", () => {
+    const messages = [as({ ...user("u", "hi", { images: [uploadRef("p")] }), seen: [note] })];
+    expect([...checkedImageIds({ messages })]).toEqual(["p"]);
+    const alternates = [{ messages: [{ ...tool("t", "c", []), seen: [note] }], createdAt: 1 }];
+    expect([...checkedImageIds({ messages: [as({ ...user("u", "hi"), alternates })] })]).toEqual(
+      [],
+    );
+  });
+
+  it("is read beside a transcript and removed videos", () => {
+    const video = { name: "v", fileKey: "k", durationSeconds: 1, width: 1, height: 1 };
+    const spans = [{ startSeconds: 0, endSeconds: 60 }];
+    const message = user("u", "hi", {
+      images: [uploadRef("p")],
+      seen: [{ ...note, kind: "described" }],
+      transcript: { fileKey: "k", spans },
+      removedVideo: video,
+    });
+    const chat = as({ id: "c", removedVideos: [{ video, throughCreatedAt: 1 }] });
+    expect([...checkedImageIds({ messages: [message] })]).toEqual(["p"]);
+    expect([...checkedVideoKeys([chat as unknown as Chat], [message])]).toEqual([]);
+  });
+
+  it.each([
+    [{ a: 1 }],
+    [["note"]],
+    [[{ text: "x" }]],
+    [[{ imageIds: "i" }]],
+    [[{ imageIds: [3] }]],
+  ])("stops a deletion when it is %j", (seen) => {
+    const messages = [as({ ...user("u", "hi", { images: [uploadRef("p")] }), seen })];
+    expect(() => checkedImageIds({ messages })).toThrow(REFUSED);
+    expect([...imageIdsIn({ messages })]).toEqual(["p"]);
+  });
+});

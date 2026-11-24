@@ -5,8 +5,8 @@ import {
   currentModel,
   defaultModelId,
   effectiveDefaultModelId,
+  offeredModels,
   resolveModel,
-  visionModels,
 } from "../src/chat/models";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { createAppState, setCurrentChat, setModels } from "../src/state";
@@ -28,13 +28,22 @@ describe("models", () => {
       model("b", { privacy: "anonymized" }),
       model("c", { vision: false }),
     ];
-    expect(visionModels(models, true).map((entry) => entry.id)).toEqual(["a"]);
-    expect(visionModels(models, false).map((entry) => entry.id)).toEqual(["a", "b"]);
+    expect(offeredModels(models, true).map((entry) => entry.id)).toEqual(["a"]);
+    expect(offeredModels(models, false).map((entry) => entry.id)).toEqual(["a", "b"]);
+  });
+
+  it("lists models that cannot see images too with a looking model", () => {
+    const models = [
+      model("a", { vision: false }),
+      model("b", { vision: false, privacy: "anonymized" }),
+    ];
+    expect(offeredModels(models, true)).toEqual([]);
+    expect(offeredModels(models, true, true).map((entry) => entry.id)).toEqual(["a"]);
   });
 
   it("ignores private-only on a server that reports no privacy", () => {
     const models = [model("a", { privacy: "unknown" }), model("b", { privacy: "unknown" })];
-    expect(visionModels(models, true).map((entry) => entry.id)).toEqual(["a", "b"]);
+    expect(offeredModels(models, true).map((entry) => entry.id)).toEqual(["a", "b"]);
   });
 
   it("builds a fallback for a model that is not in the loaded list", () => {
@@ -86,6 +95,22 @@ describe("default model for new chats", () => {
   });
 });
 
+describe("default model with a default looking model", () => {
+  const models = [model("sees"), model("text", { vision: false })];
+
+  it("may be one that cannot see images", () => {
+    expect(effectiveDefaultModelId(models, true, "text")).toBe("sees");
+    expect(effectiveDefaultModelId(models, true, "text", true)).toBe("text");
+    const state = createAppState({
+      ...DEFAULT_SETTINGS,
+      defaultModelId: "text",
+      defaultLookingModelId: "eyes",
+    });
+    setModels(state, models);
+    expect(defaultModelId(state)).toBe("text");
+  });
+});
+
 describe("a chat's model", () => {
   it("follows the default for a chat made before the models loaded", () => {
     const state = createAppState({ ...DEFAULT_SETTINGS, defaultModelId: "gone" });
@@ -95,6 +120,17 @@ describe("a chat's model", () => {
     expect(chatModelId(state, chat("b", 1))).toBe("chat-model");
     setCurrentChat(state, unset, []);
     expect(currentModel(state)?.id).toBe("first");
+  });
+
+  it("follows a default it can use, whatever new chats get", () => {
+    const state = createAppState({
+      ...DEFAULT_SETTINGS,
+      defaultModelId: "text",
+      defaultLookingModelId: "eyes",
+    });
+    setModels(state, [model("text", { vision: false }), model("sees")]);
+    expect(chatModelId(state, blankChat("", "a", 1))).toBe("sees");
+    expect(chatModelId(state, blankChat("", "a", 1, "eyes"))).toBe("text");
   });
 
   it("has no model while neither the chat nor the settings name one", () => {

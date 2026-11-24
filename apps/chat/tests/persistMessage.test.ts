@@ -30,6 +30,17 @@ describe("persistMessage", () => {
     expect(await store.listMessages("chat")).toEqual([]);
   });
 
+  it("keeps what was seen of its pictures since the copy was made", async () => {
+    const state = createAppState(DEFAULT_SETTINGS);
+    const store = createMemoryStore();
+    const seen = [{ kind: "described" as const, imageIds: ["i"], modelId: "eyes", text: "A dog." }];
+    const chat = blankChat("m", "chat", 1);
+    await store.putChat(chat);
+    setCurrentChat(state, chat, [user("u", "before", { seen })]);
+    await persistMessage({ state, store, onChanged: vi.fn() }, user("u", "after"));
+    expect(await store.listMessages("chat")).toEqual([user("u", "after", { seen })]);
+  });
+
   it("does nothing without a chat open", async () => {
     const state = createAppState(DEFAULT_SETTINGS);
     const onChanged = vi.fn();

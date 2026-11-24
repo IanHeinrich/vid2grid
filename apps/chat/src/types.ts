@@ -61,6 +61,12 @@ export interface ChatSettings {
   // user picked No preset, which stops matching the fields against presets.
   presetId?: string;
   modelId: string;
+  // The model every picture goes to, in place of modelId; absent means modelId sees its own.
+  lookingModelId?: string;
+  // The server the looking model was picked on, so a change of API never moves the pictures.
+  lookingBaseUrl?: string;
+  // The user chose it, or chose none, so an empty chat no longer follows the default.
+  lookingPicked?: true;
   temperature?: number;
   reasoningEffort?: string;
   // Absent means Normal.
@@ -157,6 +163,8 @@ export interface VideoTimeline {
   windowCount: number;
   updatedAt: number;
   usage?: TokenUsage;
+  // More than one model worked on it, so its tokens have no one price.
+  mixedModels?: true;
   // Kept so Resume after a reload plans the same windows.
   plan?: StudyPlanOptions;
   unclear?: UnclearSpan[];
@@ -268,6 +276,19 @@ export interface ToolCall {
   arguments: string;
 }
 
+// What the looking model said about pictures, which the writer reads in their place.
+export interface SeenNote {
+  // A description stands in for the message's own images; an answer is about images anywhere.
+  kind: "described" | "answered";
+  imageIds: string[];
+  modelId: string;
+  // What it was asked, or told to pay attention to.
+  question?: string;
+  text: string;
+  // Absent when the note was reused, so it is counted once.
+  usage?: TokenUsage;
+}
+
 interface MessageBase {
   id: string;
   createdAt: number;
@@ -277,6 +298,9 @@ export interface UserMessage extends MessageBase {
   role: "user";
   text: string;
   images: ImageRef[];
+  seen?: SeenNote[];
+  // The user asked for its pictures to be described afresh, so no earlier words are reused.
+  lookAgain?: true;
   // Where the video was attached, so the conversation shows it inline at that point.
   video?: VideoAttachment;
   // The video attached here before it was removed from the chat: shown by name, and not in use.
@@ -346,6 +370,9 @@ export interface ToolMessage extends MessageBase {
   toolCallId: string;
   text: string;
   images: ImageRef[];
+  seen?: SeenNote[];
+  // The user asked for its pictures to be described afresh, so no earlier words are reused.
+  lookAgain?: true;
 }
 
 export type ChatMessage = UserMessage | AssistantMessage | ToolMessage;
@@ -400,6 +427,8 @@ export interface ToolResult {
   text: string;
   images: ImageRef[];
   note?: SceneNote;
+  // Set by a tool that has already asked the looking model about its images.
+  seen?: SeenNote[];
 }
 
 export type RunTool = (call: ToolCall) => Promise<ToolResult>;

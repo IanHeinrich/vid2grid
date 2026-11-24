@@ -13,6 +13,7 @@ import type {
   ModelInfo,
   RunTool,
   SceneNote,
+  SeenNote,
   StreamChat,
   Thoroughness,
   ToolCall,
@@ -24,6 +25,8 @@ import type {
 } from "../types";
 import { instantSpans, seenSpans, unseenCitations } from "./coverage";
 import { pinsExceedCap } from "./imageSelection";
+import type { Looker } from "./looking";
+import { lookBeforeRound } from "./lookingTurn";
 import { buildRequest } from "./request";
 import { keptImages } from "./story";
 import {
@@ -48,6 +51,12 @@ export {
 } from "./reasoningWatch";
 export { stripToolMarkup } from "./toolMarkup";
 
+export interface TurnLooking extends Looker {
+  // Saves what was said of a message's images, leaving the rest of the message as it is stored.
+  // Pictures that are gone from the store have nothing to wait for.
+  save(messageId: string, seen: readonly SeenNote[], gone: ReadonlySet<string>): Promise<void>;
+}
+
 export interface TurnDeps {
   chat: Chat;
   messages: ChatMessage[];
@@ -56,6 +65,8 @@ export interface TurnDeps {
   streamChat: StreamChat;
   runTool: RunTool | undefined;
   store: ImageStore;
+  // Present when the chat has a looking model, which every image then goes to.
+  looking?: TurnLooking;
   tools: readonly ToolSchema[];
   toolGuidance: string;
   // Some servers refuse any request that lists tools; with this set, the turn goes on without them.
@@ -87,6 +98,8 @@ export type TurnEvent =
   | { type: "requestStart"; round: number; images: number; estimatedTokens: number }
   | { type: "assistantDelta"; message: AssistantMessage }
   | { type: "assistantDone"; message: AssistantMessage }
+  | { type: "lookStart"; images: number; modelId: string }
+  | { type: "looked"; messageId: string; seen: readonly SeenNote[] }
   | { type: "toolStart"; call: ToolCall }
   | { type: "toolDone"; message: ToolMessage }
   | { type: "note"; note: SceneNote };
@@ -132,7 +145,7 @@ const STOPPED: TurnOutcome = { status: "stopped" };
 
 export async function runTurn(deps: TurnDeps): Promise<TurnOutcome> {
   const { model } = deps;
-  if (model.vision && pinsExceedCap(deps.messages, model.maxImages)) {
+  if (model.vision && !deps.looking && pinsExceedCap(deps.messages, model.maxImages)) {
     return {
       status: "error",
       error: `Pinned images exceed this model's limit of ${model.maxImages}; unpin some.`,
@@ -191,6 +204,7 @@ function answerNowWanted({ deps }: Turn): boolean {
 }
 
 async function runRound(turn: Turn, round: number): Promise<RoundResult> {
+  await lookBeforeRound(turn);
   if (answerNowWanted(turn)) return answerNow(turn, round, "user");
   const first = await streamPrepared(turn, round, false, { watch: true });
   if (first.ending.kind !== "cut") return first;
@@ -223,6 +237,12 @@ async function streamPrepared(
   if (!refusedTools(turn, prepared.request, streamed)) return streamed;
   turn.toolsRefused = true;
   turn.imagesSent -= requestImageCount(prepared.request);
+  try {
+    await lookBeforeRound(turn);
+  } catch (error) {
+    const aborted = turn.deps.signal.aborted;
+    return { ...streamed, ending: aborted ? { kind: "aborted" } : { kind: "failed", error } };
+  }
   const withoutTools = await prepareRequest(turn, finalRound, answeringNow);
   return streamAssistant(turn, withoutTools, round, { ...options, retried: streamed.message });
 }
@@ -298,9 +318,10 @@ async function prepareRequest(
 ): Promise<PreparedRequest> {
   const { deps, messages } = turn;
   const kept = keptImages(turn.chat, messages, deps.model.maxImages);
-  const dataUrls = deps.model.vision
-    ? await loadDataUrls(deps.store, kept, turn.dataUrls)
-    : new Map<string, string>();
+  const dataUrls =
+    deps.model.vision && !deps.looking
+      ? await loadDataUrls(deps.store, kept, turn.dataUrls)
+      : new Map<string, string>();
   const request = buildRequest({
     chat: turn.chat,
     messages,

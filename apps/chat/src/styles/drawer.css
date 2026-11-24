@@ -324,6 +324,11 @@
   resize: vertical;
 }
 
+.field .is-error,
+.settings-section .is-error {
+  color: var(--danger);
+}
+
 .checkbox-field {
   display: flex;
   align-items: center;

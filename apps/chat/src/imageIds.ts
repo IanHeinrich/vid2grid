@@ -65,16 +65,26 @@ function idsInRef(ref: unknown, onUnknown: OnUnknown): string[] {
   return [ref["id"], ...idsInSource(ref["source"], onUnknown)];
 }
 
+// The words outlive the pictures, so a note keeps none; it is only read for its kind.
+function checkNotes(notes: unknown, onUnknown: OnUnknown): void {
+  const what = "What was seen in a stored message";
+  for (const note of listIn(notes, what, onUnknown)) {
+    const ids = isRecord(note) ? note["imageIds"] : undefined;
+    if (!Array.isArray(ids) || !ids.every((id) => typeof id === "string")) onUnknown(what);
+  }
+}
+
 // Images and swipes are read on every role, whatever the types say it can hold.
 function idsInMessage(message: unknown, onUnknown: OnUnknown): string[] {
   if (!isRecord(message)) {
     onUnknown("A stored message");
     return [];
   }
-  const { role, images, alternates } = message;
+  const { role, images, seen, alternates } = message;
   if (!ROLES.includes(role)) onUnknown("A stored message");
   if (images === undefined && role !== "assistant") onUnknown("A stored message's images");
   const refs = listIn(images, "A stored message's images", onUnknown);
+  checkNotes(seen, onUnknown);
   const replies = listIn(alternates, "A stored message's other replies", onUnknown);
   return [
     ...refs.flatMap((ref) => idsInRef(ref, onUnknown)),

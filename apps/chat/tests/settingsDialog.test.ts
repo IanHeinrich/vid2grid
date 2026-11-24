@@ -247,3 +247,40 @@ describe("audio labels", () => {
     expect(state.settings.backgroundSoundLabels).toEqual(DEFAULT_SETTINGS.backgroundSoundLabels);
   });
 });
+
+describe("the looking model's settings", () => {
+  it("are kept, with its key, when the dialog is saved", () => {
+    const own = "http://localhost:5001/v1";
+    state = createAppState({
+      ...state.settings,
+      defaultLookingModelId: "eyes",
+      defaultLookingBaseUrl: own,
+      lookingBaseUrl: own,
+      apiKeys: { [own]: "looking-key" },
+    });
+    const deps = { loadModels: () => Promise.resolve(state.models), onSaved: vi.fn() };
+    initSettingsDialog(els, state, { ...deps, storage: localStorage }).open();
+    els.settingsDialog.dialog.returnValue = "save";
+    els.settingsDialog.dialog.dispatchEvent(new Event("close"));
+    expect(loadSettings(localStorage)).toMatchObject({
+      defaultLookingModelId: "eyes",
+      lookingBaseUrl: own,
+      apiKeys: { [own]: "looking-key" },
+    });
+  });
+});
+
+describe("the form's own validation", () => {
+  it("passes every default setting, so Save is never blocked by one", () => {
+    state = createAppState(DEFAULT_SETTINGS);
+    initSettingsDialog(els, state, {
+      loadModels: () => Promise.resolve([]),
+      onSaved: vi.fn(),
+      storage: localStorage,
+    }).open();
+    const inputs = [...els.settingsDialog.form.querySelectorAll("input, textarea, select")];
+    expect(inputs.length).toBeGreaterThan(8);
+    const invalid = inputs.filter((input) => !(input as HTMLInputElement).checkValidity());
+    expect(invalid.map((input) => input.id)).toEqual([]);
+  });
+});

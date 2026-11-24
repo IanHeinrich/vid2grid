@@ -606,6 +606,67 @@ describe("dropped images and limits", () => {
     expect(els.composer.messageInput.value).toBe("Look");
   });
 
+  it("leaves pins alone with a looking model, which is sent no more than it takes", async () => {
+    state = createAppState({ ...SETTINGS, fallbackMaxImages: 1 });
+    const { defaultModelId, baseUrl } = state.settings;
+    const chat = blankChat(defaultModelId, "chat", 1, "eyes", baseUrl);
+    await store.putChat(chat);
+    setCurrentChat(state, chat, []);
+    addPending(state, "chat", { kind: "image", ref: { ...upload("a"), pinned: true } });
+    addPending(state, "chat", { kind: "image", ref: { ...upload("b"), pinned: true } });
+    const spies = makeSpies();
+    setup(spies);
+    els.composer.messageInput.value = "Look";
+    pressEnter();
+    await vi.waitFor(() => expect(els.composer.messageInput.value).toBe(""));
+    expect(spies.status.show).not.toHaveBeenCalled();
+  });
+
+  it("keeps what is written when the looking model's server is gone", async () => {
+    const eyes = blankChat(state.settings.defaultModelId, "chat", 1, "eyes", "http://gone:1/v1");
+    await store.putChat(eyes);
+    setCurrentChat(state, eyes, []);
+    addPending(state, "chat", { kind: "image", ref: upload("a") });
+    const spies = makeSpies();
+    setup(spies);
+    els.composer.messageInput.value = "Look";
+    pressEnter();
+    await vi.waitFor(() =>
+      expect(spies.status.show).toHaveBeenCalledWith(
+        expect.stringContaining("no longer set up"),
+        "error",
+      ),
+    );
+    expect(els.composer.messageInput.value).toBe("Look");
+    expect(currentPending(state)).toHaveLength(1);
+    expect(await store.listMessages("chat")).toEqual([]);
+  });
+
+  it("keeps a message that was saved out of the box when its pictures cannot be looked at", async () => {
+    const { defaultModelId, baseUrl } = state.settings;
+    const chat = blankChat(defaultModelId, "chat", 1, "eyes", baseUrl);
+    await store.putChat(chat);
+    replaceChat(state, chat);
+    setCurrentChat(state, chat, []);
+    const id = await store.putImage(new Blob(["jpeg"], { type: "image/jpeg" }));
+    addPending(state, "chat", { kind: "image", ref: uploadRef(id) });
+    const spies = makeSpies();
+    const streamChat: StreamChat = () => {
+      throw new Error("busy");
+    };
+    setup(spies, { streamChat });
+    els.composer.messageInput.value = "Look";
+    pressEnter();
+    await vi.waitFor(() =>
+      expect(spies.conversation.showError).toHaveBeenCalledWith(
+        expect.stringContaining("could not look at the pictures: busy"),
+      ),
+    );
+    expect(els.composer.messageInput.value).toBe("");
+    expect(currentPending(state)).toEqual([]);
+    expect(await store.listMessages("chat")).toMatchObject([{ text: "Look" }]);
+  });
+
   it("disables Send with a hint when the Venice key is missing", () => {
     state = createAppState({ ...SETTINGS, apiKey: "" });
     setCurrentChat(state, blankChat(state.settings.defaultModelId, "chat", 1), []);

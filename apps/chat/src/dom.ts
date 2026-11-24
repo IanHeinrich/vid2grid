@@ -21,7 +21,7 @@ function queryWelcome() {
 function queryConnectionTest() {
   return {
     button: byId("testConnectionButton", HTMLButtonElement),
-    report: byId("connectionReport", HTMLUListElement),
+    status: byId("connectionReport", HTMLElement),
   };
 }
 
@@ -177,6 +177,9 @@ function queryChatSettings() {
     updatePresetButton: byId("updatePresetButton", HTMLButtonElement),
     revertPresetButton: byId("revertPresetButton", HTMLButtonElement),
     modelPicker: byId("modelPicker", HTMLElement),
+    lookingModelPicker: byId("lookingModelPicker", HTMLElement),
+    textOnlyWarning: byId("textOnlyWarning", HTMLElement),
+    lookingModelServer: byId("lookingModelServer", HTMLElement),
     temperatureInput: byId("temperatureInput", HTMLInputElement),
     reasoningEffortField: byId("reasoningEffortField", HTMLElement),
     reasoningEffortSelect: byId("reasoningEffortSelect", HTMLSelectElement),
@@ -335,6 +338,22 @@ function queryComposer() {
   };
 }
 
+function queryLookingSettings() {
+  return {
+    modelPicker: byId("defaultLookingPicker", HTMLElement),
+    ownServerInput: byId("lookingOwnServerInput", HTMLInputElement),
+    serverFields: byId("lookingServerFields", HTMLElement),
+    baseUrlInput: byId("lookingBaseUrlInput", HTMLInputElement),
+    apiKeyInput: byId("lookingApiKeyInput", HTMLInputElement),
+    refreshButton: byId("refreshLookingButton", HTMLButtonElement),
+    modelsStatus: byId("lookingModelsStatus", HTMLElement),
+    changedNote: byId("lookingChanged", HTMLElement),
+    destination: byId("lookingDestination", HTMLElement),
+    testButton: byId("testLookingButton", HTMLButtonElement),
+    testStatus: byId("lookingReport", HTMLElement),
+  };
+}
+
 function querySettingsDialog() {
   return {
     dialog: byId("settingsDialog", HTMLDialogElement),
@@ -387,6 +406,7 @@ export function queryElements() {
     shortcuts: queryShortcuts(),
     composer: queryComposer(),
     settingsDialog: querySettingsDialog(),
+    lookingSettings: queryLookingSettings(),
   };
 }
 

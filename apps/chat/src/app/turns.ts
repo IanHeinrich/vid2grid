@@ -12,6 +12,7 @@ import { NEW_CHAT_TITLE, titleFromMessage } from "../chat/chats";
 import { newestUserMessage } from "../chat/imageSelection";
 import { videoForImage } from "../chat/messageVideo";
 import { currentModel } from "../chat/models";
+import { withCurrentSeen } from "../chat/seen";
 import { visibleMessages } from "../chat/story";
 import { shouldSummarize, summarizeStory } from "../chat/summary";
 import { messageThoroughness, roundsFor } from "../chat/thoroughness";
@@ -49,14 +50,16 @@ import type {
   VideoTimeline,
 } from "../types";
 import { resolveSheetResolution } from "../video/resolution";
-import { createToolRunner, type ToolContext } from "../video/tools";
+import { createToolRunner, type AskContext, type ToolContext } from "../video/tools";
 import type { StatusLine } from "../ui/shared/status";
 import type { Toast } from "../ui/shared/toast";
 import type { ImageCleanup } from "./imageCleanup";
+import { lookingProblem, pictureModel } from "./lookingConnection";
 import { modelCallDeps } from "./modelCallDeps";
 import { estimateTokens } from "./requestEstimate";
 import { conversationTools, toolContext } from "./toolContext";
 import { turnAudio, type AudioStatus, type TurnAudio } from "./turnAudio";
+import { turnLooker, turnLooking } from "./turnLooking";
 
 export const KEEP_GOING_TEXT = "Keep going: continue investigating from your notes, then answer.";
 const STRIPPED_NOTE =
@@ -179,12 +182,21 @@ function setRunningState(ctx: TurnsContext, chatId: string, running: boolean): v
   ctx.deps.onRunningChanged();
 }
 
+// Before a reply is archived or a message changed for a turn that cannot be.
+function refusedLooking({ state, deps }: TurnsContext, chat: Chat): boolean {
+  const problem = lookingProblem(state, chat);
+  if (problem === undefined) return false;
+  deps.conversation.clearErrors();
+  if (state.currentChat?.id === chat.id) deps.conversation.showError(problem);
+  return true;
+}
+
 async function run(
   ctx: TurnsContext,
   prepare: (signal: AbortSignal) => Promise<TurnRequest | undefined>,
 ): Promise<void> {
   const chat = ctx.state.currentChat;
-  if (!chat || isRunningIn(ctx.state, chat.id)) return;
+  if (!chat || isRunningIn(ctx.state, chat.id) || refusedLooking(ctx, chat)) return;
   const controller = new AbortController();
   const answerNow = new AbortController();
   ctx.running.set(chat.id, { controller, answerNow });
@@ -327,18 +339,20 @@ interface TurnToolsInput {
   heard: TurnAudio;
   // Grows as the turn saves messages.
   messages: readonly ChatMessage[];
-  signals: TurnSignals;
+  // Aborted by Stop and by Answer now, for renders as for the questions in ask.
+  signal: AbortSignal;
+  ask: AskContext | undefined;
 }
 
 function turnTools(ctx: TurnsContext, input: TurnToolsInput): TurnTools {
-  const { chat, model, resolution, toolCtx, heard, messages, signals } = input;
+  const { chat, model, resolution, toolCtx, heard, messages, signal, ask } = input;
   const { tools, guidance } = conversationTools(model, messages, {
     videoLoaded: toolCtx !== undefined,
     listen: heard.on && heard.coverage.canListen,
+    looking: ask !== undefined,
   });
   if (tools.length === 0) return { tools, toolGuidance: guidance, runTool: undefined };
-  const { maxImages } = model;
-  const signal = AbortSignal.any([signals.signal, signals.answerNow]);
+  const { maxImages } = ask?.looker.model ?? model;
   const runTool = createToolRunner({
     store: ctx.deps.store,
     resolution,
@@ -349,6 +363,7 @@ function turnTools(ctx: TurnsContext, input: TurnToolsInput): TurnTools {
       videoForImage(messages, id, toolCtx?.video ?? chat.video, chat.removedVideos),
     ...(toolCtx ? { sheets: { ...toolCtx, resolution, maxImages, signal } } : {}),
     ...(heard.on && heard.listen ? { audio: heard.listen } : {}),
+    ...(ask ? { ask } : {}),
   });
   return { tools, toolGuidance: guidance, runTool };
 }
@@ -395,48 +410,84 @@ async function recordTranscript(
   deps.conversation.show(message);
 }
 
-async function runChatTurn(
+interface TurnStart {
+  touched: Chat;
+  model: ModelInfo;
+  flags: TurnFlags;
+  comparing: boolean;
+  signal: AbortSignal;
+  ended: () => boolean;
+}
+
+interface PreparedTurn {
+  setup: TurnSetup;
+  heard: TurnAudio;
+  toolCtx: ToolContext | undefined;
+}
+
+// Undefined once the turn has been stopped or its chat left.
+async function prepareTurn(
   ctx: TurnsContext,
-  touched: Chat,
-  { thoroughness, audio }: TurnFlags,
-  signals: TurnSignals,
-  compareWith?: ModelInfo,
-): Promise<void> {
-  const { signal, answerNow } = signals;
+  { touched, model, flags, comparing, signal, ended }: TurnStart,
+): Promise<PreparedTurn | undefined> {
   const { state, deps } = ctx;
-  const ended = () => signal.aborted || state.currentChat?.id !== touched.id;
-  const model = compareWith ?? currentModel(state);
-  if (model === null || ended()) return;
+  const { thoroughness, audio } = flags;
   const toolCtx = toolContext(state, deps.store);
   const timeline = deps.timeline();
   const cast = await loadCast(ctx, touched);
   const heard = await audioFor(ctx, audio, { chat: touched, toolCtx }, signal);
-  if (ended()) return;
+  if (ended()) return undefined;
   const { speech } = heard;
   // A comparison asks exactly what the first model was asked.
-  const records = audio && !compareWith;
+  const records = audio && !comparing;
   if (records) await recordTranscript(ctx, touched, model, speech);
-  if (ended()) return;
+  if (ended()) return undefined;
   const audioCoverage = heard.on ? heard.coverage : undefined;
   const videoLoaded = toolCtx !== undefined;
   const loaded = { audioCoverage, speech, timeline, cast, videoLoaded };
   const setup: TurnSetup = { chat: touched, model, thoroughness, ...loaded };
   const chat = await withStorySoFar(ctx, setup, signal);
-  if (ended()) return;
+  if (ended()) return undefined;
   // The summary may have folded away the message that carried the transcript.
   if (records && chat !== touched) await recordTranscript(ctx, chat, model, speech);
-  if (ended()) return;
+  return ended() ? undefined : { setup: { ...setup, chat }, heard, toolCtx };
+}
+
+async function runChatTurn(
+  ctx: TurnsContext,
+  touched: Chat,
+  flags: TurnFlags,
+  { signal, answerNow }: TurnSignals,
+  compareWith?: ModelInfo,
+): Promise<void> {
+  const { state, deps } = ctx;
+  const ended = () => signal.aborted || state.currentChat?.id !== touched.id;
+  const model = compareWith ?? currentModel(state);
+  if (model === null || ended()) return;
+  if (refusedLooking(ctx, touched)) return;
+  const comparing = compareWith !== undefined;
+  const prepared = await prepareTurn(ctx, { touched, model, flags, comparing, signal, ended });
+  if (!prepared || ended()) return;
+  const { setup, heard, toolCtx } = prepared;
+  const { chat, thoroughness, speech, timeline, cast, videoLoaded } = setup;
   const { api, veniceParameters } = modelCallDeps(state, deps.streamChat, model.id, signal);
-  const resolution = resolveSheetResolution(chat.settings.sheetResolution, model).px;
+  const seenBy = pictureModel(state, chat, model);
+  const resolution = resolveSheetResolution(chat.settings.sheetResolution, seenBy).px;
+  const looker = turnLooker(ctx, chat, resolution);
   // Kept here rather than read from state, so recall still finds images if the user switches chats.
   const known: ChatMessage[] = [...state.messages];
+  const cutShort = AbortSignal.any([signal, answerNow]);
+  const ask = looker && { looker, messages: () => known, signal: cutShort };
+  const toolParts = { chat, model, resolution, toolCtx, heard, ask };
   const turnDeps: TurnDeps = {
     chat,
     messages: [...state.messages],
     model,
     api,
-    ...turnTools(ctx, { chat, model, resolution, toolCtx, heard, messages: known, signals }),
-    toolsOptional: !videoLoaded,
+    ...turnTools(ctx, { ...toolParts, messages: known, signal: cutShort }),
+    // A looking model describes the pictures and answers for a writer that has no tools.
+    toolsOptional: !videoLoaded || looker !== undefined,
+    ...turnLooking(ctx, chat.id, looker, known),
     streamChat: deps.streamChat,
     store: deps.store,
     veniceParameters,
@@ -632,9 +683,13 @@ async function edit(
     ctx.deps.conversation.show(message);
     return;
   }
-  const updated = { ...message, text };
+  const updated = withCurrentSeen({ ...message, text }, ctx.state.messages);
   const index = lastUserIndex(ctx);
   if (updated.role === "user" && ctx.state.messages[index]?.id === updated.id) {
+    if (refusedLooking(ctx, chat)) {
+      onUnsaved?.();
+      return;
+    }
     await rerunEdited(ctx, chat.id, updated, index, onUnsaved);
     return;
   }

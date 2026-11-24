@@ -1,7 +1,13 @@
-import { usageCostUsd } from "../../api/usage";
+import { lookingPricing } from "../../app/lookingConnection";
 import { estimateNextRequest } from "../../app/requestEstimate";
 import { currentModel } from "../../chat/models";
-import { contextLevel, formatCost, formatTokens, usageTotals } from "../../chat/tokenEstimate";
+import {
+  contextLevel,
+  formatCost,
+  formatTokens,
+  totalCostUsd,
+  usageTotals,
+} from "../../chat/tokenEstimate";
 import type { AppElements } from "../../dom";
 import type { AppState } from "../../state";
 import type { AudioCoverage, TokenUsage, VideoTimeline } from "../../types";
@@ -48,7 +54,7 @@ export function initUsageMeter(
     usageContext.textContent = `Context ≈ ${formatTokens(estimate)}${window ? ` / ${formatTokens(window)}` : ""}`;
     usageContext.className = `usage-context is-${level}`;
     const totals = usageTotals(state.messages);
-    const cost = totals ? usageCostUsd(totals, model.pricing) : undefined;
+    const cost = totalCostUsd(state.messages, model.pricing, (id) => lookingPricing(state, id));
     totalsEl.textContent = totals
       ? ` · ${formatTokens(totals.promptTokens)} in · ${formatTokens(totals.completionTokens)} out${cost === undefined ? "" : ` · ≈ ${formatCost(cost)}`}`
       : "";

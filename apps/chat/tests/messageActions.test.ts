@@ -13,9 +13,11 @@ import {
   type AppState,
 } from "../src/state";
 import type {
+  ApiSettings,
   AssistantMessage,
   Chat,
   ChatMessage,
+  ChatRequest,
   ChatStore,
   ImageRef,
   StreamChat,
@@ -462,5 +464,54 @@ describe("checking timestamps", () => {
     expect(await checking).toBeUndefined();
     const saved = (await store.listMessages("chat")).find((message) => message.id === "A2");
     expect(saved).toEqual(claimed);
+  });
+});
+
+describe("checking timestamps with a looking model", () => {
+  beforeEach(putClaimedReply);
+
+  it("sends the frames to it on its own connection", async () => {
+    const own = "http://localhost:5001/v1";
+    const settings = { ...DEFAULT_SETTINGS, lookingBaseUrl: own, apiKeys: { [own]: "key" } };
+    const looking = blankChat("model", "chat", 1, "eyes", own);
+    const { messages } = state;
+    state = createAppState(settings);
+    replaceChat(state, looking);
+    setCurrentChat(state, looking, messages);
+    const requests: ChatRequest[] = [];
+    const reply = replyWith("1: confirmed: the door is open", requests);
+    const apis: ApiSettings[] = [];
+    streamChat = (api, request, signal) => {
+      apis.push(api);
+      return reply(api, request, signal);
+    };
+    await setup().verify(claimed, new AbortController().signal);
+    expect(apis).toEqual([{ baseUrl: own, apiKey: "key" }]);
+    expect(requests[0]?.model).toBe("eyes");
+    expect(JSON.stringify(requests[0])).toContain("image_url");
+  });
+});
+
+describe("looking again", () => {
+  const note = { kind: "described" as const, imageIds: ["p"], modelId: "eyes", text: "A door." };
+
+  it("drops the description, saves it and calls no model", async () => {
+    const calls = vi.fn<StreamChat>();
+    streamChat = calls;
+    const looked: ChatMessage = { ...U3, seen: [note] };
+    setCurrentChat(state, chat, [...state.messages.filter(({ id }) => id !== "U3"), looked]);
+    await setup().lookAgain("U3", note);
+    const saved = (await store.listMessages("chat")).find(({ id }) => id === "U3");
+    expect(saved).toEqual({ ...U3, seen: [], lookAgain: true });
+    expect(state.messages.at(-1)).toEqual(saved);
+    expect(calls).not.toHaveBeenCalled();
+  });
+
+  it("does nothing while a reply is written", async () => {
+    const looked: ChatMessage = { ...U3, seen: [note] };
+    setCurrentChat(state, chat, [looked]);
+    setRunning(state, true);
+    await setup().lookAgain("U3", note);
+    expect(state.messages).toEqual([looked]);
   });
 });

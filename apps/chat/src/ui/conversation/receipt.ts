@@ -1,5 +1,4 @@
-import { usageCostUsd } from "../../api/usage";
-import { formatCost, formatTokens, usageTotals } from "../../chat/tokenEstimate";
+import { formatCost, formatTokens, totalCostUsd, usageTotals } from "../../chat/tokenEstimate";
 import { plural } from "../../text";
 import type { ChatMessage, ModelInfo, TurnReceipt } from "../../types";
 import { seekButton, smallButton } from "../shared/buttons";
@@ -9,6 +8,7 @@ export interface ReceiptActions {
   // Absent while a check is already running, which hides the Check button.
   onCheck?: () => void;
   running: boolean;
+  lookingPricing?: (modelId: string) => ModelInfo["pricing"];
 }
 
 export function durationText(durationMs: number): string {
@@ -20,6 +20,7 @@ export function receiptParts(
   receipt: TurnReceipt,
   steps: readonly ChatMessage[],
   pricing: ModelInfo["pricing"],
+  lookingPricing?: (modelId: string) => ModelInfo["pricing"],
 ): string[] {
   const parts = [plural(receipt.rounds, "round"), plural(receipt.imagesSent, "image")];
   const usage = usageTotals(steps);
@@ -31,7 +32,7 @@ export function receiptParts(
     parts.push(
       `${formatTokens(usage.promptTokens)} in${cached} / ${formatTokens(usage.completionTokens)} out`,
     );
-    const cost = usageCostUsd(usage, pricing);
+    const cost = totalCostUsd(steps, pricing, lookingPricing);
     if (cost !== undefined) parts.push(`≈ ${formatCost(cost)}`);
   }
   parts.push(durationText(receipt.durationMs));
@@ -66,7 +67,7 @@ export function renderReceipt(
   el.className = "reply-receipt";
   const line = document.createElement("p");
   line.className = "reply-receipt-line";
-  line.textContent = receiptParts(receipt, steps, pricing).join(" · ");
+  line.textContent = receiptParts(receipt, steps, pricing, actions.lookingPricing).join(" · ");
   el.append(line);
   if (receipt.unseenCitations.length > 0) {
     el.append(unseenFlag(receipt.unseenCitations, actions));

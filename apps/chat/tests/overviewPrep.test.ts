@@ -7,12 +7,13 @@ import {
   removeChat,
   removePendingVideo,
   replaceChat,
+  setModels,
   setRunning,
   unlistChat,
   updateChat,
 } from "../src/state";
 import type { ImageRef } from "../src/types";
-import { upload } from "./support/factories";
+import { model, upload } from "./support/factories";
 import {
   attachAndSend,
   attachmentFor,
@@ -145,5 +146,18 @@ describe("dropping the same video into a new chat, when something is in the way"
     );
     await send(videos, "new");
     expect(els.video.chipMeta.textContent).toBe("1:00");
+  });
+});
+
+describe("an overview for a chat with a looking model", () => {
+  it("is rendered for the looking model", async () => {
+    await updateChat(state, store, "chat", (chat) => ({
+      ...chat,
+      settings: { ...chat.settings, lookingModelId: "eyes" },
+    }));
+    setModels(state, [model(MODEL, { maxImages: 9 }), model("eyes", { maxImages: 2 })]);
+    await panel().attach(video("beach.mp4"));
+    await vi.waitFor(() => expect(spies.renderOverview).toHaveBeenCalled());
+    expect(spies.renderOverview.mock.calls[0]?.[0].maxImages).toBe(2);
   });
 });

@@ -693,3 +693,108 @@ describe("backups with originals and zooms", () => {
     expect(refs[0]?.source).toEqual({ kind: "upload", name: "poster.png" });
   });
 });
+
+describe("a chat with a looking model", () => {
+  const own = "http://localhost:5001/v1";
+  const settings = { ...chat("c").settings, lookingModelId: "eyes", lookingBaseUrl: own };
+  const note = {
+    kind: "described" as const,
+    imageIds: ["upload-1"],
+    modelId: "eyes",
+    text: "Boat.",
+  };
+  const usage = { promptTokens: 10, completionTokens: 2 };
+  const swiped: ChatMessage = {
+    ...{ id: "t0", createdAt: 2, role: "tool", toolCallId: "c0", text: "ok" },
+    images: [upload],
+    seen: [note],
+  };
+  const looked: ChatMessage = {
+    ...{ id: "u1", createdAt: 1, role: "user", text: "What happens?" },
+    images: [upload],
+    seen: [{ ...note, question: "What happens?", usage }],
+    alternates: [{ messages: [swiped], createdAt: 2 }],
+  };
+
+  it("names the model and what it saw in Markdown", () => {
+    const markdown = chatToMarkdown(chat("c", { settings }), [looked]);
+    expect(markdown).toContain("- Looking model: eyes");
+    expect(markdown).toContain("[image: poster.png]\n\n_Seen by eyes:_ Boat.");
+    expect(chatToMarkdown(chat("c"), messages)).not.toContain("Looking model");
+  });
+
+  it("survives a backup, its notes following the images to their new ids", async () => {
+    const source = createMemoryStore();
+    const id = await source.putImage(jpeg([1]));
+    const renamed = JSON.parse(JSON.stringify(looked).replaceAll("upload-1", id)) as ChatMessage;
+    await source.putChat(chat("c", { settings }));
+    await source.putMessage("c", renamed);
+    const blob = await exportBackup(source);
+    expect(await readText(blob)).not.toContain("apiKey");
+    const target = createMemoryStore();
+    await importBackup(target, await asFile(blob));
+    expect((await target.getChat("c"))?.settings).toEqual(settings);
+    const [restored] = await target.listMessages("c");
+    if (restored?.role !== "user") throw new Error("expected a user message");
+    const newId = restored.images[0]?.id;
+    expect(newId).not.toBe(id);
+    expect(restored.seen).toEqual([
+      { ...note, imageIds: [newId], question: "What happens?", usage },
+    ]);
+    const reply = restored.alternates?.[0]?.messages[0];
+    expect(reply).toMatchObject({ seen: [{ ...note, imageIds: [newId] }] });
+  });
+
+  it("survives a backup with a transcript and a removed video beside its notes", async () => {
+    const removed = { name: "old.mp4", fileKey: "old", durationSeconds: 9, width: 4, height: 3 };
+    const about = {
+      removedVideo: removed,
+      transcript: { fileKey: "old", spans: [{ startSeconds: 0, endSeconds: 9 }], cutSeconds: 5 },
+    };
+    const kept = {
+      ...chat("c", { settings }),
+      removedVideos: [{ video: removed, throughCreatedAt: 1 }],
+    };
+    const source = createMemoryStore();
+    await source.putChat(kept);
+    await source.putMessage("c", { ...looked, ...about });
+    const target = createMemoryStore();
+    await importBackup(target, await asFile(await exportBackup(source)));
+    expect(await target.getChat("c")).toEqual(kept);
+    expect(await target.listMessages("c")).toEqual([{ ...looked, ...about }]);
+    expect(chatToMarkdown(kept, [{ ...looked, ...about }])).toContain(
+      "_Seen by eyes:_ Boat.\n\n_Transcript to 0:05 sent_",
+    );
+  });
+
+  const odd: [string, unknown][] = [
+    ["no pictures", { ...note, imageIds: undefined }],
+    ["a picture that is not an id", { ...note, imageIds: [3] }],
+    ["an unknown kind", { ...note, kind: "heard" }],
+    ["no text", { ...note, text: undefined }],
+  ];
+
+  async function importing(message: unknown): Promise<unknown> {
+    const backup = {
+      ...{ format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: 1 },
+      chats: [{ chat: chat("c"), messages: [message] }],
+      ...{ timelines: [], images: [] },
+    };
+    return importBackup(createMemoryStore(), await asFile(new Blob([JSON.stringify(backup)])));
+  }
+
+  it.each(odd)("refuses a note with %s on any message or swipe", async (_what, bad) => {
+    const seen = [bad];
+    const reply = { ...swiped, seen };
+    const spoken = { id: "a", createdAt: 1, role: "assistant", text: "", toolCalls: [], seen };
+    const alternates = [{ messages: [reply], createdAt: 2 }];
+    for (const message of [{ ...looked, seen }, reply, spoken, { ...looked, alternates }]) {
+      await expect(importing(message)).rejects.toThrow("a chat is damaged");
+    }
+  });
+
+  it("refuses swipes it cannot read", async () => {
+    await expect(importing({ ...looked, alternates: [{}] })).rejects.toThrow("a chat is damaged");
+    await expect(importing({ ...looked, alternates: "x" })).rejects.toThrow("a chat is damaged");
+  });
+});

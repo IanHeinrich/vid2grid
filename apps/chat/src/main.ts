@@ -7,6 +7,7 @@ import {
   type MessageActionsDeps,
 } from "./app/messageActions";
 import { createImageCleanup, type ImageCleanup } from "./app/imageCleanup";
+import { lookingName, lookingPricing } from "./app/lookingConnection";
 import { createModelList, shouldLoadModels, type ModelList } from "./app/modelList";
 import { createChatOpener, type ChatOpener } from "./app/openChat";
 import { persistMessage } from "./app/persistMessage";
@@ -15,6 +16,7 @@ import { toolContext } from "./app/toolContext";
 import { initTurns, type Turns, type TurnsDeps } from "./app/turns";
 import { initVideoRemoval, type VideoRemoval } from "./app/videoRemoval";
 import { currentModel } from "./chat/models";
+import { lookingModelId } from "./chat/seen";
 import { openChatStore } from "./chat/store";
 import { queryElements, type AppElements } from "./dom";
 import { loadSettings } from "./settings";
@@ -168,6 +170,11 @@ function conversationDeps(app: () => App, store: ChatStore, state: AppState): Co
     onCompare: (model) => surface(app(), "compare models", app().turns.compare(model)),
     onVerify: (message, signal) => app().actions.verify(message, signal),
     onMessagesChanged: () => app().video.renderCoverage(),
+    onLookAgain: (messageId, note) =>
+      surface(app(), "save the message", app().actions.lookAgain(messageId, note)),
+    looking: () => lookingModelId(state.currentChat) !== undefined,
+    lookingName: (modelId) => lookingName(state, modelId),
+    lookingPricing: (modelId) => lookingPricing(state, modelId),
     onThinkingChanged: (thinking) => app().composer.setThinking(thinking),
   };
 }
@@ -186,7 +193,10 @@ function actionsDeps(
     images: imagesOf(app),
     streamChat,
     toolContext: () => toolContext(state, store),
-    conversation: { reset: (messages) => app().conversation.reset(messages) },
+    conversation: {
+      reset: (messages) => app().conversation.reset(messages),
+      show: (message) => app().conversation.show(message),
+    },
     onOpen: (chatId) => openChatSafely(app(), chatId),
     onChatsChanged: () => app().sidebar.render(),
     onMessagesChanged: () => renderKnowledge(app()),
@@ -218,6 +228,7 @@ function sidebarDeps(
     onDeleted: () => app().study.render(),
     onDeleteFinal: (videoKeys) => releaseCopies(app(), videoKeys),
     onCurrentDeleted: () => openFallbackSafely(app()),
+    onChatChanged: () => app().refresh(),
     onRenamed: () => app().chatSettings.render(),
     onOpenSettings: () => app().settingsDialog.open(),
     onFocusComposer: () => app().composer.focus(),
@@ -321,7 +332,11 @@ function initFirstRun(
       surface(app(), "test the connection", app().connectionTest.run());
     },
   });
-  const connectionTest = initConnectionTest(els, state, { onTested: () => welcome.render() });
+  const connectionTest = initConnectionTest(els, state, {
+    onTested: () => welcome.render(),
+    looking: () => app().settingsDialog.looking(),
+    onListed: (api, models) => app().settingsDialog.listed(api, models),
+  });
   initBackup(els, {
     store,
     images: imagesOf(app),
@@ -366,6 +381,7 @@ function settingsDialogDeps(
   return {
     loadModels: (settings) => app().modelList.load(settings),
     onSaved: (previous) => app().modelList.onSettingsSaved(previous),
+    onListed: (api, models) => app().modelList.accept(api, models),
     onOpen: () => {
       surface(app(), "list the stored videos", copies.renderList());
       void unusedImages.render();
@@ -577,6 +593,7 @@ async function start(): Promise<void> {
     knowledge: app.knowledge,
   });
   if (shouldLoadModels(state.settings)) app.modelList.loadInBackground();
+  app.modelList.loadLookingInBackground();
   refreshBalance(app);
   openFallbackSafely(app);
 }

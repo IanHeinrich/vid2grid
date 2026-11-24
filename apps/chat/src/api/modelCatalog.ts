@@ -1,5 +1,5 @@
 import type { ApiSettings, ModelInfo, Privacy } from "../types";
-import { requestHeaders, throwForStatus } from "./http";
+import { requestHeaders, safeError, throwForStatus } from "./http";
 import { asRecord, isRecord, type JsonRecord } from "./json";
 import { isVenice, normaliseBaseUrl } from "./venice";
 
@@ -121,11 +121,17 @@ export async function listModels(
   const fallbackMaxImages = options.fallbackMaxImages ?? DEFAULT_MAX_IMAGES;
   const venice = isVenice(settings.baseUrl);
   const query = venice ? "?type=text" : "";
-  const response = await fetchImpl(`${normaliseBaseUrl(settings.baseUrl)}/models${query}`, {
-    headers: requestHeaders(settings, false),
-  });
-  await throwForStatus(response);
-  const entries = asRecord(await response.json())["data"];
+  let body: unknown;
+  try {
+    const response = await fetchImpl(`${normaliseBaseUrl(settings.baseUrl)}/models${query}`, {
+      headers: requestHeaders(settings, false),
+    });
+    await throwForStatus(response);
+    body = await response.json();
+  } catch (error) {
+    throw safeError(error, settings);
+  }
+  const entries = asRecord(body)["data"];
   if (!Array.isArray(entries)) return [];
   return entries
     .map((entry) => toModelInfo(asRecord(entry), fallbackMaxImages))

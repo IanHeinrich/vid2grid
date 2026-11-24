@@ -149,7 +149,7 @@ export function model(id: string): ModelInfo {
 export function timeline(entries: VideoTimeline["entries"]): VideoTimeline {
   return {
     fileKey: VIDEO.fileKey,
-    modelId: "m",
+    modelId: STUDY_MODEL_ID,
     entries,
     nextWindow: 3,
     windowCount: 3,
@@ -232,7 +232,7 @@ export const FLAGS: UnclearSpan[] = [
   { startSeconds: 300, endSeconds: 302, reason: "a sign too small to read" },
 ];
 
-export function offerFor(unclear: UnclearSpan[], modelId = "m"): string {
+export function offerFor(unclear: UnclearSpan[], modelId = STUDY_MODEL_ID): string {
   const chat = state.currentChat;
   if (!chat) throw new Error("No chat");
   const zoomModel = resolveModel(state, modelId);

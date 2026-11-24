@@ -46,3 +46,18 @@ describe("initUsageMeter", () => {
     expect(els.header.usageLine.title).toContain("Unpin images");
   });
 });
+
+describe("a chat with a looking model", () => {
+  it("counts and prices what it used", () => {
+    const pricing = { inputPerMTok: 1, outputPerMTok: 1 };
+    setModels(state, [model(), baseModel("eyes", { pricing })]);
+    const usage = { promptTokens: 88_000, completionTokens: 2000 };
+    const note = { kind: "described" as const, imageIds: ["i"], modelId: "eyes", text: "A dog." };
+    const [first, ...rest] = MESSAGES;
+    if (first?.role !== "user") throw new Error("Expected a user message");
+    const looked = { ...first, seen: [{ ...note, usage }] };
+    setCurrentChat(state, blankChat("m", "chat", 1, "eyes"), [looked, ...rest]);
+    initUsageMeter(els, state, { timeline: () => undefined, toolsAvailable: () => false });
+    expect(els.header.usageTotals.textContent).toBe(" · 500k in · 20k out · ≈ $0.09");
+  });
+});

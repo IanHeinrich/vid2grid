@@ -6,6 +6,10 @@ import { resolveSheetResolution } from "../../video/resolution";
 export type SortOrder = "recommended" | "price" | "context" | "name";
 export type FilterName = "private" | "uncensored" | "recommended" | "reasoning" | "audio" | "beta";
 
+const TEXT_ONLY_HIDDEN = "Models that cannot see images are hidden.";
+export const DEFAULT_TEXT_ONLY_NOTE = `${TEXT_ONLY_HIDDEN} Choose a looking model below to use one.`;
+export const CHAT_TEXT_ONLY_NOTE = `${TEXT_ONLY_HIDDEN} Choose a looking model for this chat to use one.`;
+
 export interface PickerSettings {
   privateOnly(): boolean;
   setPrivateOnly(privateOnly: boolean): void;
@@ -18,6 +22,8 @@ export interface PickerView {
   favouritesOnly: boolean;
   filters: ReadonlySet<FilterName>;
   sort: SortOrder;
+  // Offer models that cannot see images too.
+  textOnly?: boolean;
 }
 
 export interface ModelSection {
@@ -120,6 +126,7 @@ export function modelBadges(model: ModelInfo): Badge[] {
   if (model.uncensored && !model.traits.includes("most_uncensored")) {
     badges.push({ label: "Uncensored", kind: "uncensored" });
   }
+  if (!model.vision) badges.push({ label: "Text only", kind: "trait" });
   if (model.beta) badges.push({ label: "Beta", kind: "beta" });
   if (model.recommended) badges.push({ label: "Recommended", kind: "recommended" });
   return [...badges, ...traitLabels(model).map((label): Badge => ({ label, kind: "trait" }))];
@@ -142,8 +149,12 @@ export function modelDetails(model: ModelInfo): string {
   return [
     priceText(model.pricing),
     contextText(model.contextTokens),
-    `${model.maxImages} image${model.maxImages === 1 ? "" : "s"}`,
-    `Auto ${resolveSheetResolution("auto", model).px} px`,
+    ...(model.vision
+      ? [
+          `${model.maxImages} image${model.maxImages === 1 ? "" : "s"}`,
+          `Auto ${resolveSheetResolution("auto", model).px} px`,
+        ]
+      : []),
   ]
     .filter((part) => part !== "")
     .join(" · ");
@@ -183,10 +194,16 @@ export function modelFacts(model: ModelInfo): [string, string][] {
   if (pricing?.cachedInputPerMTok !== undefined) {
     facts.push(["Cached input", perMTok(pricing.cachedInputPerMTok)]);
   }
+  facts.push(["Context", context === "" ? "Unknown" : `${context} tokens`]);
+  if (model.vision) {
+    facts.push(
+      ["Max images", String(model.maxImages)],
+      ["Auto resolution", `${resolveSheetResolution("auto", model).px} px`],
+    );
+  } else {
+    facts.push(["Image input", "No"]);
+  }
   facts.push(
-    ["Context", context === "" ? "Unknown" : `${context} tokens`],
-    ["Max images", String(model.maxImages)],
-    ["Auto resolution", `${resolveSheetResolution("auto", model).px} px`],
     ["Reasoning effort", effort],
     [
       "Privacy",
@@ -216,7 +233,7 @@ export function pickerSections(
   const filters = [...view.filters].map((name) => FILTERS[name]);
   const visible = models.filter(
     (model) =>
-      model.vision &&
+      (view.textOnly === true || model.vision) &&
       filters.every((passes) => passes(model)) &&
       matchesQuery(model, view.query) &&
       (!view.favouritesOnly || favourites.has(model.id)),

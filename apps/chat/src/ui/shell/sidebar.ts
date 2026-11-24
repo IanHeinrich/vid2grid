@@ -22,6 +22,7 @@ import { downloadBlob, safeFilename } from "../shared/download";
 import { icon } from "../shared/icons";
 import { attachMenu } from "../shared/menu";
 import type { StatusLine } from "../shared/status";
+import { withNewChatDefaults } from "../../app/chatDefaults";
 import type { HeldImages, ImageCleanup } from "../../app/imageCleanup";
 import { offerUndo } from "../../app/undo";
 import type { Toast } from "../shared/toast";
@@ -46,6 +47,7 @@ export interface SidebarDeps {
   onDeleted(chat: Chat): void;
   // The undo window has passed, so what the chat alone held can be let go.
   onDeleteFinal(videoKeys: string[]): void;
+  onChatChanged?: () => void;
   onRenamed(): void;
   onOpenSettings(): void;
   onFocusComposer(): void;
@@ -98,7 +100,14 @@ export function initSidebar(
     closeMoveMenu: null,
   };
   const createChat = async (): Promise<Chat> => {
-    const chat = blankChat(defaultModelId(state), newId(ctx), now(ctx));
+    const { defaultLookingModelId, defaultLookingBaseUrl } = state.settings;
+    const chat = blankChat(
+      defaultModelId(state),
+      newId(ctx),
+      now(ctx),
+      defaultLookingModelId,
+      defaultLookingBaseUrl,
+    );
     await deps.store.putChat(chat);
     replaceChat(state, chat);
     renderList(ctx);
@@ -156,6 +165,7 @@ async function startNewChat(ctx: SidebarContext, createChat: () => Promise<Chat>
     state.messages.length === 0 &&
     currentPending(state).length === 0
   ) {
+    await followDefaults(ctx, current);
     deps.onFocusComposer();
     return;
   }
@@ -163,11 +173,21 @@ async function startNewChat(ctx: SidebarContext, createChat: () => Promise<Chat>
     if (chat.id === current?.id || !isBlank(chat) || pendingFor(state, chat.id).length > 0)
       continue;
     if ((await deps.store.listMessages(chat.id)).length === 0) {
+      await followDefaults(ctx, chat);
       deps.onOpen(chat.id);
       return;
     }
   }
   deps.onOpen((await createChat()).id);
+}
+
+// An empty chat made earlier is as new as any, so it takes the defaults of now.
+async function followDefaults({ state, deps }: SidebarContext, chat: Chat): Promise<void> {
+  if (withNewChatDefaults(state, chat, true) === chat) return;
+  await updateChat(state, deps.store, chat.id, (latest) =>
+    withNewChatDefaults(state, latest, true),
+  );
+  deps.onChatChanged?.();
 }
 
 function showError(ctx: SidebarContext, action: string, error: unknown): void {

@@ -230,3 +230,131 @@ describe("coverage strip", () => {
     expect(spies.onMessagesChanged).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("while a looking model looks", () => {
+  const summary = () => list().querySelector(".activity-summary")?.textContent;
+  const onThinkingChanged = vi.fn();
+  const looking = () =>
+    initConversation(els, { ...deps(), lookingName: () => "Eyes", onThinkingChanged });
+
+  beforeEach(() => onThinkingChanged.mockClear());
+
+  it("says so before round one, and offers Answer now", () => {
+    const conversation = looking();
+    conversation.show(user("u1", "Hi"));
+    conversation.apply({ type: "lookStart", images: 4, modelId: "eyes" });
+    expect(summary()).toBe("Looking at 4 pictures with Eyes · 0s");
+    expect(onThinkingChanged).toHaveBeenLastCalledWith(true);
+    conversation.apply({ type: "assistantStart", message: assistant("a1", "") });
+    expect(summary()).toBe("Thinking…");
+    expect(onThinkingChanged).toHaveBeenLastCalledWith(false);
+  });
+
+  it("offers Answer now while a question is out, and not once the turn ends", () => {
+    const conversation = looking();
+    conversation.show(user("u1", "Hi"));
+    const call = { id: "c", name: "ask", arguments: '{"question":"q","pictures":["a"]}' };
+    conversation.apply({ type: "assistantStart", message: assistant("a1", "") });
+    conversation.apply({
+      type: "assistantDone",
+      message: assistant("a1", "", { toolCalls: [call] }),
+    });
+    conversation.apply({ type: "toolStart", call });
+    expect(summary()).toBe("Asking about 1 picture…");
+    expect(onThinkingChanged).toHaveBeenLastCalledWith(true);
+    conversation.apply({ type: "toolDone", message: tool("t1", "c", []) });
+    expect(onThinkingChanged).toHaveBeenLastCalledWith(false);
+    conversation.apply({ type: "lookStart", images: 1, modelId: "eyes" });
+    conversation.endTurn();
+    expect(onThinkingChanged).toHaveBeenLastCalledWith(false);
+  });
+});
+
+describe("what a looking model saw", () => {
+  const usage = { promptTokens: 2000, completionTokens: 100 };
+  const note = {
+    ...{ kind: "described" as const, imageIds: ["s1"], modelId: "eyes" },
+    text: "A dog at [0:05].",
+  };
+
+  it("is on the user message and in its activity row, with its tokens", () => {
+    const onLookAgain = vi.fn();
+    const conversation = initConversation(els, {
+      ...deps(),
+      looking: () => true,
+      lookingName: () => "Eyes",
+      onLookAgain,
+    });
+    const seen = [{ ...note, usage }];
+    conversation.reset([
+      user("u1", "Hi", { images: [sheet("s1", 0, 1)], seen }),
+      assistant("a1", "A dog.", { usage }),
+    ]);
+    const details = list().querySelector<HTMLDetailsElement>(".message.user .seen-details");
+    expect(details?.querySelector("summary")?.textContent).toBe("1 picture described by Eyes");
+    expect(details?.querySelector(".seen-text")?.textContent).toBe("A dog at [0:05].");
+    details?.querySelector<HTMLButtonElement>(".timestamp")?.click();
+    expect(spies.onSeek).toHaveBeenCalledWith(5, beach);
+    expect(list().querySelector(".activity-summary")?.textContent).toBe(
+      "1 picture described · 4k in / 200 out",
+    );
+    details?.querySelector<HTMLButtonElement>(".look-again")?.click();
+    expect(onLookAgain).toHaveBeenCalledWith("u1", seen[0]);
+    conversation.show(user("u1", "Hi", { images: [sheet("s1", 0, 1)], seen: [], lookAgain: true }));
+    expect(list().querySelector(".seen-pending")?.textContent).toContain("looked at again");
+  });
+
+  it("keeps focus on the message after Look again, and waits only with one on", () => {
+    let on = true;
+    const conversation = initConversation(els, {
+      ...deps(),
+      looking: () => on,
+      onLookAgain: () => {
+        const marked = { images: [sheet("s1", 0, 1)], seen: [], lookAgain: true as const };
+        conversation.show(user("u1", "Hi", marked));
+      },
+    });
+    conversation.reset([user("u1", "Hi", { images: [sheet("s1", 0, 1)], seen: [note] })]);
+    list().querySelector<HTMLButtonElement>(".look-again")?.click();
+    expect(list().querySelector(".seen-pending")).not.toBeNull();
+    expect(document.activeElement?.closest(".message.user")).not.toBeNull();
+    on = false;
+    conversation.show(user("u1", "Hi", { images: [sheet("s1", 0, 1)], seen: [], lookAgain: true }));
+    expect(list().querySelector(".seen-pending")).toBeNull();
+  });
+
+  it("shows an answer only while the message asks what it answers", () => {
+    const conversation = initConversation(els, deps());
+    const seen = [{ ...note, kind: "answered" as const, question: "Who?" }];
+    conversation.reset([user("u1", "Who?", { seen })]);
+    expect(list().querySelector(".seen-details summary")?.textContent).toBe(
+      "Answered from earlier pictures by eyes",
+    );
+    conversation.reset([user("u1", "What?", { seen })]);
+    expect(list().querySelector(".seen-details")).toBeNull();
+  });
+
+  it("pins on the newest copy of a message", () => {
+    const conversation = initConversation(els, deps());
+    const message = user("u1", "Hi", { images: [sheet("s1", 0, 1)] });
+    conversation.show(message);
+    const pin = list().querySelector<HTMLButtonElement>(".message.user .pin-toggle");
+    list().querySelector<HTMLButtonElement>(".edit-action")?.click();
+    conversation.apply({ type: "looked", messageId: "u1", seen: [note] });
+    pin?.click();
+    expect(spies.onMessageChanged).toHaveBeenCalledWith(expect.objectContaining({ seen: [note] }));
+  });
+
+  it("is on the message a later pin starts from", () => {
+    const conversation = initConversation(els, deps());
+    const note = { kind: "described" as const, imageIds: ["s1"], modelId: "eyes", text: "A dog." };
+    const message = user("u1", "Hi", { images: [sheet("s1", 0, 1)] });
+    conversation.show(message);
+    conversation.apply({ type: "lookStart", images: 1, modelId: "eyes" });
+    conversation.apply({ type: "looked", messageId: "u1", seen: [note] });
+    list().querySelector<HTMLButtonElement>(".message.user .pin-toggle")?.click();
+    expect(spies.onMessageChanged).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "u1", seen: [note] }),
+    );
+  });
+});

@@ -63,3 +63,22 @@ describe("renderReceipt", () => {
     expect(running.querySelector<HTMLButtonElement>(".unseen-check")?.disabled).toBe(true);
   });
 });
+
+describe("a receipt with a looking model", () => {
+  it("adds its tokens and its own price", () => {
+    const usage = { promptTokens: 10_000, completionTokens: 500 };
+    const note = { kind: "described" as const, imageIds: ["i"], modelId: "eyes", text: "A dog." };
+    const looked: ChatMessage = {
+      id: "u1",
+      createdAt: 0,
+      role: "user",
+      text: "Hi",
+      images: [],
+      seen: [{ ...note, usage }],
+    };
+    const steps = [looked, ...reply({ promptTokens: 2000, completionTokens: 500 })];
+    const pricing = () => ({ inputPerMTok: 10, outputPerMTok: 20 });
+    const parts = receiptParts(receipt, steps, undefined, pricing);
+    expect(parts).toEqual(["1 round", "0 images", "12k in / 1k out", "≈ $0.11", "15 s"]);
+  });
+});

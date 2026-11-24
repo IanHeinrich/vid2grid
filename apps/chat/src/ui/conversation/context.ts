@@ -5,6 +5,7 @@ import type {
   ImageStore,
   ModelInfo,
   RemovedVideo,
+  SeenNote,
   ToolCall,
   UserMessage,
   VideoAttachment,
@@ -15,6 +16,7 @@ import type { PickerSettings } from "../modelPicker/pickerModel";
 import type { VideoView } from "../video/context";
 import type { TurnStep } from "./activity";
 import type { Lightbox } from "./lightbox";
+import type { SeenRender } from "./seenDetails";
 import type { MarkdownOptions } from "./markdown";
 import { videoForMessage } from "../../chat/messageVideo";
 
@@ -44,6 +46,11 @@ export interface ConversationDeps {
   focusComposer(): void;
   models(): readonly ModelInfo[];
   chatModelId(): string | undefined;
+  onLookAgain?: (messageId: string, note: SeenNote) => void;
+  // The chat has a looking model, so a model that cannot see images can write its replies.
+  looking?: () => boolean;
+  lookingName?: (modelId: string) => string;
+  lookingPricing?: (modelId: string) => ModelInfo["pricing"];
   pickerSettings: PickerSettings;
   onSwitchReply(user: UserMessage, index: number): void;
   onCompare(model: ModelInfo): void;
@@ -152,6 +159,8 @@ export interface ConversationContext {
   checks: Map<string, AbortController>;
   compare: ComparePopover | null;
   thinking: boolean;
+  // A look is running, so there is something to cut short with Answer now.
+  looking: boolean;
   // Set by initConversation, so the parts below it re-render without importing it back.
   showMessage(message: ChatMessage): void;
   renderAnswer(turn: TurnView): void;
@@ -178,6 +187,28 @@ export function underway(ctx: ConversationContext, turn: TurnView): boolean {
   return (
     turn.live !== null || turn.streamingId !== null || (isLatest(ctx, turn) && ctx.deps.isRunning())
   );
+}
+
+export function lookingName(ctx: ConversationContext, modelId: string): string {
+  return ctx.deps.lookingName?.(modelId) ?? modelId;
+}
+
+export function seenRender(ctx: ConversationContext, options: MarkdownOptions): SeenRender {
+  const { onLookAgain, looking } = ctx.deps;
+  return {
+    name: (modelId) => lookingName(ctx, modelId),
+    options,
+    ...(onLookAgain && looking?.()
+      ? {
+          // The button goes with what it dropped.
+          onLookAgain: (messageId: string, note: SeenNote) => {
+            ctx.pendingFocus = { kind: "message", id: messageId };
+            onLookAgain(messageId, note);
+          },
+          running: ctx.deps.isRunning(),
+        }
+      : {}),
+  };
 }
 
 export function messageElement(ctx: ConversationContext, id: string): HTMLElement | undefined {

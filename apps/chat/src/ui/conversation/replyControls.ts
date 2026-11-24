@@ -4,6 +4,7 @@ import type { AssistantMessage, ChatMessage, UserMessage } from "../../types";
 import { iconButton, smallButton } from "../shared/buttons";
 import { icon, type IconName } from "../shared/icons";
 import { dismissOnOutside } from "../shared/menu";
+import { CHAT_TEXT_ONLY_NOTE } from "../modelPicker/pickerModel";
 import { createModelPicker } from "../modelPicker/modelPicker";
 import { answerOf } from "./activity";
 import {
@@ -138,10 +139,13 @@ export function renderReplyReceipt(
   const modelId = turn.user?.replyModelId ?? ctx.deps.chatModelId();
   const pricing = ctx.deps.models().find((model) => model.id === modelId)?.pricing;
   const checking = ctx.checks.has(answer.id);
+  const { lookingPricing } = ctx.deps;
+  const steps = turn.user ? [turn.user, ...turn.steps] : turn.steps;
   turn.answer.receipt.replaceChildren(
-    renderReceipt(receipt, turn.steps, pricing, {
+    renderReceipt(receipt, steps, pricing, {
       onSeek: turnSeekHandler(ctx, turn),
       running: ctx.deps.isRunning(),
+      ...(lookingPricing ? { lookingPricing } : {}),
       ...(checking ? {} : { onCheck: () => startCheck(ctx, answer) }),
     }),
   );
@@ -205,6 +209,7 @@ function openCompare(ctx: ConversationContext, turn: TurnView): void {
       current: () => turn.user?.replyModelId ?? ctx.deps.chatModelId(),
       onPick: (id) => pickCompare(ctx, id),
       settings: ctx.deps.pickerSettings,
+      textOnly: { offered: () => ctx.deps.looking?.() === true, note: CHAT_TEXT_ONLY_NOTE },
     },
   );
   el.addEventListener("keydown", (event) => {

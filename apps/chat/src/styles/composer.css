@@ -80,6 +80,7 @@
 
 .composer-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   gap: 0.5rem;
   padding: 0.4rem;
@@ -94,6 +95,7 @@
 
 .message-input {
   flex: 1;
+  min-width: min(8rem, 100%);
   min-height: 2.5rem;
   max-height: 240px;
   padding: 0.45rem 0.25rem;
@@ -192,6 +194,16 @@
 .send-button {
   flex-shrink: 0;
   height: 2.5rem;
+}
+
+/* Only felt once they wrap onto a row of their own; beside the input there is nothing to share. */
+.answer-now-button,
+.send-button {
+  margin-left: auto;
+}
+
+.answer-now-button:not([hidden]) + .send-button {
+  margin-left: 0;
 }
 
 .send-button.is-stop {

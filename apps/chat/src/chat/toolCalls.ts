@@ -1,6 +1,7 @@
 import { orWhenAborted } from "../abort";
 import type { ToolCall, ToolMessage, ToolResult } from "../types";
 import type { Turn } from "./agentLoop";
+import { imagesLookedAt } from "./lookingTurn";
 
 const NO_VIDEO = "No video is attached.";
 
@@ -64,7 +65,9 @@ export async function answerToolCalls(
       toolCallId: call.id,
       text: result.text + roundSuffix(round, turn.maxRounds),
       images: result.images,
+      ...(result.seen ? { seen: result.seen } : {}),
     };
+    turn.imagesSent += imagesLookedAt(message);
     turn.messages.push(message);
     await deps.persist(message);
     deps.onEvent({ type: "toolDone", message });

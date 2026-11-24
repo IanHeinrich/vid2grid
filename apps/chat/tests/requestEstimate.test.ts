@@ -1,9 +1,13 @@
 import { modelVisionProfile } from "@vid2grid/core";
 import { beforeEach, describe, expect, it } from "vitest";
-import { estimateNextRequest, estimateTokens } from "../src/app/requestEstimate";
+import {
+  estimateNextRequest,
+  estimateTokens,
+  type TokenEstimateInput,
+} from "../src/app/requestEstimate";
 import { blankChat } from "../src/chat/chats";
 import { audioNote } from "../src/chat/prompts";
-import { loadAudio } from "../src/audio/videoAudio";
+import { cachedAudio, loadAudio } from "../src/audio/videoAudio";
 import { createMemoryStore } from "../src/chat/store";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import {
@@ -14,7 +18,14 @@ import {
   setModels,
   type AppState,
 } from "../src/state";
-import type { ChatMessage, EarlierImages, ImageRef, ModelInfo, StorySoFar } from "../src/types";
+import type {
+  ChatMessage,
+  EarlierImages,
+  ImageRef,
+  ModelInfo,
+  StorySoFar,
+  UserMessage,
+} from "../src/types";
 import { LISTEN_SCHEMA } from "../src/video/tools";
 import { model as baseModel } from "./support/factories";
 import { MESSAGES, reply } from "./support/usageFixtures";
@@ -171,7 +182,7 @@ describe("the transcript in the estimate", () => {
     expect(small).toBeGreaterThan(1500);
   });
 
-  const sent: ChatMessage = {
+  const sent: UserMessage = {
     id: "u1",
     createdAt: 0,
     role: "user",
@@ -189,6 +200,27 @@ describe("the transcript in the estimate", () => {
     const noTools = { tools: false };
     const still = estimateFor([sent, answered], true, noTools) - estimateFor([], true, noTools);
     expect(Math.abs(still)).toBeLessThan(50);
+  });
+
+  it("counts it beside the words a looking model put in place of the pictures", async () => {
+    await hear();
+    const speech = cachedAudio(VIDEO.fileKey);
+    const estimate = (text: string, extra: Partial<TokenEstimateInput> = {}) => {
+      const note = { kind: "described" as const, imageIds: ["i"], modelId: "eyes", text };
+      const image: ImageRef = { id: "i", pinned: false, source: { kind: "upload", name: "i" } };
+      return estimateTokens({
+        chat: { ...blankChat("m", "chat", 1, "eyes"), video: VIDEO },
+        messages: [{ ...sent, images: [image], seen: [note] }],
+        model: model(),
+        videoLoaded: true,
+        audioCoverage: { text: "analysed", canListen: true },
+        ...extra,
+      });
+    };
+    const bare = estimate("A dog.");
+    const longer = "word ".repeat(400);
+    expect(estimate("A dog.", { speech }) - bare).toBeGreaterThan(5000);
+    expect(estimate(longer, { speech }) - estimate("A dog.", { speech })).toBeGreaterThan(450);
   });
 
   it("counts it again once the message that carried it is in the chat summary", async () => {
@@ -272,5 +304,24 @@ describe("estimateTokens", () => {
     expect(estimateWith(overview()) - estimateWith(overview(512))).toBe(
       imageTokens(2048) - imageTokens(512),
     );
+  });
+});
+
+describe("with a looking model", () => {
+  it("counts the words the writer gets, not the pictures", () => {
+    const image: ImageRef = { id: "i", pinned: true, source: { kind: "upload", name: "i.jpg" } };
+    const note = { kind: "described" as const, imageIds: ["i"], modelId: "eyes" };
+    const estimate = (text: string, lookingModelId?: string) =>
+      estimateTokens({
+        chat: blankChat("m", "chat", 1, lookingModelId),
+        messages: [
+          { id: "u", createdAt: 0, role: "user", text, images: [image], seen: [{ ...note, text }] },
+        ],
+        model: model({ tools: false }),
+        videoLoaded: false,
+      });
+    expect(estimate("hi") - estimate("hi", "eyes")).toBeGreaterThan(1000);
+    const longer = "word ".repeat(400);
+    expect(estimate(longer, "eyes") - estimate("hi", "eyes")).toBeGreaterThanOrEqual(900);
   });
 });

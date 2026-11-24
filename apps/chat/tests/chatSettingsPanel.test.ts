@@ -9,6 +9,7 @@ import {
   createAppState,
   replaceChat,
   setCurrentChat,
+  setLookingModels,
   setModels,
   type AppState,
 } from "../src/state";
@@ -18,7 +19,7 @@ import { VOICE_HINTS } from "../src/ui/settings/personaFields";
 import type { Toast } from "../src/ui/shared/toast";
 import { model as baseModel } from "./support/factories";
 import { mountPage, stillToast } from "./support/page";
-import { pickRow, triggerName } from "./support/picker";
+import { pickerIds, pickRow, triggerName } from "./support/picker";
 
 let els: AppElements;
 let state: AppState;
@@ -568,5 +569,104 @@ describe("Manage presets", () => {
     els.presetManager.deleteButton.click();
     expect(els.chatSettings.personaSelect.value).toBe("");
     expect(els.chatSettings.personaSelect.disabled).toBe(true);
+  });
+});
+
+describe("the chat's looking model", () => {
+  const own = "http://localhost:5001/v1";
+  let store: ChatStore;
+
+  async function openWith(settings: Partial<ChatSettings>, lookingBaseUrl = ""): Promise<void> {
+    state = createAppState({
+      ...DEFAULT_SETTINGS,
+      baseUrl: "http://localhost:1/v1",
+      lookingBaseUrl,
+    });
+    setModels(state, [
+      baseModel("blind", { vision: false, privacy: "unknown" }),
+      baseModel("claude-opus-4-7", { privacy: "unknown" }),
+    ]);
+    setLookingModels(state, [baseModel("qwen3-6-27b", { name: "Qwen", privacy: "unknown" })]);
+    store = createMemoryStore();
+    const blank = blankChat("claude-opus-4-7", "chat", 1);
+    const chat = { ...blank, settings: { ...blank.settings, ...settings } };
+    await store.putChat(chat);
+    replaceChat(state, chat);
+    setCurrentChat(state, chat, []);
+    initChatSettings(els, state, { store, toast: toast(), onChanged: vi.fn(), onError: vi.fn() });
+  }
+
+  const saved = async () => (await store.getChat("chat"))?.settings;
+
+  it("offers None and the looking connection's models, and saves the server with the pick", async () => {
+    await openWith({}, own);
+    const { lookingModelPicker, lookingModelServer } = els.chatSettings;
+    expect(triggerName(lookingModelPicker)).toBe("None");
+    expect(lookingModelServer.hidden).toBe(true);
+    pickRow(lookingModelPicker, "qwen3-6-27b");
+    await vi.waitFor(() => expect(lookingModelServer.hidden).toBe(false));
+    expect(lookingModelServer.textContent).toBe("This chat's pictures are sent to localhost:5001.");
+    expect(triggerName(lookingModelPicker)).toBe("Qwen");
+    expect(await saved()).toMatchObject({ lookingModelId: "qwen3-6-27b", lookingBaseUrl: own });
+  });
+
+  it("keeps the chat's own server too, and forgets both at None", async () => {
+    await openWith({});
+    const { lookingModelPicker } = els.chatSettings;
+    pickRow(lookingModelPicker, "claude-opus-4-7");
+    await vi.waitFor(async () => expect(await saved()).toHaveProperty("lookingModelId"));
+    expect(await saved()).toMatchObject({
+      lookingBaseUrl: "http://localhost:1/v1",
+      lookingPicked: true,
+    });
+    lookingModelPicker.querySelector<HTMLButtonElement>(".model-trigger")?.click();
+    lookingModelPicker.querySelector<HTMLElement>(".model-row.is-none")?.click();
+    await vi.waitFor(async () => expect(await saved()).not.toHaveProperty("lookingModelId"));
+    expect(await saved()).not.toHaveProperty("lookingBaseUrl");
+    expect(await saved()).toHaveProperty("lookingPicked", true);
+  });
+
+  it("warns when a model that cannot see images is left without one", async () => {
+    await openWith({ modelId: "blind", lookingModelId: "qwen3-6-27b", lookingBaseUrl: own }, own);
+    const { lookingModelPicker, textOnlyWarning } = els.chatSettings;
+    expect(textOnlyWarning.hidden).toBe(true);
+    lookingModelPicker.querySelector<HTMLButtonElement>(".model-trigger")?.click();
+    lookingModelPicker.querySelector<HTMLElement>(".model-row.is-none")?.click();
+    await vi.waitFor(() => expect(textOnlyWarning.hidden).toBe(false));
+    expect(textOnlyWarning.textContent).toContain("pictures cannot");
+    pickRow(lookingModelPicker, "qwen3-6-27b");
+    await vi.waitFor(() => expect(textOnlyWarning.hidden).toBe(true));
+  });
+
+  it("says when its server is no longer set up, until it is chosen again", async () => {
+    await openWith({ lookingModelId: "qwen3-6-27b", lookingBaseUrl: "http://gone:1/v1" }, own);
+    const { lookingModelPicker, lookingModelServer } = els.chatSettings;
+    expect(lookingModelServer.textContent).toContain("picked on gone:1");
+    expect(lookingModelServer.classList.contains("is-error")).toBe(true);
+    pickRow(lookingModelPicker, "qwen3-6-27b");
+    await vi.waitFor(() => expect(lookingModelServer.classList.contains("is-error")).toBe(false));
+    expect(await saved()).toMatchObject({ lookingBaseUrl: own });
+  });
+
+  it("lets the chat's model be one that cannot see images", async () => {
+    await openWith({});
+    const { modelPicker, lookingModelPicker } = els.chatSettings;
+    modelPicker.querySelector<HTMLButtonElement>(".model-trigger")?.click();
+    expect(pickerIds(modelPicker)).toEqual(["claude-opus-4-7"]);
+    const note = modelPicker.querySelector<HTMLElement>(".model-text-note");
+    expect(note?.textContent).toContain("Choose a looking model for this chat");
+    modelPicker.querySelector<HTMLButtonElement>(".model-trigger")?.click();
+    pickRow(lookingModelPicker, "claude-opus-4-7");
+    await vi.waitFor(async () => expect(await saved()).toHaveProperty("lookingModelId"));
+    modelPicker.querySelector<HTMLButtonElement>(".model-trigger")?.click();
+    expect(pickerIds(modelPicker)).toEqual(["blind", "claude-opus-4-7"]);
+    expect(modelPicker.querySelector('[data-id="blind"] .model-badges')?.textContent).toBe(
+      "Text only",
+    );
+  });
+
+  it("sizes the sheets for it", async () => {
+    await openWith({ lookingModelId: "qwen3-6-27b", lookingBaseUrl: own }, own);
+    expect(els.chatSettings.sheetResolutionAuto.textContent).toBe("Auto (3072 px)");
   });
 });

@@ -1,6 +1,6 @@
 import { errorText } from "../text";
 import type { ApiSettings } from "../types";
-import { requestHeaders, throwForStatus } from "./http";
+import { requestHeaders, safeError, throwForStatus } from "./http";
 import { asRecord } from "./json";
 import { isVenice, normaliseBaseUrl } from "./venice";
 
@@ -53,7 +53,7 @@ export async function getBalance(
   } catch (error) {
     return {
       unavailable: "error",
-      message: errorText(error),
+      message: errorText(safeError(error, settings)),
     };
   }
 }

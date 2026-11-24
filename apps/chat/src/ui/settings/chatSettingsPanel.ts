@@ -1,4 +1,13 @@
 import { DEEP_MAX_ROUNDS as MAX_ROUNDS_LIMIT } from "../../chat/agentLoop";
+import {
+  lookingHost,
+  lookingModels,
+  lookingProblem,
+  pickedLookingServer,
+  pictureModel,
+} from "../../app/lookingConnection";
+import { cannotSee } from "../../app/sendBlocker";
+import { withLooking } from "../../chat/chats";
 import { currentModel, resolveModel } from "../../chat/models";
 import { applyPersonaNames } from "../../chat/prompts";
 import {
@@ -13,11 +22,12 @@ import {
   withVideoReferences,
   type Persona,
 } from "../../chat/personas";
+import { lookingModelId } from "../../chat/seen";
 import { withEffort } from "../../chat/thoroughness";
 import type { AppElements } from "../../dom";
 import { updateChat, type AppState } from "../../state";
 import { errorText } from "../../text";
-import type { ChatSettings, ChatStore, EarlierImages, ModelInfo } from "../../types";
+import type { Chat, ChatSettings, ChatStore, EarlierImages, ModelInfo } from "../../types";
 import { resolveSheetResolution } from "../../video/resolution";
 import { createModelPicker, type ModelPicker } from "../modelPicker/modelPicker";
 import {
@@ -27,7 +37,8 @@ import {
   renderPersonaFields,
   setUnlessFocused,
 } from "./personaFields";
-import { storedPickerSettings } from "../modelPicker/pickerModel";
+import { CHAT_TEXT_ONLY_NOTE, storedPickerSettings } from "../modelPicker/pickerModel";
+import { NO_LOOKING_MODEL } from "./lookingSettings";
 import { initPresetManager, type PresetManager } from "./presetManager";
 import { offerUndo } from "../../app/undo";
 import type { Toast } from "../shared/toast";
@@ -50,6 +61,7 @@ interface ChatSettingsContext {
   state: AppState;
   deps: ChatSettingsDeps;
   picker: ModelPicker;
+  lookingPicker: ModelPicker;
   presets: PresetManager;
   renderedChatId: string | undefined;
   effortOptionsKey: string;
@@ -60,6 +72,43 @@ interface ChatSettingsContext {
 const EARLIER_IMAGES: readonly EarlierImages[] = ["describe", "send"];
 const DEFAULT_EARLIER_IMAGES: EarlierImages = "describe";
 
+type Change = (ctx: ChatSettingsContext, settings: ChatSettings) => ChatSettings;
+
+function initPickers(
+  els: Pick<AppElements, "chatSettings" | "templates">,
+  state: AppState,
+  deps: ChatSettingsDeps,
+  apply: (next: Change) => void,
+): Pick<ChatSettingsContext, "picker" | "lookingPicker"> {
+  const settings = storedPickerSettings(state, deps.storage);
+  const looking = () => lookingModelId(state.currentChat);
+  return {
+    picker: createModelPicker(
+      { mount: els.chatSettings.modelPicker, ...els.templates },
+      {
+        models: () => state.models,
+        current: () => currentModel(state)?.id,
+        onPick: (id) => apply((ctx, chat) => withModel(ctx, chat, id)),
+        settings,
+        textOnly: { offered: () => looking() !== undefined, note: CHAT_TEXT_ONLY_NOTE },
+      },
+    ),
+    lookingPicker: createModelPicker(
+      { mount: els.chatSettings.lookingModelPicker, ...els.templates },
+      {
+        models: () => lookingModels(state),
+        current: () => looking() ?? "",
+        onPick: (id) => {
+          const server = pickedLookingServer(state.settings);
+          apply((_ctx, chat) => withLookingModel(chat, id, server));
+        },
+        settings,
+        none: NO_LOOKING_MODEL,
+      },
+    ),
+  };
+}
+
 export function initChatSettings(
   els: Pick<AppElements, "header" | "chatSettings" | "templates" | "presetManager">,
   state: AppState,
@@ -69,15 +118,7 @@ export function initChatSettings(
     els,
     state,
     deps,
-    picker: createModelPicker(
-      { mount: els.chatSettings.modelPicker, ...els.templates },
-      {
-        models: () => state.models,
-        current: () => currentModel(state)?.id,
-        onPick: (id) => change(ctx, (settings) => withModel(ctx, settings, id)),
-        settings: storedPickerSettings(state, deps.storage),
-      },
-    ),
+    ...initPickers(els, state, deps, (next) => change(ctx, (settings) => next(ctx, settings))),
     presets: initPresetManager(els, {
       toast: deps.toast,
       storage: deps.storage ?? localStorage,
@@ -107,7 +148,7 @@ export function initChatSettings(
     change(ctx, (settings) => ({ ...settings, sheetResolution }));
   });
   render(ctx);
-  return { render: () => render(ctx), close: () => ctx.picker.close() };
+  return { render: () => render(ctx), close: () => closePickers(ctx) };
 }
 
 function listenToPersona(ctx: ChatSettingsContext): void {
@@ -226,6 +267,18 @@ function listenToNumbers(ctx: ChatSettingsContext): void {
   });
 }
 
+function closePickers({ picker, lookingPicker }: ChatSettingsContext): void {
+  picker.close();
+  lookingPicker.close();
+}
+
+function withLookingModel(settings: ChatSettings, modelId: string, server: string): ChatSettings {
+  const next = { ...settings };
+  delete next.lookingModelId;
+  delete next.lookingBaseUrl;
+  return { ...next, ...withLooking(modelId, server), lookingPicked: true };
+}
+
 function withEarlierImages(settings: ChatSettings, earlierImages: EarlierImages): ChatSettings {
   if (settings.earlierImages === undefined && earlierImages === DEFAULT_EARLIER_IMAGES) {
     return settings;
@@ -279,6 +332,7 @@ function render(ctx: ChatSettingsContext): void {
   const switched = chat.id !== ctx.renderedChatId;
   renderPersona(ctx, settings, switched);
   ctx.picker.render();
+  renderLooking(ctx, chat);
   const temperature = settings.temperature === undefined ? "" : String(settings.temperature);
   setUnlessFocused(panel.temperatureInput, temperature, switched);
   const maxRounds = settings.maxRounds === undefined ? "" : String(settings.maxRounds);
@@ -292,7 +346,19 @@ function render(ctx: ChatSettingsContext): void {
   );
   panel.reasoningEffortSelect.value = settings.reasoningEffort ?? "";
   panel.earlierImagesSelect.value = settings.earlierImages ?? DEFAULT_EARLIER_IMAGES;
-  renderSheetResolution(panel, settings, resolveModel(ctx.state, settings.modelId));
+  const own = resolveModel(ctx.state, settings.modelId);
+  renderSheetResolution(panel, settings, pictureModel(ctx.state, chat, own));
+}
+
+function renderLooking(ctx: ChatSettingsContext, chat: Chat): void {
+  ctx.lookingPicker.render();
+  const { lookingModelServer, textOnlyWarning } = ctx.els.chatSettings;
+  textOnlyWarning.hidden = !cannotSee(ctx.state);
+  const problem = lookingProblem(ctx.state, chat);
+  lookingModelServer.hidden = lookingModelId(chat) === undefined;
+  lookingModelServer.classList.toggle("is-error", problem !== undefined);
+  lookingModelServer.textContent =
+    problem ?? `This chat's pictures are sent to ${lookingHost(chat)}.`;
 }
 
 type Choice = readonly [label: string, value: string];

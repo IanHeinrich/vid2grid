@@ -1,6 +1,7 @@
 import { mergeCast, suggestCast } from "../../chat/cast";
 import { latestOverview } from "../../chat/imageSelection";
-import { chatModelId } from "../../chat/models";
+import { chatModelId, resolveModel } from "../../chat/models";
+import { lookingModelId } from "../../chat/seen";
 import { blobToDataUrl } from "../../dataUrl";
 import type { AppElements } from "../../dom";
 import { currentPending, type AppState } from "../../state";
@@ -16,7 +17,7 @@ import type {
 } from "../../types";
 import { editKeys, iconButton, seekButton, smallButton } from "../shared/buttons";
 import type { ChatVideo } from "../video/knowledgeVideos";
-import { modelCallDeps } from "../../app/modelCallDeps";
+import { pictureCallDeps, pictureModel } from "../../app/lookingConnection";
 import { createModelTask, type ModelTask } from "../shared/modelTask";
 import { offerUndo } from "../../app/undo";
 import type { Toast, ToastHandle } from "../shared/toast";
@@ -199,10 +200,21 @@ function finishEdit(ctx: CastContext, saved: CastCard | null): void {
   );
 }
 
+// Spread over the whole video, when the looking model takes fewer than there are.
+function sheetsToSend({ state }: CastContext): ImageRef[] {
+  const refs = overviewRefs(state);
+  const chat = state.currentChat;
+  if (!chat || lookingModelId(chat) === undefined) return refs;
+  const writer = resolveModel(state, chatModelId(state, chat));
+  const most = Math.max(1, pictureModel(state, chat, writer).maxImages);
+  return refs.filter((_, index) => {
+    const slot = (at: number) => Math.floor((at * most) / refs.length);
+    return refs.length <= most || index === 0 || slot(index) !== slot(index - 1);
+  });
+}
+
 async function overviewUrls(ctx: CastContext): Promise<string[]> {
-  const blobs = await Promise.all(
-    overviewRefs(ctx.state).map((ref) => ctx.deps.store.getImage(ref.id)),
-  );
+  const blobs = await Promise.all(sheetsToSend(ctx).map((ref) => ctx.deps.store.getImage(ref.id)));
   const toDataUrl = ctx.deps.toDataUrl ?? blobToDataUrl;
   return Promise.all(blobs.flatMap((blob) => (blob ? [toDataUrl(blob)] : [])));
 }
@@ -211,6 +223,7 @@ async function suggest(ctx: CastContext): Promise<void> {
   const chat = ctx.state.currentChat;
   const video = chat?.video;
   if (!chat || !video) return;
+  const modelId = lookingModelId(chat) ?? chatModelId(ctx.state, chat);
   const suggested = await ctx.task.run("Looking for the people in the video…", async (signal) => {
     const overview = await overviewUrls(ctx);
     if (overview.length === 0 && chat.sceneLog.length === 0) {
@@ -218,7 +231,7 @@ async function suggest(ctx: CastContext): Promise<void> {
     }
     return suggestCast(
       {
-        ...modelCallDeps(ctx.state, ctx.deps.streamChat, chatModelId(ctx.state, chat), signal),
+        ...pictureCallDeps(ctx.state, chat, ctx.deps.streamChat, modelId, signal),
         ...(ctx.deps.newId ? { newId: ctx.deps.newId } : {}),
       },
       { overview, sceneLog: chat.sceneLog, durationSeconds: video.durationSeconds },

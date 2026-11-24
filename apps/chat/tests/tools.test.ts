@@ -12,6 +12,7 @@ import {
   type ToolContext,
   type ToolRunnerContext,
 } from "../src/video/tools";
+import { looker } from "./support/looking";
 import { MAX_LISTEN_LINES } from "../src/video/listenTool";
 
 class FakeStore implements ImageStore, SheetCache {
@@ -752,5 +753,21 @@ describe("renderOverview", () => {
     expect(render).toHaveBeenCalledTimes(2);
     expect(store.images.has(again[0]?.id ?? "")).toBe(true);
     expect([...store.sheets.values()]).toEqual([again]);
+  });
+});
+
+describe("pictures for a looking model", () => {
+  const look = call("look", { start: 60, end: 90, frames: 16, perSheet: 16 });
+
+  it("are said to be described below, not to follow", async () => {
+    const { ctx, run } = setup();
+    expect((await run(look)).text).toMatch(/1 image follows\.$/);
+    const signal = new AbortController().signal;
+    const ask = { looker: looker(), messages: () => [], signal };
+    const asking = createToolRunner(runnerContext(ctx, { ask }));
+    const looked = await asking(look);
+    expect(looked.text).toMatch(/\n1 image, described below\.$/);
+    expect(looked.images).toHaveLength(1);
+    expect((await asking(call("note", { t: 1, text: "x" }))).text).toBe("Noted at 0:01.");
   });
 });

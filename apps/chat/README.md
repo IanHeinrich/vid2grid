@@ -122,8 +122,11 @@ A "Get started" checklist on the main screen walks through choosing an API, a
 connection test, a default model and a first video or image. You can hide it.
 
 **Test connection** checks what is typed in the dialog before you save it. It
-reports whether the server answered, how many models it lists and how many can
-see images.
+shows the server, how many models it lists, how many can see images where the
+server says so, and whether the key was checked, or why it could not connect and
+what to try. On success the dialog's model lists show
+that server's models at once. The rest of the app takes the list only when the
+tested server and key are the saved ones, or once you save.
 
 Venice only: the test also says which kind of key you have. An admin key can
 read the account balance, which then shows in the sidebar. An inference key
@@ -133,6 +136,8 @@ chats fine but cannot read the balance.
 
 The model picker is used in Settings, in each chat and in the study dialog.
 
+- Models that cannot see images are hidden until a looking model is chosen, for
+  the chat or, in Settings, for new chats. Then they show with a Text only badge.
 - Search by name, mark favourites with a star, filter by Uncensored,
   Recommended, Reasoning, Audio and Beta, and sort by recommendation, price,
   context or name.
@@ -144,6 +149,66 @@ The model picker is used in Settings, in each chat and in the study dialog.
   reasoning effort, privacy and whether it takes audio. Arrow keys, Home, End
   and Enter work in the list.
 
+## Looking model
+
+A looking model is a second model that looks at pictures for a chat's own
+model, the writer. With one set, every picture goes to the looking model and
+never to the writer, so the writer can be a model that only reads text.
+
+- Overview sheets, dropped images and pictures from the tools are described
+  once, before the writer's next round, with your message or the tool call's
+  question as what to pay attention to. The writer reads the words in place of
+  the pictures, in that turn and later ones. You can read them too: under your
+  message, and in the reply's activity row.
+- The writer gets an `ask(question, pictures)` tool in place of `recall`. It
+  sends the stored pictures to the looking model again, from any turn, so each
+  question costs a looking call. `look`, `frames` and `zoom` take an optional
+  `question`.
+- Replay, swipes and Compare reuse a description. **Look again** drops one, and
+  the next reply has those pictures described afresh.
+- A writer without tools, or whose server refuses them, cannot ask. A later
+  message with no new pictures is then put to the looking model itself, with as
+  many pictures as it takes: the turn's own first, then pinned ones, the
+  overview and the newest. The writer reads the answer as a note.
+- If a look fails, the reply fails with the looking model and its server named,
+  and Retry looks again. If an `ask` fails, the writer is told and goes on.
+- Study, Check timestamps and Suggest from video send pictures, so they use the
+  looking model as well. Receipts and totals count its tokens, at its own price
+  where that is known.
+
+To set it up with KoboldCpp as the writer:
+
+1. Start KoboldCpp with a text model. In Settings, use
+   `http://localhost:5001/v1` as the base URL and leave the key empty.
+2. Under **Looking model**, turn on "Use a different server for looking". Pick
+   Venice and add its key, or type the URL of a second local server that runs a
+   vision model, for example KoboldCpp on another port.
+3. Press **Test looking model**, then choose the model. New chats get it, and so
+   does an empty chat you never chose one for. For a chat you already use, choose
+   it in Chat settings, on the Model tab.
+
+Some servers list their models to anyone, so a list alone does not check the
+key. The looking model's test then sends the chosen model a few words, with no
+picture, and says whether it answered. Test connection sends nothing more and
+says that the key was not checked.
+
+Without a different server, the looking model runs on the chat's own.
+
+What goes where: the writer's server gets your messages, the replies, the words
+about the pictures and, with Audio on, the transcript. The looking server gets
+the pictures, the questions about them, your message where it says what to look
+for, and earlier questions and answers about the same pictures. It gets nothing
+else of the conversation, and nothing that was heard.
+Its key is kept like the other and sent only to its own URL. Settings and the
+Model tab both name the host that pictures are sent to.
+
+A chat remembers which server its looking model was picked on, the chat's own
+server included. If that server is no longer in Settings, the chat does not send
+until you choose again, so pictures never move to another server on their own.
+
+A chat whose model only reads text cannot send pictures without a looking model.
+The Model tab says so, and the chat only sends while it holds none.
+
 ## Chat settings
 
 The Chat settings drawer in a chat's header has two tabs.
@@ -154,7 +219,7 @@ The Chat settings drawer in a chat's header has two tabs.
   (never mentions tools or frames, few timestamps) or Narrator (third-person
   prose). Save a setup as a named persona, then reuse, update or delete it.
   Personas are kept in localStorage and shared by all chats.
-- **Model.** The chat's model, temperature, reasoning effort, what happens to
+- **Model.** The chat's model, its looking model, temperature, reasoning effort, what happens to
   earlier images, sheet resolution and maximum rounds per reply.
 
 ## Knowledge
@@ -227,8 +292,9 @@ and seeking the player work on the current video.
 - **Remove from chat**, in the menu next to Study video and under each video in
   the conversation, takes a video out of the chat after it was sent. The player
   closes, the model no longer gets the video's tools or facts, and the scene
-  log is cleared. The messages stay, with the sheets the model saw, and the
-  video shows as "video.mp4, removed from this chat". In a chat that has had
+  log is cleared. The messages stay, with the sheets the model saw and what a
+  looking model said of them, which `ask` can still ask about, and the video
+  shows as "video.mp4, removed from this chat". In a chat that has had
   several videos only the chosen one goes, and removing the current one leaves
   the chat without a current video. The toast's Undo puts everything back. The
   timeline, people and audio saved for the video are kept, so attaching the

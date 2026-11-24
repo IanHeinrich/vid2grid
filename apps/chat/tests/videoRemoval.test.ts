@@ -26,6 +26,7 @@ import { fileKey } from "../src/video/render";
 import { sheetCacheKey } from "../src/video/sheetCache";
 import { assistant, model, sheet, user } from "./support/factories";
 import { aloneTabs, isStored, saveImage } from "./support/images";
+import { described } from "./support/looking";
 import {
   attachmentFor,
   cleanUpVideoPanel,
@@ -192,6 +193,31 @@ describe("removing the chat's video", () => {
     );
     expect(await storedMessage("u1")).toEqual(message("u1"));
     expect(show).toHaveBeenCalledWith(message("u1"));
+  });
+
+  it("keeps what was seen of its sheets with them, and through Undo", async () => {
+    const images: ImageRef[] = [sheet("s1", 0, 1)];
+    const seen = [described(["s1"], "Waves.")];
+    await sent(BEACH, "u1", { images, seen });
+    await removal.remove(beach.fileKey);
+    expect(await storedMessage("u1")).toMatchObject({ images, seen, removedVideo: beach });
+    await undo();
+    expect(await storedMessage("u1")).toMatchObject({ images, seen, video: beach });
+    expect(message("u1")).toEqual(await storedMessage("u1"));
+  });
+
+  it("keeps what is seen of its sheets after it was removed, through Undo", async () => {
+    const images: ImageRef[] = [sheet("s1", 0, 1)];
+    const seen = [described(["s1"], "Waves.")];
+    await sent(BEACH, "u1", { images });
+    await removal.remove(beach.fileKey);
+    const removed = message("u1");
+    if (!removed) throw new Error("No message");
+    const looked = { ...removed, seen };
+    upsertMessage(state, looked);
+    await store.putMessage("chat", looked);
+    await undo();
+    expect(await storedMessage("u1")).toMatchObject({ images, seen, video: beach });
   });
 
   it("says a moment in it is gone, until the same video is attached again", async () => {

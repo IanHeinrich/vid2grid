@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { blankChat } from "../src/chat/chats";
-import { removeChat, replaceChat, setCurrentChat } from "../src/state";
+import {
+  removeChat,
+  replaceChat,
+  setCurrentChat,
+  setLookingModels,
+  setSettings,
+} from "../src/state";
+import { pickRow } from "./support/picker";
 import type * as StudyModule from "../src/video/study";
 import { runStudy } from "../src/video/study";
 import {
@@ -14,6 +21,7 @@ import {
   hangingStudy,
   hangingZoom,
   menuToggle,
+  model,
   onRemoveVideo,
   offerFor,
   openPlayer,
@@ -29,6 +37,7 @@ import {
   STUDY_MODEL_ID,
   startStudy,
   state,
+  status,
   store,
   timeline,
   zoomItem,
@@ -329,5 +338,101 @@ describe("the zoom offer", () => {
     els.study.button.click();
     await vi.waitFor(() => expect(els.study.zoomButton.hidden).toBe(false));
     expect(els.study.zoomButton.textContent).toBe(offerFor(FLAGS.slice(1)));
+  });
+});
+
+describe("studying with a looking model", () => {
+  const own = "http://localhost:5001/v1";
+
+  function lookingChat(): void {
+    setSettings(state, { ...state.settings, lookingBaseUrl: own, apiKeys: { [own]: "key" } });
+    setLookingModels(state, [model("eyes"), model("other-eyes")]);
+    const chat = { ...blankChat(STUDY_MODEL_ID, "chat", 1, "eyes", own), video: VIDEO };
+    replaceChat(state, chat);
+    setCurrentChat(state, chat, []);
+  }
+
+  it("studies with it, on its own connection", async () => {
+    lookingChat();
+    vi.mocked(runStudy).mockImplementationOnce((deps) => Promise.resolve(deps.timeline));
+    setup().open();
+    startStudy();
+    await vi.waitFor(() => expect(runStudy).toHaveBeenCalled());
+    expect(vi.mocked(runStudy).mock.calls[0]?.[0]).toMatchObject({
+      api: { baseUrl: own, apiKey: "key" },
+      model: { id: "eyes" },
+      timeline: { modelId: "eyes" },
+      veniceParameters: false,
+    });
+  });
+
+  it("goes on with another model picked for it, and prices no mix", async () => {
+    lookingChat();
+    vi.mocked(runStudy).mockImplementationOnce(async (deps) => {
+      const usage = { promptTokens: 10, completionTokens: 1 };
+      const progress = { ...deps.timeline, nextWindow: 1, usage };
+      await deps.saveTimeline(progress);
+      return progress;
+    });
+    setup().open();
+    pickRow(els.study.modelPicker, "other-eyes");
+    startStudy();
+    await vi.waitFor(() => expect(els.study.button.textContent).toBe("Resume"));
+    vi.mocked(runStudy).mockImplementationOnce((deps) => Promise.resolve(deps.timeline));
+    els.study.button.click();
+    await vi.waitFor(() => expect(runStudy).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(runStudy).mock.calls[1]?.[0].model.id).toBe("other-eyes");
+    reloadPage();
+    setup();
+    await vi.waitFor(() => expect(els.study.button.textContent).toBe("Resume"));
+    vi.mocked(runStudy).mockImplementationOnce((deps) => Promise.resolve(deps.timeline));
+    els.study.button.click();
+    await vi.waitFor(() => expect(runStudy).toHaveBeenCalledTimes(3));
+    const again = vi.mocked(runStudy).mock.calls[2]?.[0];
+    expect(again?.model.id).toBe("eyes");
+    expect(again?.timeline.modelId).toBe("other-eyes");
+    expect((await store.getTimeline(VIDEO.fileKey))?.modelId).toBe("other-eyes");
+    if (!again) throw new Error("No study");
+    await again.saveTimeline({ ...again.timeline, nextWindow: 2 });
+    expect(await store.getTimeline(VIDEO.fileKey)).toMatchObject({
+      modelId: "eyes",
+      mixedModels: true,
+    });
+  });
+
+  it("confirms and changes nothing when its server is no longer set up", async () => {
+    const done = timeline([{ startSeconds: 0, endSeconds: 5, text: "She walks in" }]);
+    await store.putTimeline(done);
+    lookingChat();
+    setSettings(state, { ...state.settings, lookingBaseUrl: "" });
+    setup().open();
+    await vi.waitFor(() => expect(els.study.list.children).toHaveLength(1));
+    startStudy();
+    await vi.waitFor(() =>
+      expect(status.show).toHaveBeenCalledWith(
+        expect.stringContaining("picked on localhost:5001"),
+        "error",
+      ),
+    );
+    expect(confirm).not.toHaveBeenCalled();
+    expect(runStudy).not.toHaveBeenCalled();
+    expect(await store.getTimeline(VIDEO.fileKey)).toEqual(done);
+  });
+
+  it("resumes another model's study with it", async () => {
+    lookingChat();
+    const plan = planFor("eyes");
+    await store.putTimeline({
+      ...timeline([{ startSeconds: 0, endSeconds: 5, text: "She walks in" }]),
+      modelId: STUDY_MODEL_ID,
+      nextWindow: 1,
+      windowCount: plan.windows.length,
+    });
+    setup();
+    await vi.waitFor(() => expect(els.study.button.textContent).toBe("Resume"));
+    vi.mocked(runStudy).mockImplementationOnce((deps) => Promise.resolve(deps.timeline));
+    els.study.button.click();
+    await vi.waitFor(() => expect(runStudy).toHaveBeenCalled());
+    expect(vi.mocked(runStudy).mock.calls[0]?.[0].model.id).toBe("eyes");
   });
 });

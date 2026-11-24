@@ -5,6 +5,7 @@ import { imagesOf } from "../imageRefs";
 import type { Chat, ChatMessage, ChatStore, ModelInfo, VideoAttachment } from "../types";
 import { resolveOverviewResolution, resolveSheetResolution } from "../video/resolution";
 import { toolOffer, type ToolContext, type ToolOffer } from "../video/tools";
+import { pictureModel } from "./lookingConnection";
 
 export interface SheetSource {
   file: File;
@@ -16,7 +17,8 @@ export function toolContext(state: AppState, store: ChatStore): ToolContext | un
   const chat = state.currentChat;
   const model = currentModel(state);
   if (!chat?.video || state.video?.chatId !== chat.id || model === null) return undefined;
-  return sheetContext(chat, model, { ...state.video, video: chat.video }, store);
+  const seenBy = pictureModel(state, chat, model);
+  return sheetContext(chat, seenBy, { ...state.video, video: chat.video }, store);
 }
 
 export function sheetContext(
@@ -41,6 +43,7 @@ export interface LoadedParts {
   videoLoaded: boolean;
   // Audio is on for the message and the video has some to hear.
   listen: boolean;
+  looking?: boolean;
 }
 
 export function conversationTools(

@@ -1,6 +1,7 @@
 import { switchReply, type SwitchedReply } from "../chat/alternates";
 import { currentModel } from "../chat/models";
 import { videoKeysOf } from "../chat/store";
+import { withoutDescription } from "../chat/seen";
 import { storyForBranch } from "../chat/story";
 import { imagesOf } from "../imageRefs";
 import { extractTimedClaims, verifyClaims } from "../chat/verify";
@@ -22,6 +23,7 @@ import type {
   ImageRef,
   ImageStore,
   RunTool,
+  SeenNote,
   StreamChat,
   UserMessage,
 } from "../types";
@@ -30,7 +32,7 @@ import type { StatusLine } from "../ui/shared/status";
 import type { Toast, ToastHandle } from "../ui/shared/toast";
 import type { HeldImages, ImageCleanup } from "./imageCleanup";
 import { offerUndo } from "./undo";
-import { modelCallDeps } from "./modelCallDeps";
+import { pictureCallDeps, pictureModel } from "./lookingConnection";
 import { conversationTools } from "./toolContext";
 
 const REATTACH_TO_CHECK = "Reattach the video to check the timestamps.";
@@ -41,13 +43,18 @@ export interface MessageActions {
   copy(message: ChatMessage): Promise<void>;
   switchReply(user: UserMessage, index: number): Promise<void>;
   verify(message: AssistantMessage, signal: AbortSignal): Promise<AssistantMessage | undefined>;
+  // Drops what was seen of its pictures, so the next reply has them described afresh.
+  lookAgain(messageId: string, note: SeenNote): Promise<void>;
   invalidateUndo(): void;
 }
 
 export interface MessageActionsDeps {
   store: ChatStore;
   status: StatusLine;
-  conversation: { reset(messages: readonly ChatMessage[]): void };
+  conversation: {
+    reset(messages: readonly ChatMessage[]): void;
+    show(message: ChatMessage): void;
+  };
   toast: Toast;
   images: Pick<ImageCleanup, "hold">;
   streamChat: StreamChat;
@@ -75,6 +82,7 @@ export function initMessageActions(state: AppState, deps: MessageActionsDeps): M
     copy: (message) => copy(ctx, message),
     switchReply: (user, index) => switchTo(ctx, user, index),
     verify: (message, signal) => verify(ctx, message, signal),
+    lookAgain: (messageId, note) => lookAgain(ctx, messageId, note),
     invalidateUndo: () => invalidateUndo(ctx),
   };
 }
@@ -260,6 +268,20 @@ async function renderFrames(runTool: RunTool, times: number[]): Promise<ImageRef
   return result.images;
 }
 
+async function lookAgain(
+  { state, deps }: MessageActionsContext,
+  messageId: string,
+  note: SeenNote,
+): Promise<void> {
+  const chat = state.currentChat;
+  const message = state.messages.find((entry) => entry.id === messageId);
+  if (!chat || state.running || !message || message.role === "assistant") return;
+  const updated = withoutDescription(message, note);
+  upsertMessage(state, updated);
+  deps.conversation.show(updated);
+  await deps.store.putMessage(chat.id, updated);
+}
+
 async function loadImage(store: ImageStore, ref: ImageRef): Promise<string> {
   const blob = await store.getImage(ref.id);
   if (blob === undefined) throw new Error("A rendered frame is missing from the image store.");
@@ -276,6 +298,7 @@ async function verify(
   const model = currentModel(state);
   const claims = extractTimedClaims(message.text);
   if (!chat || model === null || claims.length === 0) return undefined;
+  const { id: modelId } = pictureModel(state, chat, model);
   const toolCtx = deps.toolContext();
   if (!toolCtx) {
     deps.toast.show(REATTACH_TO_CHECK);
@@ -293,7 +316,7 @@ async function verify(
   try {
     const checks = await verifyClaims(
       {
-        ...modelCallDeps(state, deps.streamChat, model.id, signal),
+        ...pictureCallDeps(state, chat, deps.streamChat, modelId, signal),
         renderFrames: (times) => renderFrames(runTool, times),
         loadImage: (ref) => loadImage(deps.store, ref),
       },

@@ -1,5 +1,6 @@
 import { isAbortError, orWhenAborted } from "../../abort";
 import type { ImageCleanup } from "../../app/imageCleanup";
+import { pictureModel } from "../../app/lookingConnection";
 import { sendBlocker } from "../../app/sendBlocker";
 import type { Turns } from "../../app/turns";
 import { downscaleUpload, type ScaledImage } from "../../attachments/images";
@@ -11,6 +12,7 @@ import {
 } from "../../audio/videoAudio";
 import { pinsExceedCap } from "../../chat/imageSelection";
 import { chatModelId, currentModel, resolveModel } from "../../chat/models";
+import { lookingModelId } from "../../chat/seen";
 import { effortFor, roundsFor, withEffort } from "../../chat/thoroughness";
 import type { AppElements } from "../../dom";
 import {
@@ -470,6 +472,8 @@ function readyVideo(ctx: ComposerContext): VideoAttachment | undefined {
 
 function pendingChanged(ctx: ComposerContext): void {
   renderPending(ctx);
+  // What is attached can be what a chat's model cannot be sent.
+  renderControls(ctx);
   ctx.deps.onPendingChanged();
 }
 
@@ -601,7 +605,8 @@ async function addImages(ctx: ComposerContext, files: readonly File[]): Promise<
   const downscale = ctx.deps.downscale ?? downscaleUpload;
   for (const file of files) {
     try {
-      const model = resolveModel(ctx.state, chatModelId(ctx.state, chat));
+      const own = resolveModel(ctx.state, chatModelId(ctx.state, chat));
+      const model = pictureModel(ctx.state, chat, own);
       const { px } = resolveSheetResolution(chat.settings.sheetResolution, model);
       const { sent, original } = await downscale(file, px);
       const id = await ctx.deps.store.putImage(sent.blob);
@@ -705,7 +710,8 @@ function readMessage(ctx: ComposerContext, chatId: string): TakenMessage | undef
     ...(audio ? { audio: true } : {}),
   };
   const messages: ChatMessage[] = [...state.messages, message];
-  if (pinsExceedCap(messages, model.maxImages)) {
+  const looking = lookingModelId(state.currentChat) !== undefined;
+  if (!looking && pinsExceedCap(messages, model.maxImages)) {
     deps.status.show(
       `Pinned images exceed the model's limit of ${model.maxImages}. Unpin some to send.`,
       "error",

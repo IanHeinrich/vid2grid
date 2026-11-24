@@ -3,7 +3,14 @@ import { blankChat } from "../src/chat/chats";
 import { createMemoryStore } from "../src/chat/store";
 import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
-import { createAppState, replaceChat, setChats, setCurrentChat, type AppState } from "../src/state";
+import {
+  createAppState,
+  replaceChat,
+  setChats,
+  setCurrentChat,
+  setSettings,
+  type AppState,
+} from "../src/state";
 import type { Chat, ChatMessage, ChatStore, Folder, VideoAttachment } from "../src/types";
 import { initSidebar, type SidebarDeps } from "../src/ui/shell/sidebar";
 import { initToast } from "../src/ui/shared/toast";
@@ -131,6 +138,33 @@ describe("initSidebar", () => {
     await vi.waitFor(() => expect(spies.onOpen).toHaveBeenCalledWith("chat-1"));
     expect(titles()).toEqual(["New chat", "Old chat"]);
     expect((await store.getChat("chat-1"))?.settings.modelId).toBe("qwen3-6-27b");
+  });
+
+  it("gives a new chat the default looking model", async () => {
+    setSettings(state, { ...state.settings, defaultLookingModelId: "eyes" });
+    initSidebar(els, state, deps);
+    els.sidebar.newChatButton.click();
+    await vi.waitFor(() => expect(spies.onOpen).toHaveBeenCalledWith("chat-1"));
+    expect((await store.getChat("chat-1"))?.settings.lookingModelId).toBe("eyes");
+  });
+
+  it("gives a reused empty chat the default looking model of now", async () => {
+    const onChatChanged = vi.fn();
+    deps.onChatChanged = onChatChanged;
+    await seed("old", 1, "Old chat");
+    setSettings(state, {
+      ...state.settings,
+      defaultLookingModelId: "eyes",
+      defaultLookingBaseUrl: "http://localhost:5001/v1",
+    });
+    initSidebar(els, state, deps);
+    els.sidebar.newChatButton.click();
+    await vi.waitFor(() => expect(spies.onOpen).toHaveBeenCalledWith("old"));
+    expect((await store.getChat("old"))?.settings).toMatchObject({
+      lookingModelId: "eyes",
+      lookingBaseUrl: "http://localhost:5001/v1",
+    });
+    expect(onChatChanged).toHaveBeenCalled();
   });
 
   it("renames a chat inline and saves the new title", async () => {

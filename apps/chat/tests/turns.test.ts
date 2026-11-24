@@ -18,6 +18,8 @@ import {
   setLoadedVideo,
   setModels,
   setRunning,
+  setSettings,
+  upsertMessage,
   type AppState,
 } from "../src/state";
 import { errorText } from "../src/text";
@@ -49,6 +51,7 @@ import { resolveSheetResolution } from "../src/video/resolution";
 import { conversationDeps } from "./support/conversationDeps";
 import { model } from "./support/factories";
 import { idleImages } from "./support/images";
+import { described } from "./support/looking";
 import { mountPage, stillToast } from "./support/page";
 import { waitForAbort } from "./support/streams";
 
@@ -245,6 +248,38 @@ describe("editing", () => {
     await editing;
     expect((await store.listMessages("chat")).map(({ text }) => text)).toContain("Typed at length");
     expect(editor()).toBeFalsy();
+  });
+
+  it("goes back in the editor when the looking server is gone, then saves on the newest copy", async () => {
+    const settings = { ...blankChat(MODEL, "chat", 1).settings, lookingModelId: "eyes" };
+    const lookingBaseUrl = "http://localhost:5001/v1";
+    await seed([{ ...U1, video: VIDEO }, A1], { settings: { ...settings, lookingBaseUrl } });
+    const { list } = els.conversation;
+    const editor = () => list.querySelector<HTMLTextAreaElement>(".message-editor textarea");
+    const saveEdit = () => list.querySelector<HTMLButtonElement>(".editor-save")?.click();
+    list.querySelector<HTMLElement>(".edit-action")?.click();
+    const input = editor();
+    if (!input) throw new Error("No editor");
+    input.value = "Typed at length";
+    const { video, ...bare } = { ...U1, video: VIDEO };
+    const removed = { ...bare, removedVideo: video };
+    const seen = [described(["i"], "A dog.")];
+    conversation.show(removed);
+    upsertMessage(state, { ...removed, seen });
+    saveEdit();
+    expect(editor()?.value).toBe("Typed at length");
+    await editing;
+    expect(document.activeElement).toBe(editor());
+    expect(list.querySelector(".error-line")?.textContent).toContain("no longer set up");
+    expect((await store.listMessages("chat"))[0]?.text).toBe("one");
+    expect(streamChat).not.toHaveBeenCalled();
+    setSettings(state, { ...state.settings, lookingBaseUrl });
+    saveEdit();
+    await editing;
+    expect(editor()).toBeNull();
+    const [saved, reply] = await store.listMessages("chat");
+    expect(saved).toEqual({ ...removed, text: "Typed at length", seen });
+    expect(reply).toMatchObject({ text: "New reply" });
   });
 
   it("goes back in the editor when a reply has begun meanwhile or no chat is open", async () => {

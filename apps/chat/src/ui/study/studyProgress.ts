@@ -1,5 +1,5 @@
 import { usageCostUsd } from "../../api/usage";
-import { resolveModel } from "../../chat/models";
+import { knownModel } from "../../app/lookingConnection";
 import { formatSpan } from "../../time";
 import type { ModelInfo, VideoTimeline } from "../../types";
 import type { ZoomPlan } from "../../video/study";
@@ -141,7 +141,7 @@ function zoomEndedView(
   timeline: VideoTimeline,
   zoom: FinishedZoom,
 ): ProgressView {
-  const spent = spentText(timeline, resolveModel(ctx.state, timeline.modelId));
+  const spent = spentText(timeline, knownModel(ctx.state, timeline.modelId));
   const paused = zoom.ending === "paused";
   return {
     kind: paused ? "paused" : "done",
@@ -153,7 +153,7 @@ function zoomEndedView(
 }
 
 function pausedView(ctx: StudyContext, timeline: VideoTimeline): ProgressView {
-  const spent = spentText(timeline, resolveModel(ctx.state, timeline.modelId));
+  const spent = spentText(timeline, knownModel(ctx.state, timeline.modelId));
   return {
     kind: "paused",
     title: `Study paused at ${timeline.nextWindow} of ${timeline.windowCount}`,
@@ -179,7 +179,7 @@ function doneView(
       : `Study done: ${count(total, "window")}`,
     detail: sentences(
       entriesText(timeline),
-      spentText(timeline, resolveModel(ctx.state, timeline.modelId)),
+      spentText(timeline, knownModel(ctx.state, timeline.modelId)),
     ),
     done,
     total,
@@ -194,7 +194,7 @@ function spentText(timeline: VideoTimeline, model: ModelInfo): string | undefine
   const { usage } = timeline;
   if (usage === undefined) return undefined;
   const tokens = count(usage.promptTokens + usage.completionTokens, "token");
-  const cost = usageCostUsd(usage, model.pricing);
+  const cost = timeline.mixedModels ? undefined : usageCostUsd(usage, model.pricing);
   return cost === undefined ? tokens : `${tokens}, $${cost.toFixed(2)}`;
 }
 
