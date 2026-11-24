@@ -1,7 +1,8 @@
 import { generateCollages, requestFromOptions } from "@vid2grid/core";
 import type { PlanOptionInput, RenderPlan, VideoInfo } from "@vid2grid/core";
-import { createBrowserPorts, probeVideo } from "@vid2grid/browser";
+import { createBrowserPorts, probeVideo, readFrameTimes } from "@vid2grid/browser";
 import type { VideoAttachment } from "../types";
+import { endingAtFrame } from "./lastFrame";
 
 const DEFAULT_JPEG_QUALITY = 80;
 
@@ -38,12 +39,14 @@ export async function renderSheets(
   values: PlanOptionInput,
   onProgress?: (done: number, total: number) => void,
 ): Promise<RenderedSheet[]> {
+  const frameTimes = await readFrameTimes(file).catch(() => undefined);
+  const inside = endingAtFrame(values, info, frameTimes?.at(-1));
   const request = requestFromOptions(
-    { ...values, jpegQuality: values.jpegQuality ?? DEFAULT_JPEG_QUALITY },
-    info,
+    { ...inside.values, jpegQuality: values.jpegQuality ?? DEFAULT_JPEG_QUALITY },
+    inside.info,
   );
   const { plan, sheets } = await generateCollages(file, request, createBrowserPorts(), {
-    videoInfo: info,
+    videoInfo: inside.info,
     ...(onProgress && {
       onProgress: (progress) => {
         if (progress.phase === "extracting") onProgress(progress.done, progress.total);

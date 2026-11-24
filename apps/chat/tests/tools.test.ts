@@ -410,6 +410,18 @@ describe("look limits", () => {
     expect(result.images).toEqual([]);
     expect(store.sheets.size).toBe(0);
   });
+
+  it("fails without caching when nothing could be captured", async () => {
+    const { run, store } = setup([]);
+
+    const result = await run(call("frames", { times: [119.95] }));
+
+    expect(result).toEqual({
+      text: "Error: Rendering failed: No frame was found there; try an earlier time.",
+      images: [],
+    });
+    expect(store.sheets.size).toBe(0);
+  });
 });
 
 describe("frames", () => {

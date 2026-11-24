@@ -4,6 +4,9 @@ import type { ImageArea, ImageRef, ImageStore, SheetCache, ZoomTarget } from "..
 const SHEET_KEY = /^(.*)#\[.*\](?:@.*)?$/s;
 const ZOOM_PREFIX = "zoom#";
 
+// Raised when the same request would render different pictures, so older sheets are not reused.
+const RENDER_VERSION = 2;
+
 export function sheetCacheKey(
   fileKey: string,
   values: PlanOptionInput,
@@ -13,7 +16,7 @@ export function sheetCacheKey(
     .filter(([, value]) => value !== undefined)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   const times = keyframeTimes === undefined ? "" : `@${keyframeTimes.join(",")}`;
-  return `${fileKey}#${JSON.stringify(entries)}${times}`;
+  return `${fileKey}#${JSON.stringify([RENDER_VERSION, ...entries])}${times}`;
 }
 
 export function zoomCacheKey(target: ZoomTarget, wanted: ImageArea, resolution: number): string {
