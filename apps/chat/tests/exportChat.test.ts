@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   BACKUP_FORMAT,
   BACKUP_VERSION,
@@ -290,6 +290,36 @@ describe("importBackup", () => {
     expect((await store.getChat("c1"))?.title).toBe("Chat c1");
     expect((await store.getChat("c1-copy"))?.title).toBe("Chat c1 (imported)");
     expect(await store.listMessages("c1-copy")).toHaveLength(7);
+  });
+});
+
+describe("importing while another tab deletes chats", () => {
+  it("leaves out a chat deleted meanwhile and restores the rest", async () => {
+    const { store } = await seededStore();
+    await store.putChat({ ...chat("c2"), updatedAt: 0 });
+    await store.putMessage("c2", { id: "m", createdAt: 1, role: "user", text: "hi", images: [] });
+    const blob = await asFile(await exportBackup(store));
+    const target = createMemoryStore();
+    const putMessage = target.putMessage.bind(target);
+    target.putMessage = async (chatId, message) => {
+      await putMessage(chatId, message);
+      if (chatId === "c1") await target.deleteChat("c1");
+    };
+    const letGo = vi.fn();
+    const counts = await importBackup(target, blob, { hold: () => ({ letGo }) });
+    expect(counts).toMatchObject({ chats: 1, messages: 1, timelines: 1 });
+    expect((await target.listChats()).map(({ id }) => id)).toEqual(["c2"]);
+    expect(await target.listMessages("c1")).toEqual([]);
+    expect(await target.listMessages("c2")).toHaveLength(1);
+    expect(letGo).toHaveBeenCalledTimes(1);
+  });
+
+  it("still stops when a message of a chat that is there cannot be saved", async () => {
+    const { store } = await seededStore();
+    const blob = await asFile(await exportBackup(store));
+    const target = createMemoryStore();
+    target.putMessage = () => Promise.reject(new Error("Disk full"));
+    await expect(importBackup(target, blob)).rejects.toThrow("Disk full");
   });
 });
 

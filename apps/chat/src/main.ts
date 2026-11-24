@@ -128,7 +128,8 @@ function conversationDeps(app: () => App, store: ChatStore, state: AppState): Co
         "save the message",
         persistMessage({ state, store, onChanged: () => app().usage.render() }, message),
       ),
-    onEdit: (message, text) => surface(app(), "edit the message", app().turns.edit(message, text)),
+    onEdit: (message, text, onUnsaved) =>
+      surface(app(), "edit the message", app().turns.edit(message, text, onUnsaved)),
     onReplay: () => surface(app(), "replay", app().turns.replay()),
     onKeepGoing: () => surface(app(), "keep going", app().turns.keepGoing()),
     onBranch: (message) => reportFailure(app(), "branch", app().actions.branch(message)),
@@ -304,6 +305,7 @@ function initFirstRun(
   const connectionTest = initConnectionTest(els, state, { onTested: () => welcome.render() });
   initBackup(els, {
     store,
+    images: imagesOf(app),
     toast: { show: (text) => app().toast.show(text) },
     download: downloadBlob,
     onRestored: () => reloadChats(app()),

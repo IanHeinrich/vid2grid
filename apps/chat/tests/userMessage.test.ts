@@ -112,6 +112,74 @@ describe("editing", () => {
     expect(buttonsLabelled("Save")[0]?.disabled).toBe(true);
   });
 
+  describe("that could not be saved", () => {
+    function save(edit: number, text: string): void {
+      buttonsLabelled("Edit message")[edit]?.click();
+      const textarea = editor();
+      if (!textarea) throw new Error("No editor");
+      textarea.value = text;
+      buttonsLabelled("Save")[0]?.click();
+    }
+
+    function refuse(call: number): void {
+      const onUnsaved = spies.onEdit.mock.calls[call]?.[2] as (() => void) | undefined;
+      onUnsaved?.();
+    }
+
+    it("comes back once the editor opened meanwhile closes, which keeps its own text", () => {
+      const conversation = initConversation(els, deps());
+      conversation.reset(exchanges());
+      save(0, "One, edited");
+      buttonsLabelled("Edit message")[1]?.click();
+      const other = editor();
+      if (!other) throw new Error("No editor");
+      other.value = "First, half typed";
+      refuse(0);
+      expect(editor()?.value).toBe("First, half typed");
+      buttonsLabelled("Cancel")[0]?.click();
+      expect(editor()?.value).toBe("One, edited");
+      buttonsLabelled("Cancel")[0]?.click();
+      expect(editor()).toBeNull();
+    });
+
+    it("comes back after another edit is saved, then that one when it is refused too", () => {
+      const conversation = initConversation(els, deps());
+      conversation.reset(exchanges());
+      save(0, "One, edited");
+      save(1, "First, edited");
+      refuse(0);
+      expect(editor()?.value).toBe("One, edited");
+      refuse(1);
+      expect(editor()?.value).toBe("One, edited");
+      buttonsLabelled("Cancel")[0]?.click();
+      expect(editor()?.value).toBe("First, edited");
+    });
+
+    it("comes back each time its chat is shown, until it is saved or cancelled", () => {
+      const conversation = initConversation(els, deps());
+      conversation.reset(exchanges());
+      save(0, "One, edited");
+      conversation.reset([user("x1", "Another chat")]);
+      refuse(0);
+      expect(editor()).toBeNull();
+      for (let shown = 0; shown < 2; shown++) {
+        conversation.reset(exchanges());
+        expect(editor()?.value).toBe("One, edited");
+        conversation.reset([user("x1", "Another chat")]);
+        expect(editor()).toBeNull();
+      }
+      conversation.reset(exchanges());
+      buttonsLabelled("Save")[0]?.click();
+      expect(spies.onEdit).toHaveBeenLastCalledWith(
+        expect.objectContaining({ id: "u1" }),
+        "One, edited",
+        expect.any(Function),
+      );
+      conversation.reset(exchanges());
+      expect(editor()).toBeNull();
+    });
+  });
+
   it("refuses to save an assistant reply as empty", () => {
     const conversation = initConversation(els, deps());
     conversation.reset(exchanges());

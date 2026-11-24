@@ -17,8 +17,10 @@ import {
   setCurrentChat,
   setLoadedVideo,
   setModels,
+  setRunning,
   type AppState,
 } from "../src/state";
+import { errorText } from "../src/text";
 import type {
   Chat,
   ChatMessage,
@@ -69,6 +71,7 @@ let conversation: Conversation;
 let status: { show: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn> };
 let toast: { show: ReturnType<typeof vi.fn> };
 let streamChat: ReturnType<typeof vi.fn<StreamChat>>;
+let editing: Promise<void>;
 
 const U1: UserMessage = { id: "U1", createdAt: 1, role: "user", text: "one", images: [] };
 const A1: ChatMessage = {
@@ -145,6 +148,9 @@ beforeEach(() => {
       chatModelId: () => state.currentChat?.settings.modelId,
       pickerSettings: storedPickerSettings(state, localStorage),
       onVerify: () => Promise.resolve(undefined),
+      onEdit: (message, text, onUnsaved) => {
+        editing = turns().edit(message, text, onUnsaved);
+      },
     }),
   );
 });
@@ -200,6 +206,67 @@ describe("editing", () => {
     expect(messages[3]).toEqual(expect.objectContaining({ text: "New reply" }));
     expect(messages[2]).toEqual(expect.objectContaining({ text: "two, edited" }));
     expect(streamChat).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["the last message, which would run the turn again", "two"],
+    ["an earlier message", "one"],
+    ["a reply", "Old two"],
+  ])("goes back in the editor when it cannot be saved: %s", async (_what, shown) => {
+    await seed([U1, A1, U2, A2]);
+    await store.deleteChat("chat");
+    const { list } = els.conversation;
+    const message = () =>
+      [...list.querySelectorAll<HTMLElement>(".message")].find(
+        (el) => el.querySelector(".message-text")?.textContent.trim() === shown,
+      );
+    const editor = () => message()?.querySelector<HTMLTextAreaElement>(".message-editor textarea");
+    const save = () => message()?.querySelector<HTMLButtonElement>(".editor-save");
+    message()?.querySelector<HTMLElement>(".edit-action")?.click();
+    const input = editor();
+    if (!input) throw new Error("No editor");
+    input.value = "Typed at length";
+    save()?.click();
+    expect(editor()).toBeFalsy();
+    const error = await editing.then(
+      () => status.show.mock.calls.at(-1),
+      (reason: unknown) => [errorText(reason), "error"],
+    );
+    expect(error).toEqual(["This chat has been deleted.", "error"]);
+    expect(editor()?.value).toBe("Typed at length");
+    expect(document.activeElement).toBe(editor());
+    expect(save()?.disabled).toBe(false);
+    expect(state.messages).toEqual([U1, A1, U2, A2]);
+    expect(streamChat).not.toHaveBeenCalled();
+    const chat = state.currentChat;
+    if (chat) await store.putChat(chat);
+    save()?.click();
+    await editing;
+    expect((await store.listMessages("chat")).map(({ text }) => text)).toContain("Typed at length");
+    expect(editor()).toBeFalsy();
+  });
+
+  it("goes back in the editor when a reply has begun meanwhile or no chat is open", async () => {
+    await seed([U1, A1]);
+    const onUnsaved = vi.fn();
+    setRunning(state, true);
+    await turns().edit(U1, "one, edited", onUnsaved);
+    expect(onUnsaved).toHaveBeenCalledTimes(1);
+    setRunning(state, false);
+    setCurrentChat(state, null, []);
+    await turns().edit(U1, "one, edited", onUnsaved);
+    expect(onUnsaved).toHaveBeenCalledTimes(2);
+    expect(await store.listMessages("chat")).toEqual([U1, A1]);
+  });
+
+  it("is never handed back once it is saved", async () => {
+    await seed([U1, A1]);
+    const onUnsaved = vi.fn();
+    store.deleteMessages = () => Promise.reject(new Error("quota"));
+    await turns().edit(U1, "one, edited", onUnsaved);
+    expect(status.show).toHaveBeenLastCalledWith("quota", "error");
+    expect(onUnsaved).not.toHaveBeenCalled();
+    expect((await store.listMessages("chat"))[0]).toMatchObject({ text: "one, edited" });
   });
 
   it("only updates an earlier message or a reply", async () => {

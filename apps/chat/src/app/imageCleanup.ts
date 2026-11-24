@@ -1,7 +1,7 @@
 import { videoKeysOf } from "../chat/store";
 import { checkedImageUse, imageUse, joinUses, type ImageHolder } from "../imageIds";
 import { pendingHolder, type AppState } from "../state";
-import type { ImageRelease, ImageUse, UnusedImages } from "../types";
+import type { AskedWhen, ImageRelease, ImageUse, UnusedImages } from "../types";
 import type { TabRefusal, Tabs } from "./tabs";
 
 export interface HeldImages {
@@ -23,7 +23,7 @@ export interface ImageCleanup {
   countUnused(): Promise<UnusedImages>;
   // Counted again for a deletion, or why there can be none now.
   countToDelete(): Promise<{ counted: UnusedImages } | { refused: SweepRefusal }>;
-  // False when this tab cannot say whether other tabs are open.
+  // False when this tab cannot say whether other tabs are open, or cannot yet.
   readonly canDelete: boolean;
   deleteUnused(counted: UnusedImages): Promise<SweepResult>;
 }
@@ -46,7 +46,9 @@ export function createImageCleanup(state: AppState, deps: ImageCleanupDeps): Ima
     release: (dropped) => release(ctx, dropped),
     countUnused: () => deps.store.countUnusedImages(() => unsavedUse(ctx)),
     countToDelete: () => countToDelete(ctx),
-    canDelete: deps.tabs.supported,
+    get canDelete() {
+      return deps.tabs.supported;
+    },
     deleteUnused: (counted) => deleteUnused(ctx, counted),
   };
 }
@@ -79,17 +81,24 @@ async function release(ctx: CleanupContext, holder: ImageHolder): Promise<void> 
   try {
     const dropped = imageUse(holder);
     if (dropped.images.size === 0 && dropped.videos.size === 0) return;
-    const unsaved = (inTime: () => boolean) =>
-      running() || !inTime() ? undefined : unsavedUse(ctx);
     const refused =
       running() ||
       "refused" in
-        (await tabs.whileAlone((inTime) => store.releaseImages(dropped, () => unsaved(inTime))));
+        (await tabs.whileAlone((inTime) =>
+          store.releaseImages(dropped, (when) =>
+            running() || tooLate(when, inTime) ? undefined : unsavedUse(ctx),
+          ),
+        ));
     // Still told, so a sweep no longer takes them for images about to be saved.
     if (refused) await store.releaseImages(dropped, () => undefined);
   } catch {
     // The images stay, and the count in Settings says what stops them from being deleted.
   }
+}
+
+// Once begun, a deletion holds back what any other tab reads, so slow reads need not stop it.
+function tooLate(when: AskedWhen, inTime: () => boolean): boolean {
+  return when !== "inside" && !inTime();
 }
 
 function blocker({ state, held }: CleanupContext): SweepRefusal | undefined {
@@ -112,8 +121,8 @@ async function deleteUnused(ctx: CleanupContext, counted: UnusedImages): Promise
   const refused = blocker(ctx);
   if (refused) return { refused };
   const result = await tabs.whileAlone((inTime) =>
-    store.deleteUnusedImages(counted, () =>
-      blocker(ctx) || !inTime() ? undefined : unsavedUse(ctx),
+    store.deleteUnusedImages(counted, (when) =>
+      blocker(ctx) || tooLate(when, inTime) ? undefined : unsavedUse(ctx),
     ),
   );
   if ("refused" in result) return result;

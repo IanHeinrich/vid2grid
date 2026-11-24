@@ -127,6 +127,20 @@ export function reopenEditor(ctx: ConversationContext, draft: Draft): void {
   }
 }
 
+// Those that cannot open yet wait for the open editor to close or for their chat to be shown.
+export function reopenUnsaved(ctx: ConversationContext, focused: boolean): void {
+  for (const [id, text] of ctx.unsavedEdits) {
+    if (ctx.editor) return;
+    reopenEditor(ctx, { id, text, focused });
+  }
+}
+
+function keepUnsaved(ctx: ConversationContext, id: string, text: string): void {
+  ctx.unsavedEdits.set(id, text);
+  ctx.pendingFocus = null;
+  reopenUnsaved(ctx, true);
+}
+
 export function editLast(ctx: ConversationContext): boolean {
   if (ctx.deps.isRunning() || ctx.editor) return false;
   for (const turn of [...ctx.turns].reverse()) {
@@ -160,15 +174,17 @@ export function startEdit(
   problem.hidden = true;
   const finish = (text: string | null) => {
     ctx.editor = null;
+    ctx.unsavedEdits.delete(message.id);
     el.classList.remove("is-editing");
     editor.remove();
     if (text !== null && text !== message.text) {
       ctx.pendingFocus = { kind: "message", id: message.id };
-      ctx.deps.onEdit(message, text);
-      return;
+      ctx.deps.onEdit(message, text, () => keepUnsaved(ctx, message.id, text));
+    } else {
+      rerender();
+      focusWithin(ctx, messageElement(ctx, message.id));
     }
-    rerender();
-    focusWithin(ctx, messageElement(ctx, message.id));
+    reopenUnsaved(ctx, false);
   };
   const save = smallButton("button primary editor-save", "Save", () => {
     const text = textarea.value.trim();

@@ -14,6 +14,7 @@ import type {
   VideoCast,
   VideoTimeline,
 } from "../src/types";
+import { sheetCacheKey } from "../src/video/sheetCache";
 import { tool } from "./support/factories";
 import { isStored, NOTHING, saveImage, stores, sweep, use } from "./support/images";
 
@@ -108,6 +109,8 @@ describe.each(stores)("%s chat store chats and messages", (_name, open) => {
 
   it("lists a chat's messages by createdAt, ties in insertion order", async () => {
     const store = await open();
+    await store.putChat(chat("a", 1));
+    await store.putChat(chat("b", 1));
     await store.putMessage("a", userMessage("late", 20));
     await store.putMessage("a", userMessage("tie-1", 10));
     await store.putMessage("b", userMessage("other", 5));
@@ -123,6 +126,7 @@ describe.each(stores)("%s chat store chats and messages", (_name, open) => {
 
   it("upserts a message by id, keeping its place", async () => {
     const store = await open();
+    await store.putChat(chat("a", 1));
     await store.putMessage("a", userMessage("first", 10, "draft"));
     await store.putMessage("a", userMessage("second", 10));
     await store.putMessage("a", userMessage("first", 10, "final"));
@@ -133,6 +137,8 @@ describe.each(stores)("%s chat store chats and messages", (_name, open) => {
 
   it("deletes only the named messages of one chat", async () => {
     const store = await open();
+    await store.putChat(chat("a", 1));
+    await store.putChat(chat("b", 1));
     await store.putMessage("a", userMessage("keep", 1));
     await store.putMessage("a", userMessage("drop-1", 2));
     await store.putMessage("a", userMessage("drop-2", 3));
@@ -140,6 +146,46 @@ describe.each(stores)("%s chat store chats and messages", (_name, open) => {
     await store.deleteMessages("a", ["drop-1", "drop-2", "missing"]);
     expect((await store.listMessages("a")).map((m) => m.id)).toEqual(["keep"]);
     expect((await store.listMessages("b")).map((m) => m.id)).toEqual(["drop-1"]);
+  });
+
+  it("saves no message to a chat that is gone or was never there, until it is put back", async () => {
+    const store = await open();
+    const id = await saveImage(store);
+    const message = tool("t", "call", [{ ...sheetRef, id }]);
+    const gone = "This chat has been deleted.";
+    await expect(store.putMessage("a", message)).rejects.toThrow(gone);
+    await store.putChat(chat("a", 1));
+    await store.putMessage("a", message);
+    await store.deleteChat("a");
+    await expect(store.putMessage("a", message)).rejects.toThrow(gone);
+    expect(await store.listMessages("a")).toEqual([]);
+    expect((await store.countUnusedImages(() => NOTHING)).images).toEqual([id]);
+    await store.putChat(chat("a", 1));
+    await store.putMessage("a", message);
+    expect(await store.listMessages("a")).toEqual([message]);
+  });
+
+  it("still spares a new image whose message was refused", async () => {
+    const store = await open();
+    const id = await saveImage(store);
+    const refused = store.putMessage("a", tool("t", "call", [{ ...sheetRef, id }]));
+    await expect(refused).rejects.toThrow();
+    expect((await sweep(store))?.images).toEqual([]);
+    expect(await isStored(store, id)).toBe(true);
+  });
+});
+
+describe("IndexedDB chat store messages of a deleted chat", () => {
+  it("refuses one saved in another tab just after the chat is deleted", async () => {
+    const tabs = { name: "deleted", factory: new IDBFactory() };
+    const [here, there] = [await openChatStore(tabs), await openChatStore(tabs)];
+    await here.putChat(chat("a", 1));
+    await there.putMessage("a", userMessage("first", 1));
+    const deleting = here.deleteChat("a");
+    const saving = there.putMessage("a", userMessage("second", 2));
+    await expect(saving).rejects.toThrow("This chat has been deleted.");
+    await deleting;
+    expect(await there.listMessages("a")).toEqual([]);
   });
 });
 
@@ -265,6 +311,7 @@ describe.each(stores)("%s chat store swipes and cast", (_name, open) => {
       replyIndex: 1,
       replyModelId: "model",
     };
+    await store.putChat(chat("a", 1));
     await store.putMessage("a", message);
     expect(await store.listMessages("a")).toEqual([message]);
   });
@@ -639,14 +686,16 @@ describe("IndexedDB chat store upgrade that closes older builds", () => {
 describe.each(stores)("%s chat store unused images", (_name, open) => {
   async function orphan(store: ChatStore, text: string): Promise<string> {
     const id = await saveImage(store, text);
+    await store.putChat(chat("gone", 1));
     await store.putMessage("gone", tool("t", "call", [{ ...sheetRef, id }]));
-    await store.deleteMessages("gone", ["t"]);
+    await store.deleteChat("gone");
     return id;
   }
 
   it("counts what nothing refers to, then deletes just that", async () => {
     const store = await open();
     const kept = await saveImage(store, "kept");
+    await store.putChat(chat("c", 1));
     await store.putMessage("c", tool("t", "call", [{ ...sheetRef, id: kept }]));
     const ids = [await orphan(store, "12345"), await orphan(store, "123")];
     const counted = await store.countUnusedImages(() => NOTHING);
@@ -688,6 +737,7 @@ describe.each(stores)("%s chat store unused images", (_name, open) => {
   it("saves a message and sheets even when their images cannot be read", async () => {
     const store = await open();
     const odd = { ...userMessage("odd", 1), images: [{ id: 3 }, "x"], alternates: [null] };
+    await store.putChat(chat("c", 1));
     await store.putMessage("c", odd as unknown as ChatMessage);
     await store.putSheets("key", [null] as unknown as ImageRef[]);
     expect(await store.listMessages("c")).toHaveLength(1);
@@ -725,6 +775,7 @@ describe("IndexedDB chat store image release", () => {
     const tabs = { name: "test", factory: new IDBFactory() };
     const [here, there] = [await openChatStore(tabs), await openChatStore(tabs)];
     const id = await saveImage(here);
+    await here.putChat(chat("c", 1));
     const message = tool("t", "call", [{ ...sheetRef, id }]);
     const saving = there.putMessage("c", message);
     await Promise.all([saving, here.releaseImages(use([id]), () => NOTHING)]);
@@ -738,5 +789,36 @@ describe("IndexedDB chat store image release", () => {
     const later = there.putMessage("c", message).then(() => order.push("saved"));
     await Promise.all([releasing, later]);
     expect(order).toEqual(["asked", "asked", "saved"]);
+  });
+
+  it("makes what another tab reads meanwhile wait, so it never sees what is being deleted", async () => {
+    const tabs = { name: "reads", factory: new IDBFactory() };
+    const [here, there] = [await openChatStore(tabs), await openChatStore(tabs)];
+    const id = await saveImage(here);
+    const key = sheetCacheKey("video.mp4|100|1", { frameCount: 16 });
+    await here.putSheets(key, [{ ...sheetRef, id }]);
+    const counted = await here.countUnusedImages(() => NOTHING);
+    const order: string[] = [];
+    let read: Promise<unknown[]> = Promise.resolve([]);
+    const seen = async <T>(reading: Promise<T>): Promise<T> => {
+      const value = await reading;
+      order.push("read");
+      return value;
+    };
+    const deleting = here.deleteUnusedImages(counted, (when) => {
+      order.push(when);
+      if (when === "before") return NOTHING;
+      // Asked for while the delete is under way, as by a tab that gave up waiting to join.
+      read = Promise.all([
+        seen(there.getImage(id)),
+        seen(there.getSheets(key)),
+        seen(there.listChats()),
+        seen(there.listMessages("c")),
+      ]);
+      return NOTHING;
+    });
+    expect((await deleting)?.images).toEqual([id]);
+    expect(await read).toEqual([undefined, undefined, [], []]);
+    expect(order).toEqual(["before", "inside", "read", "read", "read", "read"]);
   });
 });

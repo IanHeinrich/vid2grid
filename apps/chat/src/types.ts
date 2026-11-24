@@ -397,8 +397,11 @@ export interface ImageUse {
   videos: ReadonlySet<string>;
 }
 
-// What is in use but not saved, or undefined to delete nothing; asked again inside the transaction.
-export type UnsavedUse = () => ImageUse | undefined;
+// Just before the transaction is created, and again inside it once everything stored is read.
+export type AskedWhen = "before" | "inside";
+
+// What is in use but not saved, or undefined to delete nothing.
+export type UnsavedUse = (when: AskedWhen) => ImageUse | undefined;
 
 export interface UnusedImages {
   images: readonly string[];
@@ -426,6 +429,7 @@ export interface ChatStore extends ImageStore, SheetCache, ImageRelease {
   putFolder(folder: Folder): Promise<void>;
   deleteFolder(id: string): Promise<void>;
   listMessages(chatId: string): Promise<ChatMessage[]>;
+  // Rejects when the chat is gone, since what its messages refer to could then never be deleted.
   putMessage(chatId: string, message: ChatMessage): Promise<void>;
   deleteMessages(chatId: string, ids: readonly string[]): Promise<void>;
   getTimeline(fileKey: string): Promise<VideoTimeline | undefined>;

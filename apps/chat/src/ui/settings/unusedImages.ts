@@ -16,10 +16,10 @@ export interface UnusedImagesDeps {
 
 const REFUSALS: Record<SweepRefusal, string> = {
   running: "Wait for the reply to finish, then try again.",
-  undo: "A deletion can still be undone. Try again in a few seconds.",
+  undo: "A deletion can still be undone, or a restore is running. Try again in a few seconds.",
   late: "That took too long to be safe, so nothing was deleted. Try again.",
   otherTabs: "Close the other vid2grid chat tabs, then try again.",
-  unsupported: "This browser cannot tell whether other tabs use them, so they are kept.",
+  unsupported: "This tab cannot tell whether other tabs use them, so they are kept.",
 };
 
 function unusedText({ images, bytes }: UnusedImages): string {

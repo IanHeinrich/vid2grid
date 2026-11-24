@@ -3,13 +3,14 @@ import { chatToMarkdown } from "../../chat/exportChat";
 import { defaultModelId } from "../../chat/models";
 import { videoKeysOf } from "../../chat/store";
 import type { AppElements } from "../../dom";
-import type { ImageHolder } from "../../imageIds";
 import {
   currentPending,
   pendingFor,
   pendingHolder,
   removeChat,
+  removeDraft,
   replaceChat,
+  unlistChat,
   updateChat,
   type AppState,
 } from "../../state";
@@ -57,8 +58,6 @@ interface DeletedChat {
   messages: ChatMessage[];
   handle: FileSystemFileHandle | undefined;
   wasCurrent: boolean;
-  // Dropped with the chat and not brought back with it.
-  pending: ImageHolder;
 }
 
 interface SidebarContext {
@@ -496,9 +495,8 @@ async function deleteChat(ctx: SidebarContext, chatId: string): Promise<void> {
   if (!chat) return;
   const wasCurrent = state.currentChat?.id === chat.id;
   if (wasCurrent) deps.onDeletingCurrent();
-  const pending = pendingHolder(pendingFor(state, chat.id));
   // Removed from the state first, so a stopping turn sees the chat is gone and stops writing.
-  removeChat(state, chat.id);
+  unlistChat(state, chat.id);
   renderList(ctx);
   let deleted: DeletedChat;
   let held: HeldImages | undefined;
@@ -507,7 +505,7 @@ async function deleteChat(ctx: SidebarContext, chatId: string): Promise<void> {
       deps.store.listMessages(chat.id),
       deps.store.getVideoHandle(chat.id),
     ]);
-    deleted = { chat, messages, handle, wasCurrent, pending };
+    deleted = { chat, messages, handle, wasCurrent };
     // Held before anything is deleted, so the images are never without a use while Undo is open.
     held = deps.images.hold({ messages, videoKeys: videoKeysOf(chat, messages) });
     await deps.store.deleteChat(chat.id);
@@ -518,24 +516,33 @@ async function deleteChat(ctx: SidebarContext, chatId: string): Promise<void> {
     if (wasCurrent) deps.onOpen(chat.id);
     throw error;
   }
+  const heldDraft = deps.images.hold(pendingHolder(pendingFor(state, chat.id)));
+  removeChat(state, chat.id);
   deps.onDeleted(chat);
   if (wasCurrent) deps.onCurrentDeleted();
-  offerChatUndo(ctx, deleted, held);
+  offerChatUndo(ctx, deleted, held, heldDraft);
 }
 
-function offerChatUndo(ctx: SidebarContext, deleted: DeletedChat, held: HeldImages): void {
+// The draft is not brought back with the chat, so either way it is let go.
+function offerChatUndo(
+  ctx: SidebarContext,
+  deleted: DeletedChat,
+  held: HeldImages,
+  heldDraft: HeldImages,
+): void {
   const { deps } = ctx;
-  const { chat, messages, pending } = deleted;
+  const { chat, messages } = deleted;
   const final = () => {
     deps.onDeleteFinal(videoKeysOf(chat, messages));
     held.final();
-    void deps.images.release(pending);
+    heldDraft.final();
+    releaseLateDraft(ctx, chat.id);
   };
   offerUndo(deps.toast, `Deleted "${chat.title}"`, {
     undo: async () => {
       await restoreChat(ctx, deleted);
       held.letGo();
-      void deps.images.release(pending);
+      heldDraft.final();
     },
     expired: final,
     failed: (error) => {
@@ -543,6 +550,14 @@ function offerChatUndo(ctx: SidebarContext, deleted: DeletedChat, held: HeldImag
       final();
     },
   });
+}
+
+// What a save refused since the delete put back; a restored backup can list the chat again.
+function releaseLateDraft({ state, deps }: SidebarContext, chatId: string): void {
+  if (state.chats.some((entry) => entry.id === chatId)) return;
+  const late = pendingHolder(pendingFor(state, chatId));
+  removeDraft(state, chatId);
+  void deps.images.release(late);
 }
 
 async function restoreChat(ctx: SidebarContext, deleted: DeletedChat): Promise<void> {

@@ -1,14 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   currentPending,
+  overviewFor,
   pendingFor,
   pendingVideo,
   removeChat,
   removePendingVideo,
+  replaceChat,
   setRunning,
+  unlistChat,
   updateChat,
 } from "../src/state";
 import type { ImageRef } from "../src/types";
+import { upload } from "./support/factories";
 import {
   attachAndSend,
   attachmentFor,
@@ -78,6 +82,23 @@ describe("an overview that finishes after its video has gone", () => {
 
   it("lets its sheets go when the chat was deleted", () =>
     finishAfter(() => removeChat(state, "chat")));
+});
+
+describe("an overview that finishes while its chat is being deleted", () => {
+  it("stays with the pending video, for when the delete fails", async () => {
+    const rendered = deferred<ImageRef[]>();
+    const videos = panel({ renderOverview: () => rendered.promise });
+    await videos.attach(video("one.mp4", 1));
+    const { currentChat } = state;
+    spies.images.release.mockClear();
+    unlistChat(state, "chat");
+    videos.render();
+    rendered.resolve([upload("s")]);
+    await vi.waitFor(() => expect(spies.onOverview).toHaveBeenCalledWith("chat", [upload("s")]));
+    if (currentChat) replaceChat(state, currentChat);
+    expect(overviewFor(state, "chat")).toMatchObject({ kind: "ready", sheets: 1 });
+    expect(spies.images.release).not.toHaveBeenCalled();
+  });
 });
 
 describe("dropping the same video into a new chat, when something is in the way", () => {

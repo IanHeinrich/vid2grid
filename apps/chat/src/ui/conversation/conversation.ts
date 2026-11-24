@@ -18,7 +18,7 @@ import { renderReadyCard, setReady } from "./readyCard";
 import { closeCompare, stopChecks } from "./replyControls";
 import { togglePinFromLightbox } from "./thumbnails";
 import { createTurn, renderActivity, renderAnswer, renderTurn, streamingStep } from "./turnView";
-import { currentDraft, editLast, renderUser, reopenEditor } from "./userMessage";
+import { currentDraft, editLast, renderUser, reopenEditor, reopenUnsaved } from "./userMessage";
 import { aspectOf, renderVideoSlot } from "./videoSlot";
 
 export type { ConversationDeps } from "./context";
@@ -80,6 +80,7 @@ export function initConversation(
     messages: new Map(),
     videoSlots: new Map(),
     editor: null,
+    unsavedEdits: new Map(),
     pendingFocus: null,
     stickToBottom: true,
     waiting: null,
@@ -166,6 +167,7 @@ function reset(ctx: ConversationContext, messages: readonly ChatMessage[]): void
     if (!ctx.messages.has(key)) ctx.activityOpen.delete(key);
   }
   if (draft) reopenEditor(ctx, draft);
+  reopenUnsaved(ctx, false);
   ctx.stickToBottom = true;
   afterChange(ctx);
 }

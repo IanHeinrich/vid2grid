@@ -68,6 +68,8 @@ export interface TurnRequest {
   audio?: boolean;
   // Writes the latest reply again with this model, keeping the shown one as a swipe.
   compareWith?: ModelInfo;
+  // The message could not be saved, so what it was made from goes back to the user.
+  onUnsaved?: () => void;
 }
 
 export interface Turns {
@@ -75,7 +77,11 @@ export interface Turns {
   run(prepare: (signal: AbortSignal) => Promise<TurnRequest | undefined>): Promise<void>;
   replay(): Promise<void>;
   compare(model: ModelInfo): Promise<void>;
-  edit(message: UserMessage | AssistantMessage, text: string): Promise<void>;
+  edit(
+    message: UserMessage | AssistantMessage,
+    text: string,
+    onUnsaved?: () => void,
+  ): Promise<void>;
   keepGoing(): Promise<void>;
   stop(): void;
   // Cuts the running round short: it answers from what it has seen, with no more tool calls.
@@ -146,7 +152,7 @@ export function initTurns(state: AppState, deps: TurnsDeps): Turns {
     run: (prepare) => run(ctx, prepare),
     replay: () => replay(ctx),
     compare: (model) => compare(ctx, model),
-    edit: (message, text) => edit(ctx, message, text),
+    edit: (message, text, onUnsaved) => edit(ctx, message, text, onUnsaved),
     keepGoing: () => keepGoing(ctx),
     stop: () => currentTurn(ctx)?.controller.abort(),
     answerNow: () => currentTurn(ctx)?.answerNow.abort(),
@@ -180,7 +186,9 @@ async function run(
     const request = await prepare(signal);
     if (!request) return;
     // The composer has already cleared the message, so it is kept even when no reply follows.
-    if (request.message) await saveUserMessage(ctx, chat.id, request.message);
+    if (request.message) {
+      await saveUserMessage(ctx, chat.id, request.message, request.onUnsaved);
+    }
     const stopped = signal.aborted || ctx.state.currentChat?.id !== chat.id;
     if (stopped && !request.message) return;
     const turnChat = await touchChat(ctx, chat.id, request.message);
@@ -201,12 +209,22 @@ async function run(
   }
 }
 
+async function orUnsaved(saving: Promise<void>, onUnsaved?: () => void): Promise<void> {
+  try {
+    await saving;
+  } catch (error) {
+    onUnsaved?.();
+    throw error;
+  }
+}
+
 async function saveUserMessage(
   ctx: TurnsContext,
   chatId: string,
   message: UserMessage,
+  onUnsaved?: () => void,
 ): Promise<void> {
-  await ctx.deps.store.putMessage(chatId, message);
+  await orUnsaved(ctx.deps.store.putMessage(chatId, message), onUnsaved);
   if (ctx.state.currentChat?.id !== chatId) return;
   upsertMessage(ctx.state, message);
   ctx.deps.conversation.show(message);
@@ -534,14 +552,18 @@ async function rerunEdited(
   chatId: string,
   message: UserMessage,
   index: number,
+  onUnsaved?: () => void,
 ): Promise<void> {
   let removed: readonly ChatMessage[] = [];
+  let saved = false;
   await run(ctx, async () => {
     await ctx.deps.store.putMessage(chatId, message);
+    saved = true;
     upsertMessage(ctx.state, message);
     removed = await truncateAfter(ctx, chatId, index);
     return { thoroughness: messageThoroughness(message), audio: message.audio === true };
   });
+  if (!saved) onUnsaved?.();
   // Not before the reply is written: nothing is released while one runs.
   await ctx.deps.images.release({ messages: removed });
 }
@@ -550,9 +572,13 @@ async function edit(
   ctx: TurnsContext,
   message: UserMessage | AssistantMessage,
   text: string,
+  onUnsaved?: () => void,
 ): Promise<void> {
   const chat = ctx.state.currentChat;
-  if (!chat || ctx.state.running) return;
+  if (!chat || ctx.state.running) {
+    onUnsaved?.();
+    return;
+  }
   if (message.role === "user" && text === "" && message.images.length === 0 && !message.video) {
     ctx.deps.status.show("A message needs some text or an image.", "error");
     ctx.deps.conversation.show(message);
@@ -561,10 +587,10 @@ async function edit(
   const updated = { ...message, text };
   const index = lastUserIndex(ctx);
   if (updated.role === "user" && ctx.state.messages[index]?.id === updated.id) {
-    await rerunEdited(ctx, chat.id, updated, index);
+    await rerunEdited(ctx, chat.id, updated, index, onUnsaved);
     return;
   }
-  await ctx.deps.store.putMessage(chat.id, updated);
+  await orUnsaved(ctx.deps.store.putMessage(chat.id, updated), onUnsaved);
   upsertMessage(ctx.state, updated);
   ctx.deps.conversation.show(updated);
 }

@@ -54,7 +54,11 @@ describe("message actions", () => {
     if (!textarea) throw new Error("No editor");
     textarea.value = "One, edited";
     buttonsLabelled("Save")[0]?.click();
-    expect(spies.onEdit).toHaveBeenCalledWith(expect.objectContaining({ id: "u1" }), "One, edited");
+    expect(spies.onEdit).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "u1" }),
+      "One, edited",
+      expect.any(Function),
+    );
   });
 
   it("branches and deletes from a message", () => {

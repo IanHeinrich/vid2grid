@@ -115,7 +115,10 @@ describe("unused images", () => {
     ["otherTabs", "Close the other vid2grid chat tabs, then try again."],
     ["running", "Wait for the reply to finish, then try again."],
     ["late", "That took too long to be safe, so nothing was deleted. Try again."],
-    ["undo", "A deletion can still be undone. Try again in a few seconds."],
+    [
+      "undo",
+      "A deletion can still be undone, or a restore is running. Try again in a few seconds.",
+    ],
   ] as const)("says why it was refused: %s", async (refused, text) => {
     deleteUnused.mockResolvedValue({ refused });
     await setup().render();
@@ -123,13 +126,31 @@ describe("unused images", () => {
     expect(shown()).toEqual({ text: "12 unused images, 34.0 MB", status: text, offered: true });
   });
 
-  it("offers no delete in a browser without locks", async () => {
+  it("offers no delete to a tab that cannot see the others", async () => {
     await setup(false).render();
     expect(shown()).toEqual({
       text: "12 unused images, 34.0 MB",
-      status: "This browser cannot tell whether other tabs use them, so they are kept.",
+      status: "This tab cannot tell whether other tabs use them, so they are kept.",
       offered: false,
     });
+  });
+
+  it("offers the delete once the tab can see the others", async () => {
+    const canDelete = vi.fn(() => false);
+    const cleanup = {
+      countUnused: () => Promise.resolve(unused),
+      countToDelete,
+      get canDelete() {
+        return canDelete();
+      },
+      deleteUnused,
+    };
+    const panel = initUnusedImages(els, { images: cleanup, confirm });
+    await panel.render();
+    expect(shown().offered).toBe(false);
+    canDelete.mockReturnValue(true);
+    await panel.render();
+    expect(shown()).toEqual({ text: "12 unused images, 34.0 MB", status: "", offered: true });
   });
 
   it("reports a failed delete", async () => {

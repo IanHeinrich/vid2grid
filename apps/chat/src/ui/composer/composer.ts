@@ -646,8 +646,11 @@ async function submit(ctx: ComposerContext): Promise<void> {
     if (!taken) return undefined;
     // Saved before anything is cleared, so a failure leaves the message as it was.
     if (taken.message.video) await ctx.deps.video.commit(chat.id, taken.message.video);
-    clearTaken(ctx, chat.id, taken);
-    return { message: taken.message };
+    const cleared = clearTaken(ctx, chat.id, taken);
+    return {
+      message: taken.message,
+      onUnsaved: () => putBack(ctx, chat.id, taken, cleared),
+    };
   });
 }
 
@@ -713,9 +716,11 @@ function readMessage(ctx: ComposerContext, chatId: string): TakenMessage | undef
 }
 
 // Only what was sent is cleared: input typed or items added since stay for the next message.
-function clearTaken(ctx: ComposerContext, chatId: string, taken: TakenMessage): void {
+// Returns whether the text was cleared, rather than left as it had changed since.
+function clearTaken(ctx: ComposerContext, chatId: string, taken: TakenMessage): boolean {
   const { messageInput } = ctx.els;
-  if (messageInput.value.trim() === taken.message.text) {
+  const unchanged = messageInput.value.trim() === taken.message.text;
+  if (unchanged) {
     messageInput.value = "";
     fitInput(messageInput);
   }
@@ -725,4 +730,27 @@ function clearTaken(ctx: ComposerContext, chatId: string, taken: TakenMessage): 
   pendingChanged(ctx);
   renderControls(ctx);
   ctx.deps.status.clear();
+  return unchanged;
+}
+
+// Before what was typed or added since; a video added since stays in place of the one taken.
+function putBack(
+  ctx: ComposerContext,
+  chatId: string,
+  { message, pending }: TakenMessage,
+  cleared: boolean,
+): void {
+  const { messageInput } = ctx.els;
+  if (cleared || !messageInput.value.trimStart().startsWith(message.text)) {
+    const texts = [message.text, messageInput.value];
+    messageInput.value = texts.filter((text) => text.trim() !== "").join("\n");
+    fitInput(messageInput);
+  }
+  const added = pendingFor(ctx.state, chatId);
+  const replaced = pendingVideo(added) !== undefined;
+  const back = replaced ? pending.filter(({ kind }) => kind === "image") : pending;
+  clearPending(ctx.state, chatId);
+  for (const item of [...back, ...added]) addPending(ctx.state, chatId, item);
+  pendingChanged(ctx);
+  renderControls(ctx);
 }

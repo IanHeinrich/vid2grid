@@ -1,3 +1,4 @@
+import type { ImageCleanup } from "../../app/imageCleanup";
 import { exportBackup, importBackup, type ImportCounts } from "../../chat/exportChat";
 import type { AppElements } from "../../dom";
 import { errorText, plural } from "../../text";
@@ -6,6 +7,7 @@ import type { Toast } from "../shared/toast";
 
 export interface BackupDeps {
   store: ChatStore;
+  images: Pick<ImageCleanup, "hold">;
   toast: Pick<Toast, "show">;
   download(blob: Blob, filename: string): void;
   onRestored(): Promise<void>;
@@ -31,7 +33,9 @@ async function downloadBackup(els: AppElements["backup"], deps: BackupDeps): Pro
 }
 
 async function restoreBackup(file: File, deps: BackupDeps): Promise<void> {
-  const counts = await importBackup(deps.store, file);
+  const counts = await importBackup(deps.store, file, {
+    hold: (holder) => deps.images.hold(holder),
+  });
   await deps.onRestored();
   deps.toast.show(restoredText(counts));
 }

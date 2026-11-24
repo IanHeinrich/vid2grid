@@ -5,7 +5,10 @@ import {
   pendingFor,
   pendingVideo,
   removePendingVideo,
+  replaceChat,
+  setCurrentChat,
   setRunning,
+  unlistChat,
   updateChat,
 } from "../src/state";
 import type { VideoAttachment } from "../src/types";
@@ -199,6 +202,25 @@ describe("sending a pending video", () => {
     expect(pendingVideo(currentPending(state))).toEqual(attachmentFor(next));
     expect(videos.pendingView().video).toEqual(attachmentFor(next));
     expect(spies.onCommitted).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("a chat whose delete fails", () => {
+  it("keeps its pending video's file, so sending it still makes it the chat's", async () => {
+    const chat = await openChatWithVideo(attachmentFor(video("old.mp4")));
+    const videos = panel();
+    await videos.attach(video("new.mp4"));
+    const pending = pendingFor(state, "chat");
+    unlistChat(state, "chat");
+    videos.render();
+    replaceChat(state, chat);
+    setCurrentChat(state, chat, []);
+    videos.render();
+    expect(pendingFor(state, "chat")).toEqual(pending);
+    expect(videos.pendingView().video?.name).toBe("new.mp4");
+    await send(videos);
+    expect((await store.getChat("chat"))?.video?.name).toBe("new.mp4");
+    expect(state.video?.file.name).toBe("new.mp4");
   });
 });
 

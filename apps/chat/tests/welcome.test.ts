@@ -125,6 +125,7 @@ describe("initWelcome", () => {
   });
 
   it("stays hidden when any chat already has messages", async () => {
+    await store.putChat(chat("b"));
     await store.putMessage("b", { id: "m", createdAt: 1, role: "user", text: "hi", images: [] });
     setChats(state, [chat("a"), chat("b")]);
     const listMessages = vi.spyOn(store, "listMessages");
