@@ -57,6 +57,7 @@ export async function sheetRefs(
   if (cached !== undefined) return cached;
   const render = ctx.render ?? renderSheets;
   const sheets = await render(ctx.file, info, values, onProgress);
+  if (sheets.length === 0) throw new Error("No frame was found there; try an earlier time.");
   const { outputResolution } = values;
   const refs = await Promise.all(
     sheets.map((sheet) => storeSheet(ctx.store, sheet, call, outputResolution)),
