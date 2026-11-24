@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
+import { setImmediate as nextTick, setTimeout as delay } from "node:timers/promises";
 import ffmpegPath from "ffmpeg-static";
 import {
   buildRenderPlan,
@@ -446,5 +446,104 @@ describe("captureFrames stopping a sparse plan", () => {
     });
     await expectAllExited();
     expect(ffmpegProcesses()).toHaveLength(2);
+  });
+});
+
+describe("captureFrames aborting", () => {
+  const reason = new Error("stopped");
+  // Too close together to seek between, so ffmpeg starts without a landing probe.
+  const CLOSE_TOGETHER = [0, 0.1, 0.2];
+
+  function abortable(times: number[], abortReason: unknown = reason) {
+    const controller = new AbortController();
+    const { signal } = controller;
+    const add = vi.spyOn(signal, "addEventListener");
+    const remove = vi.spyOn(signal, "removeEventListener");
+    return {
+      signal,
+      frames: captureFrames(KEYFRAMES_MP4, planAt(times), ANY_INFO, signal),
+      abort: () => controller.abort(abortReason),
+      expectNoListeners: () => expect(remove.mock.calls).toEqual(add.mock.calls),
+    };
+  }
+
+  it("starts no process when already aborted", async () => {
+    for (const times of [SECONDS_APART, CLOSE_TOGETHER]) {
+      const signal = AbortSignal.abort(reason);
+      const frames = captureFrames(KEYFRAMES_MP4, planAt(times), ANY_INFO, signal);
+
+      await expect(frames.next()).rejects.toBe(reason);
+    }
+    expect(spawned).toEqual([]);
+  });
+
+  it("kills the landing probe and starts no ffmpeg", async () => {
+    const { frames, abort, expectNoListeners } = abortable(SECONDS_APART);
+    const pulled = frames.next();
+    expect(spawned).toHaveLength(1);
+
+    abort();
+
+    await expect(pulled).rejects.toBe(reason);
+    expect(spawned.map((child) => child.killed)).toEqual([true]);
+    await expectAllExited();
+    expectNoListeners();
+  });
+
+  it("rejects a pull that is waiting on ffmpeg", async () => {
+    const { frames, abort, expectNoListeners } = abortable(CLOSE_TOGETHER);
+    const pulled = frames.next();
+    await nextTick();
+    expect(ffmpegProcesses()).toHaveLength(1);
+
+    abort();
+
+    await expect(pulled).rejects.toBe(reason);
+    expect(await frames.next()).toEqual({ done: true, value: undefined });
+    await expectAllExited();
+    expectNoListeners();
+  });
+
+  it("kills ffmpeg mid-segment without waiting for the next pull", async () => {
+    const { frames, abort, expectNoListeners } = abortable(SECONDS_APART, "stopped");
+    for (let i = 0; i < 21; i++) await frames.next();
+
+    abort();
+
+    expect(ffmpegProcesses().map((child) => child.killed)).toEqual([true, true]);
+    await expectAllExited();
+    await expect(frames.next()).rejects.toBe("stopped");
+    expect(ffmpegProcesses()).toHaveLength(2);
+    expectNoListeners();
+  });
+
+  it("starts no further segment when aborted between two", async () => {
+    const { frames, abort, expectNoListeners } = abortable(SECONDS_APART);
+    for (let i = 0; i < 20; i++) await frames.next();
+
+    abort();
+
+    await expect(frames.next()).rejects.toBe(reason);
+    expect(ffmpegProcesses()).toHaveLength(1);
+    await expectAllExited();
+    expectNoListeners();
+  });
+
+  it("does nothing once the capture is over", async () => {
+    const { frames, abort, expectNoListeners } = abortable(SECONDS_APART);
+    let count = 0;
+    for await (const frame of frames) {
+      expect(frame.width).toBeGreaterThan(0);
+      count++;
+    }
+    const processes = spawned.length;
+    expectNoListeners();
+
+    abort();
+
+    expect(count).toBe(SECONDS_APART.length);
+    expect(await frames.next()).toEqual({ done: true, value: undefined });
+    expect(spawned).toHaveLength(processes);
+    await expectAllExited();
   });
 });

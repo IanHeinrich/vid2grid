@@ -6,9 +6,11 @@ import {
   normalizeRotationClockwise,
   roundToMicroseconds,
   Vid2GridError,
+  type AbortSignalLike,
   type SampleAspectRatio,
   type VideoInfo,
 } from "@vid2grid/core";
+import { onAbort, throwIfAborted } from "./abort";
 
 interface FfprobeStream {
   width?: number;
@@ -77,12 +79,14 @@ export async function readKeyframeTimes(path: string): Promise<number[] | undefi
 export async function readSeekLandings(
   path: string,
   times: readonly number[],
+  signal?: AbortSignalLike,
 ): Promise<Map<number, number>> {
   const landings = new Map<number, number>();
   for (let start = 0; start < times.length; start += SEEKS_PER_FFPROBE) {
     const batch = times.slice(start, start + SEEKS_PER_FFPROBE);
     const intervals = batch.map((seconds) => `${seconds.toFixed(6)}%+#1`).join(",");
-    const packets = await readPacketTimes(path, ["-read_intervals", intervals], () => true);
+    const query = ["-read_intervals", intervals];
+    const packets = await readPacketTimes(path, query, () => true, signal);
     // A seek that found no packet leaves no way to tell which time each packet answers.
     if (packets.length !== batch.length) continue;
     batch.forEach((seconds, i) => {
@@ -97,11 +101,12 @@ async function readPacketTimes(
   path: string,
   query: string[],
   keep: (isKeyframe: boolean) => boolean,
+  signal?: AbortSignalLike,
 ): Promise<PacketTime[]> {
   const packets: { pts: number; isKeyframe: boolean }[] = [];
   let timeBase: SampleAspectRatio | null = null;
   const entries = ["-show_entries", "stream=time_base:packet=pts,flags", "-of", "csv"];
-  for await (const line of ffprobeLines(path, [...entries, ...query])) {
+  for await (const line of ffprobeLines(path, [...entries, ...query], signal)) {
     const [, pts, flags] = PACKET_LINE.exec(line) ?? [];
     const isKeyframe = flags?.startsWith("K") === true;
     if (pts !== undefined && keep(isKeyframe)) packets.push({ pts: Number(pts), isKeyframe });
@@ -138,7 +143,12 @@ function parseSeconds(text: string | undefined): number | undefined {
   return text === undefined || !Number.isFinite(seconds) ? undefined : seconds;
 }
 
-async function* ffprobeLines(path: string, query: string[]): AsyncGenerator<string> {
+async function* ffprobeLines(
+  path: string,
+  query: string[],
+  signal?: AbortSignalLike,
+): AsyncGenerator<string> {
+  throwIfAborted(signal);
   const ffprobeProcess = spawnFfprobe(path, query);
   const stderr: Buffer[] = [];
   ffprobeProcess.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
@@ -148,9 +158,15 @@ async function* ffprobeLines(path: string, query: string[]): AsyncGenerator<stri
       resolve(code === 0 ? undefined : new Error(`ffprobe exited with code ${code}`));
     });
   });
-  yield* createInterface({ input: ffprobeProcess.stdout });
-  const failure = await finished;
-  if (failure) throw unreadable(path, failure, Buffer.concat(stderr).toString("utf8").trim());
+  const stopListening = onAbort(signal, () => ffprobeProcess.kill("SIGKILL"));
+  try {
+    yield* createInterface({ input: ffprobeProcess.stdout });
+    const failure = await finished;
+    throwIfAborted(signal);
+    if (failure) throw unreadable(path, failure, Buffer.concat(stderr).toString("utf8").trim());
+  } finally {
+    stopListening();
+  }
 }
 
 function spawnFfprobe(path: string, query: string[]) {

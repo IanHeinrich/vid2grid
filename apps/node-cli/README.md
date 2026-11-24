@@ -30,7 +30,8 @@ The package declares `vid2grid-node` as the bin for the same entry point.
 `-o` (or `--out`) is required. It prints the path of each sheet it wrote,
 `grid_0001.jpg` onwards, then a line on stderr with the frame and sheet count
 and the time spent extracting and rendering. Warnings go to stderr. An error
-prints its message and exits with 1.
+prints its message and exits with 1. Ctrl+C stops ffmpeg, keeps the sheets
+already written and exits with 130.
 
 ## Options
 

@@ -34,7 +34,7 @@ export async function renderVideo(
   path: string,
   request: CollagePlanRequest,
   outDir: string,
-  options: Pick<GenerateCollagesOptions, "onProgress" | "videoInfo"> = {},
+  options: Pick<GenerateCollagesOptions, "onProgress" | "signal" | "videoInfo"> = {},
 ): Promise<RenderVideoResult> {
   let timings: GenerationTimings = { phaseMs: {}, frameCount: 0, sheetCount: 0 };
   const warnings: Vid2GridWarning[] = [];

@@ -48,9 +48,11 @@ const { plan, sheetPaths, timings, warnings } = await renderVideo(
 `renderVideo(path, request, outDir, options?)` plans the sheets and writes
 each one to `outDir` as soon as it is encoded, `grid_0001.jpg` onwards. It
 returns the `RenderPlan`, the paths written, the timings and any warnings.
-`options` takes `onProgress` and a `videoInfo` you have already probed. The
-folder is made on the first sheet, so a rejected request leaves none; a run
-that fails partway leaves the sheets written before the failure.
+`options` takes `onProgress`, a `videoInfo` you have already probed and a
+`signal`. Aborting the signal kills the running ffmpeg and rejects with the
+signal's reason. The folder is made on the first sheet, so a rejected request
+leaves none; a run that fails or is aborted partway leaves the sheets written
+before that.
 
 The library also exports:
 

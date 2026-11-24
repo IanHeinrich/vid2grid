@@ -17,7 +17,18 @@ async function main(argv: readonly string[]): Promise<void> {
   const { videoPath, outDir, options } = command;
   const videoInfo = await probeVideo(videoPath);
   const request = requestFromOptions(options, videoInfo, NODE_CAPABILITIES);
-  report(await renderVideo(videoPath, request, outDir, { videoInfo }));
+  const signal = abortedByInterrupt();
+  report(await renderVideo(videoPath, request, outDir, { videoInfo, signal }));
+}
+
+// Once, so a second Ctrl+C ends the process outright.
+function abortedByInterrupt(): AbortSignal {
+  const controller = new AbortController();
+  process.once("SIGINT", () => {
+    process.exitCode = 130;
+    controller.abort(new Error("interrupted"));
+  });
+  return controller.signal;
 }
 
 function report({ warnings, sheetPaths, timings }: RenderVideoResult): void {
@@ -37,5 +48,5 @@ function errorMessage(error: unknown): string {
 
 main(process.argv.slice(2)).catch((error: unknown) => {
   console.error(errorMessage(error));
-  process.exitCode = 1;
+  process.exitCode ??= 1;
 });
