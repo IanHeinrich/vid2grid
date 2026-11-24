@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ChatMessage, UserMessage, VideoAttachment } from "../src/types";
-import { olderVideos, videoForMessage } from "../src/ui/conversation/messageVideo";
+import type { ChatMessage, ImageRef, UserMessage, VideoAttachment } from "../src/types";
+import { olderVideos, videoForImage, videoForMessage } from "../src/chat/messageVideo";
 
 function attachment(name: string): VideoAttachment {
   return { name, fileKey: `${name}-key`, durationSeconds: 60, width: 640, height: 360 };
@@ -41,6 +41,45 @@ describe("videoForMessage", () => {
     expect(videoForMessage(messages, "u0", dunes)).toBe(dunes);
     expect(videoForMessage(messages, "missing", dunes)).toBe(dunes);
     expect(videoForMessage(messages, undefined, undefined)).toBeUndefined();
+  });
+});
+
+describe("videoForImage", () => {
+  const sheet: ImageRef = { id: "s1", pinned: false, source: { kind: "upload", name: "s1" } };
+  const holding = (id: string): ChatMessage => ({
+    id,
+    createdAt: 0,
+    role: "tool",
+    toolCallId: "c1",
+    text: "",
+    images: [sheet],
+  });
+
+  it("uses the message that first held the image, not one that recalled it", () => {
+    const recalled = holding("t3");
+    const all = [user("u1", beach), holding("t1"), user("u2", dunes), recalled];
+    expect(videoForImage(all, "s1", dunes)).toBe(beach);
+    expect(videoForImage([...messages, recalled], "s1", dunes)).toBe(dunes);
+  });
+
+  it("keeps the earlier video in a branch made before the current one was attached", () => {
+    expect(videoForImage([user("u1", beach), holding("t1")], "s1", dunes)).toBe(beach);
+  });
+
+  it("keeps the earlier video once the message that attached the current one is deleted", () => {
+    const all = [user("u1", beach), holding("t1"), user("u3"), reply("a3")];
+    expect(videoForImage(all, "s1", dunes)).toBe(beach);
+  });
+
+  it("does not take a reattached, changed file for the one the message names", () => {
+    const changed = { ...beach, fileKey: "beach-changed" };
+    expect(videoForImage([user("u1", beach), holding("t1")], "s1", changed)).toBe(beach);
+  });
+
+  it("falls back to the current video only when no message names one", () => {
+    expect(videoForImage([user("u1"), holding("t1")], "s1", dunes)).toBe(dunes);
+    const before = [user("u1"), holding("t1"), user("u2", beach)];
+    expect(videoForImage(before, "s1", dunes)).toBeUndefined();
   });
 });
 

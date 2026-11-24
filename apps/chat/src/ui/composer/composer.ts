@@ -1,7 +1,7 @@
 import { isAbortError, orWhenAborted } from "../../abort";
 import { sendBlocker } from "../../app/sendBlocker";
 import type { Turns } from "../../app/turns";
-import { downscaleImage } from "../../attachments/images";
+import { downscaleUpload, type ScaledImage } from "../../attachments/images";
 import {
   cachedAudioCoverage,
   loadAudio,
@@ -109,7 +109,7 @@ export interface ComposerDeps {
   onAudioChanged?: () => void;
   // After a thoroughness or reasoning pick is saved, so the Model tab shows the same level.
   onSettingsChanged?: () => void;
-  downscale?: typeof downscaleImage;
+  downscale?: typeof downscaleUpload;
   now?: () => number;
   newId?: () => string;
   storage?: Storage;
@@ -578,19 +578,41 @@ function pendingThumb(ctx: ComposerContext, ref: ImageRef): HTMLImageElement {
   return img;
 }
 
+// The picture is still worth attaching without its larger copy, so a failed save is not an error.
+async function storeOriginal(
+  store: ChatStore,
+  original: ScaledImage | undefined,
+): Promise<string | undefined> {
+  if (original === undefined) return undefined;
+  try {
+    return await store.putImage(original.blob);
+  } catch {
+    return undefined;
+  }
+}
+
 async function addImages(ctx: ComposerContext, files: readonly File[]): Promise<void> {
   const chat = ctx.state.currentChat;
   if (!chat) return;
-  const downscale = ctx.deps.downscale ?? downscaleImage;
+  const downscale = ctx.deps.downscale ?? downscaleUpload;
   for (const file of files) {
     try {
       const model = resolveModel(ctx.state, chatModelId(ctx.state, chat));
       const { px } = resolveSheetResolution(chat.settings.sheetResolution, model);
-      const { blob } = await downscale(file, px);
-      const id = await ctx.deps.store.putImage(blob);
+      const { sent, original } = await downscale(file, px);
+      const id = await ctx.deps.store.putImage(sent.blob);
+      const originalId = await storeOriginal(ctx.deps.store, original);
       addPending(ctx.state, chat.id, {
         kind: "image",
-        ref: { id, source: { kind: "upload", name: file.name }, pinned: false },
+        ref: {
+          id,
+          source: {
+            kind: "upload",
+            name: file.name,
+            ...(originalId !== undefined && { originalId }),
+          },
+          pinned: false,
+        },
       });
       if (ctx.state.currentChat?.id === chat.id) pendingChanged(ctx);
     } catch (error) {

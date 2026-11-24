@@ -75,6 +75,28 @@ describe("downloading a backup", () => {
     expect(els.backup.downloadButton.disabled).toBe(false);
   });
 
+  it("includes the larger copy kept for zooming", async () => {
+    const originalId = await store.putImage(
+      new Blob([new Uint8Array(IMAGE_BYTES)], { type: "image/jpeg" }),
+    );
+    await store.putMessage("c1", {
+      id: "u2",
+      createdAt: 2,
+      role: "user",
+      text: "Zoomable",
+      images: [
+        {
+          id: "no-blob",
+          pinned: false,
+          source: { kind: "upload", name: "huge.jpg", originalId },
+        },
+      ],
+    });
+    els.backup.includeImagesInput.checked = true;
+    const { backup } = await downloaded();
+    expect(backup.images.map((image) => image.id)).toContain(originalId);
+  });
+
   it("leaves images out when unticked and reports the size in kilobytes", async () => {
     els.backup.includeImagesInput.checked = false;
     const { backup, size } = await downloaded();

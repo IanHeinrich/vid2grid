@@ -24,6 +24,7 @@ import type {
   ChatMessage,
   ChatRequest,
   ChatStore,
+  ImageRef,
   ModelInfo,
   StreamChat,
   StreamEvent,
@@ -535,7 +536,7 @@ describe("audio", () => {
     await seedWithVideo([]);
     const message: UserMessage = { ...U1, audio: true };
     await turns().run(() => Promise.resolve({ message }));
-    expect(sentTools()).toEqual(["look", "frames", "note", "recall", "listen"]);
+    expect(sentTools()).toEqual(["look", "frames", "note", "recall", "zoom", "listen"]);
     expect(lastTurnDeps()?.audioCoverage).toEqual({
       text: "analysed 0:00 to 1:00 (speech and sounds)",
       canListen: true,
@@ -546,7 +547,7 @@ describe("audio", () => {
     await store.putAudio(HEARD);
     await seedWithVideo([]);
     await turns().run(() => Promise.resolve({ message: U1 }));
-    expect(sentTools()).toEqual(["look", "frames", "note", "recall"]);
+    expect(sentTools()).toEqual(["look", "frames", "note", "recall", "zoom"]);
     expect(lastTurnDeps()?.audioCoverage).toBeUndefined();
     expect(JSON.stringify(streamChat.mock.calls[0]?.[1])).not.toContain("listen");
   });
@@ -555,7 +556,7 @@ describe("audio", () => {
     await store.putAudio({ ...HEARD, noAudio: true });
     await seedWithVideo([]);
     await turns().run(() => Promise.resolve({ message: { ...U1, audio: true } }));
-    expect(sentTools()).toEqual(["look", "frames", "note", "recall"]);
+    expect(sentTools()).toEqual(["look", "frames", "note", "recall", "zoom"]);
     expect(lastTurnDeps()?.audioCoverage).toEqual({
       text: "the video has no audio track",
       canListen: false,
@@ -627,5 +628,123 @@ describe("the model a turn sends", () => {
     await seed([], { settings: { ...blankChat(MODEL, "chat", 1).settings, modelId: "" } });
     await turns().run(() => Promise.resolve({ message: U1 }));
     expect(streamChat.mock.calls[0]?.[1].model).toBe(MODEL);
+  });
+});
+
+describe("tools without a loaded video", () => {
+  const photo: ImageRef = {
+    id: "photo",
+    pinned: false,
+    source: { kind: "upload", name: "beach.jpg" },
+  };
+  const withPhoto: UserMessage = { ...U1, images: [photo] };
+
+  function systemSent(): string {
+    const content = streamChat.mock.calls[0]?.[1].messages[0]?.content;
+    return typeof content === "string" ? content : "";
+  }
+
+  beforeEach(() => setModels(state, [model(MODEL)]));
+
+  it("offers recall and zoom when the message being sent holds an image", async () => {
+    await seed([]);
+    await turns().run(() => Promise.resolve({ message: withPhoto }));
+    expect(sentTools()).toEqual(["recall", "zoom"]);
+    expect(systemSent()).toContain("use zoom");
+    expect(systemSent()).not.toContain("look, frames and note");
+    expect(lastTurnDeps()?.toolsOptional).toBe(true);
+  });
+
+  it("offers them in a chat whose video is not loaded, without the video guidance", async () => {
+    await seed([withPhoto, A1], { video: VIDEO });
+    await turns().run(() => Promise.resolve({ message: U2 }));
+    expect(sentTools()).toEqual(["recall", "zoom"]);
+    expect(systemSent()).toContain("Attached video: beach.mp4");
+    expect(systemSent()).not.toContain("look, frames and note");
+  });
+
+  it("offers nothing without an image or to a model that cannot see", async () => {
+    await seed([], { video: VIDEO });
+    await turns().run(() => Promise.resolve({ message: U1 }));
+    expect(sentTools()).toEqual([]);
+    expect(systemSent()).not.toContain("look, frames and note");
+    expect(lastTurnDeps()?.runTool).toBeUndefined();
+    streamChat.mockClear();
+    setModels(state, [model(MODEL, { vision: false })]);
+    await seed([]);
+    await turns().run(() => Promise.resolve({ message: withPhoto }));
+    expect(sentTools()).toEqual([]);
+  });
+
+  it("leaves zoom out with a loaded video and a model that cannot see", async () => {
+    await seedWithVideo([]);
+    setModels(state, [model(MODEL, { vision: false })]);
+    await turns().run(() => Promise.resolve({ message: U1 }));
+    expect(sentTools()).toEqual(["look", "frames", "note", "recall"]);
+    expect(lastTurnDeps()?.toolsOptional).toBe(false);
+  });
+
+  it("lists no tools and says nothing about them to a model without tools", async () => {
+    await seedWithVideo([]);
+    setModels(state, [model(MODEL, { tools: false })]);
+    await turns().run(() => Promise.resolve({ message: U1 }));
+    expect(sentTools()).toEqual([]);
+    expect(systemSent()).not.toContain("look, frames and note");
+  });
+
+  it("recalls an image sent in the chat", async () => {
+    const id = await store.putImage(new Blob(["x"], { type: "image/jpeg" }));
+    await seed([]);
+    const message: UserMessage = { ...withPhoto, images: [{ ...photo, id }] };
+    vi.mocked(runTurn).mockResolvedValueOnce({ status: "done" });
+    await turns().run(() => Promise.resolve({ message }));
+    const recalled = await lastTurnDeps()?.runTool?.({
+      id: "c1",
+      name: "recall",
+      arguments: JSON.stringify({ names: ["beach.jpg"] }),
+    });
+    expect(recalled?.images.map((image) => image.id)).toEqual([id]);
+  });
+
+  it("refuses to zoom a recalled sheet from an earlier video", async () => {
+    const sheet: ImageRef = {
+      id: "s1",
+      pinned: false,
+      source: {
+        kind: "sheet",
+        call: "look(0, 10)",
+        name: "grid_0001",
+        startSeconds: 0,
+        endSeconds: 10,
+        frameCount: 4,
+        resolution: 1024,
+      },
+    };
+    const older: VideoAttachment = { ...VIDEO, name: "dunes.mp4", fileKey: "dunes-key" };
+    const recall: ChatMessage = {
+      id: "T2",
+      createdAt: 5,
+      role: "tool",
+      toolCallId: "c",
+      text: "",
+      images: [sheet],
+    };
+    await seedWithVideo([
+      { ...U1, video: older, images: [sheet] },
+      A1,
+      { ...U2, video: VIDEO },
+      { ...A2, text: "", toolCalls: [{ id: "c", name: "recall", arguments: "{}" }] },
+      recall,
+    ]);
+    vi.mocked(runTurn).mockResolvedValueOnce({ status: "done" });
+    await turns().run(() => Promise.resolve({}));
+    const area = { left: 100, top: 100, right: 200, bottom: 200 };
+    const zoomed = await lastTurnDeps()?.runTool?.({
+      id: "c2",
+      name: "zoom",
+      arguments: JSON.stringify({ image: "grid_0001", ...area }),
+    });
+    expect(zoomed?.images).toEqual([]);
+    expect(zoomed?.text).toContain("shows dunes.mp4, which is not loaded");
   });
 });

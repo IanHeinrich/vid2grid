@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ChatMessage, ImageRef, UserMessage, VideoAttachment } from "../src/types";
+import type { ChatMessage, ImageRef, UserMessage, VideoAttachment, ZoomTarget } from "../src/types";
 import { initConversation } from "../src/ui/conversation/conversation";
-import { cellAt, sheetGrid } from "../src/ui/conversation/lightbox";
+import { cellAt, sheetGrid } from "../src/video/sheetCells";
 import {
   beach,
   deps,
@@ -14,7 +14,7 @@ import {
   spies,
   store,
 } from "./support/conversation";
-import { user } from "./support/factories";
+import { assistant, tool, user } from "./support/factories";
 
 beforeEach(resetConversation);
 
@@ -194,6 +194,61 @@ describe("seeking and zooming in the lightbox", () => {
     image.dispatchEvent(new MouseEvent("pointerup", { clientX: 760, clientY: 600 }));
     clickAt(image, 760, 600);
     expect(spies.onSeek).not.toHaveBeenCalled();
+  });
+});
+
+function zoomChat(target: ZoomTarget): ChatMessage[] {
+  const zoomed: ImageRef = {
+    id: "z1",
+    pinned: false,
+    source: {
+      kind: "zoom",
+      name: "zoom(1:02.5, 100, 200, 400, 500)",
+      target,
+      area: { left: 100, top: 200, right: 400, bottom: 500 },
+      width: 600,
+      height: 450,
+    },
+  };
+  return [
+    user("u1", "Zoom in"),
+    assistant("a1", "", { toolCalls: [{ id: "c1", name: "zoom", arguments: "{}" }] }),
+    tool("t1", "c1", [zoomed]),
+    assistant("a2", "Done"),
+  ];
+}
+
+describe("a zoom in the lightbox", () => {
+  it("shows the moment, cues it on a click and only asks from the button", () => {
+    vi.useFakeTimers();
+    const image = openSheet(zoomChat({ kind: "moment", seconds: 62.5, fileKey: "beach-key" }));
+    expect(els.lightbox.label.textContent).toBe("Zoom · 1:02.5");
+    expect(els.lightbox.hint.textContent).toContain("1:02.5");
+    expect(control(".lightbox-ask").hidden).toBe(false);
+    clickAt(image, 500, 500);
+    vi.runAllTimers();
+    expect(spies.onCue).toHaveBeenCalledWith(62.5);
+    spies.onCue.mockClear();
+    control(".lightbox-ask").click();
+    vi.runAllTimers();
+    expect(spies.onCue).not.toHaveBeenCalled();
+    expect(spies.onSeek).not.toHaveBeenCalled();
+    expect(spies.onPrefill).toHaveBeenCalledWith("About [1:02]: ");
+    expect(els.lightbox.dialog.open).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it("has no time to ask about or jump to when it zooms into an image", () => {
+    vi.useFakeTimers();
+    const image = openSheet(zoomChat({ kind: "image", id: "u1", name: "beach.jpg" }));
+    expect(els.lightbox.label.textContent).toBe("Zoom · beach.jpg");
+    expect(control(".lightbox-ask").hidden).toBe(true);
+    expect(els.lightbox.hint.textContent).toBe("");
+    clickAt(image, 500, 500);
+    vi.runAllTimers();
+    expect(spies.onCue).not.toHaveBeenCalled();
+    expect(spies.onSeek).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 });
 

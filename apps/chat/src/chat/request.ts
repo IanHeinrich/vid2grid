@@ -159,13 +159,17 @@ interface WireHistory {
   contextAt: number | undefined;
 }
 
+function listsTools({ allowTools, model, tools }: BuildRequestInput): boolean {
+  return allowTools && model.tools && tools.length > 0;
+}
+
 function wireHistory(view: SentView, input: BuildRequestInput): WireHistory {
   const earlierImages = input.chat.settings.earlierImages ?? "describe";
   const placement: ImagePlacement = {
     holders: latestHolders(view.sent),
     earlier: earlierMessageIds(view.sent, earlierImages),
   };
-  const system = buildSystemPrompt(input.chat, input.toolGuidance);
+  const system = buildSystemPrompt(input.chat, listsTools(input) ? input.toolGuidance : "");
   const messages: WireMessage[] = system.length > 0 ? [{ role: "system", content: system }] : [];
   // Right after the system prompt: it changes only when the cut moves, so the cache holds.
   if (view.carried) messages.push(userWire(view.carried, input, placement));
@@ -190,10 +194,10 @@ function requestEffort(input: BuildRequestInput): string | undefined {
 }
 
 function requestOptions(input: BuildRequestInput): Omit<ChatRequest, "model" | "messages"> {
-  const { chat, model, tools } = input;
+  const { chat, tools } = input;
   const { temperature } = chat.settings;
   const reasoningEffort = requestEffort(input);
-  const listTools = input.allowTools && model.tools && tools.length > 0;
+  const listTools = listsTools(input);
   const noTools = input.finalRound || input.answerNow === true;
   return {
     // Tools stay listed on the final round so history with tool calls still matches the template.

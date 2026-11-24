@@ -15,13 +15,13 @@ import type {
   VideoTimeline,
 } from "../types";
 import { resolveSheetResolution } from "../video/resolution";
-import { TOOL_GUIDANCE, toolSchemas } from "../video/tools";
+import { conversationTools } from "./toolContext";
 
 export interface TokenEstimateInput {
   chat: Chat;
   messages: readonly ChatMessage[];
   model: ModelInfo;
-  allowTools: boolean;
+  videoLoaded: boolean;
   thoroughness?: Thoroughness;
   audioCoverage?: AudioCoverage | undefined;
   timeline?: VideoTimeline | undefined;
@@ -30,6 +30,10 @@ export interface TokenEstimateInput {
 
 export function estimateTokens(input: TokenEstimateInput): number {
   const { chat, messages, model, thoroughness, audioCoverage, timeline, cast } = input;
+  const { tools, guidance } = conversationTools(model, messages, {
+    videoLoaded: input.videoLoaded,
+    listen: audioCoverage?.canListen === true,
+  });
   const kept = keptImages(chat, messages, model.maxImages);
   // Each image's id stands in for its pixels, so its recorded side can be found by URL.
   const dataUrls = new Map([...kept].map((id) => [id, id]));
@@ -39,10 +43,10 @@ export function estimateTokens(input: TokenEstimateInput): number {
     model,
     kept,
     dataUrls,
-    tools: toolSchemas(audioCoverage?.canListen === true),
-    toolGuidance: TOOL_GUIDANCE,
+    tools,
+    toolGuidance: guidance,
     veniceParameters: false,
-    allowTools: input.allowTools,
+    allowTools: tools.length > 0,
     finalRound: false,
     ...(thoroughness ? { thoroughness } : {}),
     ...(audioCoverage !== undefined ? { audioCoverage } : {}),
@@ -63,7 +67,7 @@ export function estimateTokens(input: TokenEstimateInput): number {
 export function estimateNextRequest(
   state: AppState,
   timeline: VideoTimeline | undefined,
-  toolsAvailable: boolean,
+  videoLoaded: boolean,
   audioCoverage?: AudioCoverage,
 ): number | undefined {
   const chat = state.currentChat;
@@ -81,8 +85,8 @@ export function estimateNextRequest(
     chat,
     messages,
     model,
-    allowTools: toolsAvailable,
+    videoLoaded,
     timeline,
-    ...(toolsAvailable && audioCoverage !== undefined ? { audioCoverage } : {}),
+    ...(videoLoaded && audioCoverage !== undefined ? { audioCoverage } : {}),
   });
 }

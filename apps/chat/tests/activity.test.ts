@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import type { AssistantMessage, ToolCall, ToolMessage } from "../src/types";
+import { describe, expect, it, vi } from "vitest";
+import type { AssistantMessage, ToolCall, ToolMessage, ZoomTarget } from "../src/types";
 import {
   activitySummary,
   answerOf,
@@ -37,6 +37,13 @@ describe("activitySummary", () => {
       assistant("a2", [call("3", "frame", { t: 4 }), call("4", "look", {}), call("5", "note", {})]),
     ];
     expect(activitySummary(steps)).toBe("Thought · 2 looks · 4 frames · 1 note");
+  });
+
+  it("counts zooms apart from looks and frames", () => {
+    const steps = [
+      assistant("a1", [call("1", "zoom", {}), call("2", "zoom", {}), call("3", "frame", { t: 4 })]),
+    ];
+    expect(activitySummary(steps)).toBe("1 frame · 2 zooms");
   });
 
   it("leaves out parts that did not happen", () => {
@@ -99,6 +106,71 @@ describe("waitingStatus", () => {
     expect(waitingStatus({ ...first, round: 3 }, STALL_SECONDS)).toBe(
       "Round 3 · waiting · 90s · this is taking unusually long; you can Stop and Retry",
     );
+  });
+});
+
+describe("zoom in the activity row", () => {
+  const render = {
+    live: true,
+    thumbnail: () => document.createElement("span"),
+    seek: vi.fn(),
+  };
+  const zoomed = (target: ZoomTarget, name: string): ToolMessage => ({
+    id: "t1",
+    createdAt: 0,
+    role: "tool",
+    toolCallId: "c1",
+    text: "One image follows.",
+    images: [
+      {
+        id: "z1",
+        pinned: false,
+        source: {
+          kind: "zoom",
+          name,
+          target,
+          area: { left: 100, top: 200, right: 400, bottom: 500 },
+          width: 600,
+          height: 450,
+        },
+      },
+    ],
+  });
+  const zoomCall = call("c1", "zoom", { t: 62.5, left: 100, top: 200, right: 400, bottom: 500 });
+
+  function labelOf(steps: (AssistantMessage | ToolMessage)[]): HTMLElement {
+    const body = document.createElement("div");
+    renderActivityBody(body, steps, render);
+    const label = body.querySelector<HTMLElement>(".activity-call-label");
+    if (!label) throw new Error("No label");
+    return label;
+  }
+
+  it("says it is zooming in while the call is pending", () => {
+    expect(labelOf([assistant("a1", [zoomCall])]).textContent).toBe("Zooming in…");
+  });
+
+  it("links the time of a zoom of a moment to the video", () => {
+    const moment = zoomed({ kind: "moment", seconds: 62.5, fileKey: "k" }, "zoom(1:02.5, 1)");
+    const label = labelOf([assistant("a1", [zoomCall]), moment]);
+    expect(label.textContent).toBe("Zoomed in at 1:02.5");
+    label.querySelector<HTMLButtonElement>(".timestamp")?.click();
+    expect(render.seek).toHaveBeenCalledWith(62.5);
+  });
+
+  it("names the image a zoom looked into, and is not a look", () => {
+    const image = zoomed({ kind: "image", id: "i1", name: "beach.jpg" }, "zoom(beach.jpg, 1)");
+    expect(labelOf([assistant("a1", [zoomCall]), image]).textContent).toBe(
+      "Zoomed in on beach.jpg",
+    );
+    expect(toolSummary(image, zoomCall)).toBe("Zoomed in on beach.jpg");
+  });
+
+  it("shows a failure's first line", () => {
+    const failed = reply("Error: That area is empty.\nTry again.");
+    expect(
+      labelOf([assistant("a1", [zoomCall]), { ...failed, toolCallId: "c1" }]).textContent,
+    ).toBe("Error: That area is empty");
   });
 });
 

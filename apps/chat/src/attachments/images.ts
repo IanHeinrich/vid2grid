@@ -12,20 +12,45 @@ export function classifyFile(file: File): FileKind {
   return "unsupported";
 }
 
-export async function downscaleImage(
-  blob: Blob,
-  longestEdge: number,
-  quality = 0.85,
-): Promise<{ blob: Blob; width: number; height: number }> {
+const SENT_QUALITY = 0.85;
+export const ORIGINAL_LONGEST_EDGE_PX = 4096;
+export const ORIGINAL_QUALITY = 0.92;
+
+export interface ScaledImage {
+  blob: Blob;
+  width: number;
+  height: number;
+}
+
+export interface DownscaledUpload {
+  sent: ScaledImage;
+  // A larger copy for zooming; absent when the picture already fit the sent size.
+  original?: ScaledImage;
+}
+
+export async function downscaleUpload(blob: Blob, sentEdge: number): Promise<DownscaledUpload> {
   const bitmap = await createImageBitmap(blob);
   try {
-    const scale = Math.min(1, longestEdge / Math.max(bitmap.width, bitmap.height));
-    const width = Math.max(1, Math.round(bitmap.width * scale));
-    const height = Math.max(1, Math.round(bitmap.height * scale));
-    return { blob: await encodeJpeg(bitmap, width, height, quality), width, height };
+    const sent = await scaleBitmap(bitmap, sentEdge, SENT_QUALITY);
+    if (Math.max(bitmap.width, bitmap.height) <= sentEdge) return { sent };
+    const original = await scaleBitmap(bitmap, ORIGINAL_LONGEST_EDGE_PX, ORIGINAL_QUALITY).catch(
+      () => undefined,
+    );
+    return original === undefined ? { sent } : { sent, original };
   } finally {
     bitmap.close();
   }
+}
+
+async function scaleBitmap(
+  bitmap: ImageBitmap,
+  longestEdge: number,
+  quality: number,
+): Promise<ScaledImage> {
+  const scale = Math.min(1, longestEdge / Math.max(bitmap.width, bitmap.height));
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+  return { blob: await encodeJpeg(bitmap, width, height, quality), width, height };
 }
 
 async function encodeJpeg(

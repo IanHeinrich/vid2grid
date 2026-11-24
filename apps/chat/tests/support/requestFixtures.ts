@@ -105,7 +105,7 @@ export function input(overrides: Partial<BuildRequestInput>): BuildRequestInput 
     kept: new Set(),
     dataUrls: new Map(),
     tools: [lookTool],
-    toolGuidance: "Use look to see the video.",
+    toolGuidance: "",
     veniceParameters: false,
     allowTools: true,
     finalRound: false,

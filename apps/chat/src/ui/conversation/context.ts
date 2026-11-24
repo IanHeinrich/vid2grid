@@ -15,7 +15,7 @@ import type { VideoView } from "../video/context";
 import type { TurnStep } from "./activity";
 import type { Lightbox } from "./lightbox";
 import type { MarkdownOptions } from "./markdown";
-import { videoForMessage } from "./messageVideo";
+import { videoForMessage } from "../../chat/messageVideo";
 
 export interface ConversationDeps {
   store: ImageStore;

@@ -1,6 +1,6 @@
 import { addUsage } from "../api/usage";
 import { imagesOf } from "../imageRefs";
-import type { ChatMessage, ChatRequest, TokenUsage, WireMessage } from "../types";
+import type { ChatMessage, ChatRequest, ImageRef, TokenUsage, WireMessage } from "../types";
 
 const CHARS_PER_TOKEN = 4;
 export const FALLBACK_IMAGE_TOKENS = 1500;
@@ -34,6 +34,12 @@ export function requestImageCount(request: ChatRequest): number {
   return request.messages.reduce((sum, message) => sum + imageUrls(message).length, 0);
 }
 
+// A zoom is not square, so it is priced as the square of the same area.
+function renderedSide({ source }: ImageRef): number | undefined {
+  if (source.kind === "sheet") return source.resolution;
+  return source.kind === "zoom" ? Math.ceil(Math.sqrt(source.width * source.height)) : undefined;
+}
+
 // Keyed by the URL each image is sent as, since the request no longer names its images.
 export function sheetSidesByUrl(
   messages: readonly ChatMessage[],
@@ -41,11 +47,10 @@ export function sheetSidesByUrl(
 ): Map<string, number> {
   const sides = new Map<string, number>();
   for (const message of messages) {
-    for (const { id, source } of imagesOf(message)) {
-      const url = dataUrls.get(id);
-      if (url !== undefined && source.kind === "sheet" && source.resolution !== undefined) {
-        sides.set(url, source.resolution);
-      }
+    for (const image of imagesOf(message)) {
+      const url = dataUrls.get(image.id);
+      const side = renderedSide(image);
+      if (url !== undefined && side !== undefined) sides.set(url, side);
     }
   }
   return sides;

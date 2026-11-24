@@ -16,7 +16,7 @@ TypeScript and Vite, no framework.
 - Drag a video into a chat. It stays a playable video in a floating player.
   The app renders an overview of it with vid2grid and sends the sheets to the
   model.
-- Gives the model three tools for the video, and a fourth when audio is on:
+- Gives the model five tools for the video, and a sixth when audio is on:
   - `look(start, end, frames, perSheet)` renders a time range at the density the
     model picks, up to 64 frames and 20 per sheet. Fewer frames per sheet means
     larger frames.
@@ -24,11 +24,27 @@ TypeScript and Vite, no framework.
     call and a single image can check several details.
   - `note(t, text)` adds a line to the chat's scene log, which the model sees
     again on every later turn.
+  - `zoom(image, t, left, top, right, bottom)` crops part of one video frame
+    (`t`) or of an image (`image`, by name) and returns it enlarged as one
+    image. The image can be a dropped picture, a grid, whose frame in the
+    middle of the area is used, or an earlier zoom. The area is given in
+    thousandths of the picture's width and height, from its top left corner.
+    It is left out for a model that cannot see images.
+  - `recall(names)` attaches earlier images again, by the names their stubs
+    give, without rendering anything.
   - `listen(start, end)` reads what is heard in a range, up to 10 minutes per
     call: speech in quotes and sound events, one line each. It is offered only
     on a message with the Audio toggle on.
+- Without a loaded video, `recall` and `zoom` are still offered when the chat
+  holds images and the model can see them. Zooming into a video's frames needs
+  that video loaded.
 - Drop still images into a message too. They are scaled down to the chat's
   resolution. An image can be pinned so it is always sent.
+- Zooming lets the model look closer at a detail. For a video moment the crop
+  comes from the video itself, not from an earlier sheet. For a dropped image,
+  the chat keeps a larger copy (up to 4096 px) in the browser, since the one
+  sent to the model was scaled down, and the crop comes from that copy. Each
+  zoom is one more image, so it counts towards the image limit like any other.
 
 ## Run, build, test
 

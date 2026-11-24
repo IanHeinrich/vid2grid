@@ -19,15 +19,10 @@ function input(extra: Partial<TurnAudioInput> = {}) {
   return { base, status, store };
 }
 
-function names(audio: Awaited<ReturnType<typeof turnAudio>>): string[] {
-  return audio.tools.map((tool) => tool.function.name);
-}
-
 describe("turnAudio", () => {
   it("is off without the flag or without a loaded video", async () => {
     const off = await turnAudio(input({ on: false }).base);
     expect(off.on).toBe(false);
-    expect(names(off)).not.toContain("listen");
     const noVideo = await turnAudio(input({ fileKey: undefined }).base);
     expect(noVideo.on).toBe(false);
   });
@@ -35,7 +30,6 @@ describe("turnAudio", () => {
   it("offers listen with the turn's signal and labels when audio is on", async () => {
     const { base } = input();
     const audio = await turnAudio(base);
-    expect(names(audio)).toContain("listen");
     if (!audio.on) throw new Error("Expected audio on");
     expect(audio.coverage).toEqual({ text: "not analysed yet", canListen: true });
     expect(audio.listen).toMatchObject({
@@ -62,7 +56,6 @@ describe("turnAudio", () => {
     if (!audio.on) throw new Error("Expected audio on");
     expect(audio.coverage.canListen).toBe(false);
     expect(audio.listen).toBeUndefined();
-    expect(names(audio)).not.toContain("listen");
   });
 
   it("shows analysis progress and clears only what it showed", async () => {

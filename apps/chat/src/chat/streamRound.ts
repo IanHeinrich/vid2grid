@@ -13,6 +13,7 @@ export type StreamEnding =
 
 export interface Streamed {
   message: AssistantMessage;
+  producedNothing: boolean;
   ending: StreamEnding;
 }
 
@@ -40,11 +41,13 @@ function joinReasoning(earlier: string, latest: string | undefined): string {
   return [earlier, latest ?? ""].filter((part) => part !== "").join("\n\n");
 }
 
-interface StreamOptions {
+export interface StreamOptions {
   // Watch for a reasoning loop and for Answer now; off for the answer-now retry itself.
   watch: boolean;
   // The stream this one retries: its id and reasoning carry over, marked as cut short.
   cut?: AssistantMessage;
+  // A stream the server refused, whose id this one takes over.
+  retried?: AssistantMessage;
 }
 
 interface StreamedParts {
@@ -52,6 +55,10 @@ interface StreamedParts {
   reasoning: string;
   toolCalls: ToolCall[];
   usage?: TokenUsage;
+}
+
+function isEmpty({ text, reasoning, toolCalls }: StreamedParts): boolean {
+  return text === "" && reasoning === "" && toolCalls.length === 0;
 }
 
 // True when the event changed what the message shows.
@@ -95,15 +102,21 @@ export async function streamAssistant(
   turn: Turn,
   { request, estimatedTokens }: PreparedRequest,
   round: number,
-  { watch, cut }: StreamOptions,
+  { watch, cut, retried }: StreamOptions,
 ): Promise<Streamed> {
   const { deps } = turn;
   turn.imagesSent += requestImageCount(request);
-  const base = cut
-    ? { id: cut.id, createdAt: cut.createdAt, role: "assistant" as const }
+  const earlier = cut ?? retried;
+  const base = earlier
+    ? { id: earlier.id, createdAt: earlier.createdAt, role: "assistant" as const }
     : { id: turn.newId(), createdAt: turn.now(), role: "assistant" as const };
   const parts: StreamedParts = { text: "", reasoning: "", toolCalls: [] };
   const current = () => streamedMessage(base, parts, cut);
+  const streamed = (ending: StreamEnding): Streamed => ({
+    message: current(),
+    producedNothing: isEmpty(parts),
+    ending,
+  });
   const looping = reasoningLoopWatch(reasoningLimit(turn.thoroughness));
   const cutter = streamCutter(deps, watch);
   deps.onEvent({ type: "assistantStart", message: current() });
@@ -126,9 +139,9 @@ export async function streamAssistant(
       }
     }
   } catch (error) {
-    return { message: current(), ending: failedEnding(deps, cutter, error) };
+    return streamed(failedEnding(deps, cutter, error));
   }
-  return { message: current(), ending: settledEnding(deps, cutter) };
+  return streamed(settledEnding(deps, cutter));
 }
 
 function settledEnding(deps: TurnDeps, cutter: StreamCutter): StreamEnding {

@@ -1,8 +1,7 @@
-import { computeOptimalGrid, GUTTER_PX, type GridLayout } from "@vid2grid/core";
 import type { AppElements } from "../../dom";
-import { formatTimestamp } from "../../time";
-import type { ImageRef, ImageStore } from "../../types";
-import { imageCaption, sheetCellTimes } from "./captions";
+import type { ImageRef, ImageSource, ImageStore } from "../../types";
+import { cellAt, sheetCellTimes, sheetGrid } from "../../video/sheetCells";
+import { imageCaption, momentLabel } from "./captions";
 import { setPinState } from "../shared/buttons";
 
 const MAX_ZOOM = 6;
@@ -63,40 +62,10 @@ interface LightboxContext {
   pendingSeek: ReturnType<typeof setTimeout> | null;
 }
 
-export type CellGrid = GridLayout;
-
-// Sheets are square, so an image of any other shape is not one core laid out.
-export function sheetGrid(
-  frameCount: number,
-  aspect: number,
-  width: number,
-  height: number,
-): CellGrid | undefined {
-  if (width !== height) return undefined;
-  try {
-    return computeOptimalGrid(frameCount, {
-      sourceAspect: aspect,
-      outputResolution: width,
-      gutterPx: GUTTER_PX,
-    });
-  } catch {
-    return undefined;
-  }
-}
-
-function axisCell(position: number, offset: number, cell: number, count: number): number | null {
-  const span = count * cell + (count + 1) * GUTTER_PX;
-  if (position < offset || position > offset + span) return null;
-  const index = Math.floor((position - offset - GUTTER_PX / 2) / (cell + GUTTER_PX));
-  return Math.min(count - 1, Math.max(0, index));
-}
-
-export function cellAt(grid: CellGrid, x: number, y: number, frameCount: number): number | null {
-  const col = axisCell(x, grid.offsetX, grid.cellW, grid.cols);
-  const row = axisCell(y, grid.offsetY, grid.cellH, grid.rows);
-  if (col === null || row === null) return null;
-  const index = row * grid.cols + col;
-  return index < frameCount ? index : null;
+function zoomedMoment(source: ImageSource | undefined): number | undefined {
+  return source?.kind === "zoom" && source.target.kind === "moment"
+    ? source.target.seconds
+    : undefined;
 }
 
 export function initLightbox(els: Pick<AppElements, "lightbox">, deps: LightboxDeps): Lightbox {
@@ -253,6 +222,8 @@ function setZoom(ctx: LightboxContext, zoom: Zoom): void {
 function cellTimeAt(ctx: LightboxContext, event: MouseEvent): number | undefined {
   const item = ctx.items[ctx.position];
   const source = item?.ref.source;
+  const moment = zoomedMoment(source);
+  if (moment !== undefined) return moment;
   const aspect = item && ctx.deps.sourceAspect(item);
   const { image } = ctx.els;
   const rect = image.getBoundingClientRect();
@@ -278,7 +249,7 @@ function chooseCell(ctx: LightboxContext, event: MouseEvent): void {
   ctx.chosenSeconds = seconds;
   ctx.pendingSeek = setTimeout(() => {
     ctx.pendingSeek = null;
-    ctx.els.hint.textContent = `Video at ${formatTimestamp(seconds, seconds % 1 !== 0)}`;
+    ctx.els.hint.textContent = `Video at ${momentLabel(seconds)}`;
     ctx.deps.onSeek(seconds, item);
   }, DOUBLE_CLICK_MS);
 }
@@ -291,8 +262,15 @@ function cancelPendingSeek(ctx: LightboxContext): void {
 function ask(ctx: LightboxContext): void {
   const item = ctx.items[ctx.position];
   const source = item?.ref.source;
-  if (!item || source?.kind !== "sheet") return;
-  ctx.deps.onAsk(ctx.chosenSeconds ?? source.startSeconds, item);
+  if (!item) return;
+  const moment = zoomedMoment(source);
+  if (moment !== undefined) {
+    ctx.deps.onAsk(moment, item);
+  } else if (source?.kind === "sheet") {
+    ctx.deps.onAsk(ctx.chosenSeconds ?? source.startSeconds, item);
+  } else {
+    return;
+  }
   close(ctx);
 }
 
@@ -303,12 +281,20 @@ function move(ctx: LightboxContext, delta: number): void {
   show(ctx);
 }
 
+function hintFor(ctx: LightboxContext, item: LightboxItem, moment: number | undefined): string {
+  if (moment !== undefined) return `Click to jump the video to ${momentLabel(moment)}`;
+  const isSheet = item.ref.source.kind === "sheet";
+  return isSheet && ctx.deps.sourceAspect(item) !== undefined ? CELL_HINT : "";
+}
+
 function show(ctx: LightboxContext): void {
   const item = ctx.items[ctx.position];
   if (!item) return;
   const { els } = ctx;
   const { ref } = item;
   const isSheet = ref.source.kind === "sheet";
+  const moment = zoomedMoment(ref.source);
+  const seekable = isSheet || moment !== undefined;
   els.label.textContent = imageCaption(ref);
   els.image.alt = imageCaption(ref);
   els.counter.textContent = `${ctx.position + 1} of ${ctx.items.length}`;
@@ -318,9 +304,9 @@ function show(ctx: LightboxContext): void {
   setPinState(els.pin, ref.pinned);
   cancelPendingSeek(ctx);
   ctx.chosenSeconds = null;
-  els.ask.hidden = !isSheet;
-  els.hint.textContent = isSheet && ctx.deps.sourceAspect(item) !== undefined ? CELL_HINT : "";
-  els.image.classList.toggle("is-seekable", isSheet);
+  els.ask.hidden = !seekable;
+  els.hint.textContent = hintFor(ctx, item, moment);
+  els.image.classList.toggle("is-seekable", seekable);
   setZoom(ctx, { scale: 1, x: 0, y: 0 });
   loadImage(ctx, ref.id);
 }

@@ -512,6 +512,19 @@ describe("buildRequest options", () => {
     expect(buildRequest(input({ tools: [] }))).not.toHaveProperty("tools");
   });
 
+  it("sends the tool guidance exactly when it lists tools", () => {
+    const guided = { toolGuidance: "Use look to see the video." };
+    const systemOf = (overrides: Parameters<typeof input>[0]) =>
+      buildRequest(input({ ...guided, ...overrides })).messages[0]?.content;
+    expect(systemOf({ chat: videoChat })).toContain(guided.toolGuidance);
+    expect(systemOf({})).toContain(guided.toolGuidance);
+    expect(systemOf({ chat: videoChat, finalRound: true })).toContain(guided.toolGuidance);
+    expect(systemOf({ chat: videoChat, allowTools: false })).not.toContain(guided.toolGuidance);
+    expect(systemOf({ chat: videoChat, model: { ...model, tools: false } })).not.toContain(
+      guided.toolGuidance,
+    );
+  });
+
   it("keeps tools listed on the final round but forbids calling them", () => {
     expect(buildRequest(input({}))).not.toHaveProperty("tool_choice");
     const final = buildRequest(input({ finalRound: true }));

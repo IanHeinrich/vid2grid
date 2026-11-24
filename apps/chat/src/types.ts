@@ -194,6 +194,19 @@ export interface VideoCast {
   updatedAt: number;
 }
 
+// In thousandths of the full picture's width and height, from its top left corner.
+export interface ImageArea {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+export type ZoomTarget =
+  | { kind: "moment"; seconds: number; fileKey: string }
+  // Another stored image: its blob id, and the name the model knows it by.
+  | { kind: "image"; id: string; name: string };
+
 export type ImageSource =
   | {
       kind: "sheet";
@@ -205,8 +218,23 @@ export type ImageSource =
       frameCount: number;
       // Longest edge in px as rendered; the overview is often smaller than the chat's resolution.
       resolution?: number;
+      // Each frame's exact time, in cell order; absent on sheets rendered before it was recorded.
+      cellTimes?: number[];
+      // The video it was rendered from; absent on sheets rendered before it was recorded.
+      fileKey?: string;
     }
-  | { kind: "upload"; name: string };
+  // originalId is a larger copy kept for zooming, when the picture was shrunk to be sent.
+  | { kind: "upload"; name: string; originalId?: string }
+  | {
+      kind: "zoom";
+      // The call as shown to the model, e.g. "zoom(1:02.5, 100, 200, 400, 500)".
+      name: string;
+      target: ZoomTarget;
+      // What the picture really shows, after clamping and padding.
+      area: ImageArea;
+      width: number;
+      height: number;
+    };
 
 export interface ImageRef {
   // Key of the JPEG blob in the ImageStore.

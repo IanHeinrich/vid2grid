@@ -85,7 +85,14 @@ function frameTools(): ToolContext {
     store,
     render: () =>
       Promise.resolve([
-        { name: "frames", blob: new Blob(["jpeg"]), startSeconds: 5, endSeconds: 5, frameCount: 1 },
+        {
+          name: "frames",
+          blob: new Blob(["jpeg"]),
+          startSeconds: 5,
+          endSeconds: 5,
+          frameCount: 1,
+          cellTimes: [5],
+        },
       ]),
   };
 }

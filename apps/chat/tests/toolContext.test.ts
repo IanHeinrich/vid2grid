@@ -1,12 +1,12 @@
 import type { VideoInfo } from "@vid2grid/core";
 import { describe, expect, it } from "vitest";
-import { chatModel, toolContext } from "../src/app/toolContext";
+import { chatModel, conversationTools, toolContext } from "../src/app/toolContext";
 import { blankChat } from "../src/chat/chats";
 import { createMemoryStore } from "../src/chat/store";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { createAppState, setCurrentChat, setLoadedVideo, setModels } from "../src/state";
 import type { Chat, VideoAttachment } from "../src/types";
-import { model } from "./support/factories";
+import { assistant, model, tool, upload, user } from "./support/factories";
 
 const VIDEO: VideoAttachment = {
   name: "beach.mp4",
@@ -53,6 +53,32 @@ describe("toolContext", () => {
     setCurrentChat(state, videoChat("", 768), []);
     setLoadedVideo(state, { chatId: "chat", file: new File([], "beach.mp4"), info: INFO });
     expect(toolContext(state, createMemoryStore())).toBeUndefined();
+  });
+});
+
+describe("conversationTools", () => {
+  const unloaded = { videoLoaded: false, listen: false };
+  const names = (...args: Parameters<typeof conversationTools>) =>
+    conversationTools(...args).tools.map((entry) => entry.function.name);
+
+  it("finds an image on any message, whoever sent it", () => {
+    const sees = model("vision");
+    expect(names(sees, [user("u", "hi"), assistant("a", "yo")], unloaded)).toEqual([]);
+    const sent = [user("u", "hi", { images: [upload("i")] })];
+    expect(names(sees, sent, unloaded)).toEqual(["recall", "zoom"]);
+    expect(names(sees, [tool("t", "c", [upload("i")])], unloaded)).toEqual(["recall", "zoom"]);
+    expect(names(model("blind", { vision: false }), sent, unloaded)).toEqual([]);
+  });
+
+  it("offers the video tools with a loaded video, whatever the messages hold", () => {
+    expect(names(model("vision"), [], { videoLoaded: true, listen: true })).toEqual([
+      "look",
+      "frames",
+      "note",
+      "recall",
+      "zoom",
+      "listen",
+    ]);
   });
 });
 

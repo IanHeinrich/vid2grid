@@ -1,9 +1,11 @@
 import type { TurnEvent } from "../../chat/agentLoop";
 import { formatTokens } from "../../chat/tokenEstimate";
+import type { ZoomSource } from "../../imageRefs";
 import { plural } from "../../text";
 import { formatSpan, formatTimestamp } from "../../time";
 import type { AssistantMessage, ImageRef, ToolCall, ToolMessage } from "../../types";
 import { seekButton } from "../shared/buttons";
+import { momentLabel } from "./captions";
 
 const MAX_LISTED_MOMENTS = 4;
 export const STALL_SECONDS = 90;
@@ -95,6 +97,7 @@ export function activitySummary(steps: readonly TurnStep[]): string {
       calls.reduce((sum, call) => sum + frameCount(call), 0),
       "frame",
     ),
+    counted(calls.filter((call) => call.name === "zoom").length, "zoom"),
     counted(calls.filter((call) => call.name === "note").length, "note"),
   ].filter((part) => part !== "");
   return parts.length > 0 ? parts.join(" · ") : "Worked on it";
@@ -120,14 +123,28 @@ export function describeCall(call: ToolCall): string {
     return `Getting ${moments.length === 1 ? "the frame" : "frames"} at ${listMoments(moments)}…`;
   }
   if (call.name === "note") return "Taking a note…";
+  if (call.name === "zoom") return "Zooming in…";
   if (call.name === "recall") {
     return `Re-opening ${plural(Math.max(1, namesOf(call).length), "earlier image")}…`;
   }
   return `Running ${call.name}…`;
 }
 
+function zoomOf(reply: ToolMessage): ZoomSource | undefined {
+  for (const { source } of reply.images) if (source.kind === "zoom") return source;
+  return undefined;
+}
+
+function zoomedLabel({ target }: ZoomSource): string {
+  return target.kind === "moment"
+    ? `Zoomed in at ${momentLabel(target.seconds)}`
+    : `Zoomed in on ${target.name}`;
+}
+
 export function toolSummary(message: ToolMessage, call: ToolCall | undefined): string {
   if (message.text.startsWith("Error:")) return firstLine(message.text);
+  const zoom = zoomOf(message);
+  if (zoom) return zoomedLabel(zoom);
   const moments = call ? momentsOf(call) : [];
   if (call?.name === "frames" && moments.length > 0) {
     return `${moments.length === 1 ? "Frame" : "Frames"} at ${listMoments(moments)}`;
@@ -189,6 +206,10 @@ function replyLabel(call: ToolCall, reply: ToolMessage, render: ActivityRender):
       seekButton(moment, (at) => render.seek(at)),
     ]);
     return [`${call.name} `, ...links];
+  }
+  const zoom = call.name === "zoom" ? zoomOf(reply) : undefined;
+  if (zoom?.target.kind === "moment") {
+    return ["Zoomed in at ", seekButton(zoom.target.seconds, (at) => render.seek(at))];
   }
   if (call.name === "recall") {
     const names = reply.images.map((ref) => ref.source.name);

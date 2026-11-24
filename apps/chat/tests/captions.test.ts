@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ImageRef } from "../src/types";
-import { imageCaption, sheetCellTimes, type SheetSource } from "../src/ui/conversation/captions";
+import type { SheetSource } from "../src/imageRefs";
+import { imageCaption } from "../src/ui/conversation/captions";
+import { sheetCellTimes } from "../src/video/sheetCells";
 
 function sheet(call: string, startSeconds: number, endSeconds: number, frameCount: number) {
   const source: SheetSource = {
@@ -34,6 +36,28 @@ describe("imageCaption", () => {
   it("uses the file name for an upload", () => {
     expect(imageCaption(ref({ kind: "upload", name: "cat.png" }))).toBe("cat.png");
   });
+
+  it("names the moment or the image a zoom looks into", () => {
+    const area = { left: 100, top: 200, right: 400, bottom: 500 };
+    const moment: ImageRef["source"] = {
+      kind: "zoom",
+      name: "zoom(1:02.5, 100, 200, 400, 500)",
+      target: { kind: "moment", seconds: 62.5, fileKey: "beach-key" },
+      area,
+      width: 600,
+      height: 450,
+    };
+    const image: ImageRef["source"] = {
+      kind: "zoom",
+      name: "zoom(beach.jpg, 100, 200, 400, 500)",
+      target: { kind: "image", id: "i1", name: "beach.jpg" },
+      area,
+      width: 600,
+      height: 450,
+    };
+    expect(imageCaption(ref(moment))).toBe("Zoom · 1:02.5");
+    expect(imageCaption(ref(image))).toBe("Zoom · beach.jpg");
+  });
 });
 
 describe("sheetCellTimes", () => {
@@ -41,6 +65,13 @@ describe("sheetCellTimes", () => {
     expect(sheetCellTimes(sheet("frames(0:42, 0:44.5, 1:02:03)", 42, 3723, 3))).toEqual([
       42, 44.5, 3723,
     ]);
+  });
+
+  it("uses the exact first and last times, since the call's labels are rounded", () => {
+    expect(sheetCellTimes(sheet("frames(0:42.1, 0:44.5, 1:02)", 42.17, 62.04, 3))).toEqual([
+      42.17, 44.5, 62.04,
+    ]);
+    expect(sheetCellTimes(sheet("frames(0:42.1)", 42.17, 42.17, 1))).toEqual([42.17]);
   });
 
   it("spaces other sheets evenly from first to last frame", () => {

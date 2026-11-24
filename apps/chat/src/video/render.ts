@@ -12,6 +12,7 @@ export interface RenderedSheet {
   startSeconds: number;
   endSeconds: number;
   frameCount: number;
+  cellTimes: number[];
 }
 
 export function fileKey(file: File): string {
@@ -70,5 +71,6 @@ function renderedSheet(plan: RenderPlan, name: string, blob: Blob): RenderedShee
     startSeconds: first.timestampSeconds,
     endSeconds: last.timestampSeconds,
     frameCount: cells.length,
+    cellTimes: cells.map((cell) => cell.timestampSeconds),
   };
 }

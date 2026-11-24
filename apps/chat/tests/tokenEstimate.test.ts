@@ -4,9 +4,10 @@ import {
   estimateRequestTokens,
   formatTokens,
   replyUsageText,
+  sheetSidesByUrl,
   usageTotals,
 } from "../src/chat/tokenEstimate";
-import type { ChatRequest } from "../src/types";
+import type { ChatMessage, ChatRequest, ImageRef } from "../src/types";
 import { lookTool } from "./support/requestFixtures";
 import { MESSAGES, reply } from "./support/usageFixtures";
 
@@ -58,6 +59,44 @@ describe("formatTokens", () => {
     expect(formatTokens(412_300)).toBe("412k");
     expect(formatTokens(1_250_000)).toBe("1.3M");
     expect(formatTokens(23_000_000)).toBe("23M");
+  });
+});
+
+describe("sheetSidesByUrl", () => {
+  const zoomRef = (width: number, height: number): ImageRef => ({
+    id: "z",
+    pinned: false,
+    source: {
+      kind: "zoom",
+      name: "zoom(0:10, 0, 0, 500, 500)",
+      target: { kind: "moment", seconds: 10, fileKey: "k" },
+      area: { left: 0, top: 0, right: 500, bottom: 500 },
+      width,
+      height,
+    },
+  });
+  const toolWith = (images: ImageRef[]): ChatMessage => ({
+    id: "t",
+    createdAt: 0,
+    role: "tool",
+    toolCallId: "c",
+    text: "",
+    images,
+  });
+  const upload: ImageRef = { id: "u", pinned: false, source: { kind: "upload", name: "a.png" } };
+  const dataUrls = new Map([
+    ["z", "data:z"],
+    ["u", "data:u"],
+  ]);
+
+  it("prices a zoom at the side of the square with the same area, rounded up", () => {
+    const sides = sheetSidesByUrl([toolWith([zoomRef(800, 450)])], dataUrls);
+    expect(sides.get("data:z")).toBe(600);
+    expect(sheetSidesByUrl([toolWith([zoomRef(1000, 333)])], dataUrls).get("data:z")).toBe(578);
+  });
+
+  it("leaves uploads to the chat's resolution", () => {
+    expect(sheetSidesByUrl([toolWith([upload])], dataUrls).size).toBe(0);
   });
 });
 

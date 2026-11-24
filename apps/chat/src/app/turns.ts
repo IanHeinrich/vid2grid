@@ -9,6 +9,7 @@ import {
 } from "../chat/agentLoop";
 import { archiveCurrentReply, compareWithModel } from "../chat/alternates";
 import { NEW_CHAT_TITLE, titleFromMessage } from "../chat/chats";
+import { videoForImage } from "../chat/messageVideo";
 import { currentModel } from "../chat/models";
 import { shouldSummarize, summarizeStory } from "../chat/summary";
 import { messageThoroughness, roundsFor } from "../chat/thoroughness";
@@ -28,29 +29,24 @@ import type {
   Chat,
   ChatMessage,
   ChatStore,
-  ImageRef,
   ModelInfo,
   RunTool,
   SceneNote,
   StorySoFar,
   StreamChat,
   Thoroughness,
+  ToolSchema,
   UserMessage,
   VideoCast,
   VideoTimeline,
 } from "../types";
 import { resolveSheetResolution } from "../video/resolution";
-import {
-  createToolRunner,
-  TOOL_GUIDANCE,
-  type ListenContext,
-  type ToolContext,
-} from "../video/tools";
+import { createToolRunner, type ToolContext } from "../video/tools";
 import type { StatusLine } from "../ui/shared/status";
 import type { Toast } from "../ui/shared/toast";
 import { modelCallDeps } from "./modelCallDeps";
 import { estimateTokens } from "./requestEstimate";
-import { toolContext } from "./toolContext";
+import { conversationTools, toolContext } from "./toolContext";
 import { turnAudio, type AudioStatus, type TurnAudio } from "./turnAudio";
 
 export const KEEP_GOING_TEXT = "Keep going: continue investigating from your notes, then answer.";
@@ -139,7 +135,7 @@ interface TurnSetup {
   audioCoverage: AudioCoverage | undefined;
   timeline: VideoTimeline | undefined;
   cast: VideoCast | undefined;
-  allowTools: boolean;
+  videoLoaded: boolean;
 }
 
 export function initTurns(state: AppState, deps: TurnsDeps): Turns {
@@ -288,21 +284,41 @@ function loadCast(ctx: TurnsContext, chat: Chat): Promise<VideoCast | undefined>
   return ctx.deps.store.getCast(key).catch(() => undefined);
 }
 
-function modelToolRunner(
-  toolCtx: ToolContext | undefined,
-  model: ModelInfo,
-  resolution: number,
-  listen: ListenContext | undefined,
-  knownImages: () => readonly ImageRef[],
-): RunTool | undefined {
-  if (!toolCtx) return undefined;
-  return createToolRunner({
-    ...toolCtx,
-    resolution,
-    maxImages: model.maxImages,
-    knownImages,
-    ...(listen ? { audio: listen } : {}),
+interface TurnTools {
+  tools: ToolSchema[];
+  toolGuidance: string;
+  runTool: RunTool | undefined;
+}
+
+interface TurnToolsInput {
+  chat: Chat;
+  model: ModelInfo;
+  resolution: number;
+  toolCtx: ToolContext | undefined;
+  heard: TurnAudio;
+  // Grows as the turn saves messages.
+  messages: readonly ChatMessage[];
+}
+
+function turnTools(ctx: TurnsContext, input: TurnToolsInput): TurnTools {
+  const { chat, model, resolution, toolCtx, heard, messages } = input;
+  const { tools, guidance } = conversationTools(model, messages, {
+    videoLoaded: toolCtx !== undefined,
+    listen: heard.on && heard.coverage.canListen,
   });
+  if (tools.length === 0) return { tools, toolGuidance: guidance, runTool: undefined };
+  const { maxImages } = model;
+  const runTool = createToolRunner({
+    store: ctx.deps.store,
+    resolution,
+    maxImages,
+    tools,
+    knownImages: () => messages.flatMap(imagesOf),
+    videoOfImage: (id) => videoForImage(messages, id, toolCtx?.video ?? chat.video),
+    ...(toolCtx ? { sheets: { ...toolCtx, resolution, maxImages } } : {}),
+    ...(heard.on && heard.listen ? { audio: heard.listen } : {}),
+  });
+  return { tools, toolGuidance: guidance, runTool };
 }
 
 function answerNotice(outcome: TurnOutcome): string | undefined {
@@ -339,25 +355,23 @@ async function runChatTurn(
   const cast = await loadCast(ctx, touched);
   const heard = await audioFor(ctx, audio, toolCtx, signal);
   const audioCoverage = heard.on ? heard.coverage : undefined;
-  const allowTools = toolCtx !== undefined;
-  const setup = { chat: touched, model, thoroughness, audioCoverage, timeline, cast, allowTools };
+  const videoLoaded = toolCtx !== undefined;
+  const setup = { chat: touched, model, thoroughness, audioCoverage, timeline, cast, videoLoaded };
   const chat = await withStorySoFar(ctx, setup, signal);
   if (signal.aborted) return;
   const { api, veniceParameters } = modelCallDeps(state, deps.streamChat, model.id, signal);
   const resolution = resolveSheetResolution(chat.settings.sheetResolution, model).px;
   // Kept here rather than read from state, so recall still finds images if the user switches chats.
-  const knownImages: ImageRef[] = state.messages.flatMap(imagesOf);
-  const listen = heard.on ? heard.listen : undefined;
+  const known: ChatMessage[] = [...state.messages];
   const turnDeps: TurnDeps = {
     chat,
     messages: [...state.messages],
     model,
     api,
+    ...turnTools(ctx, { chat, model, resolution, toolCtx, heard, messages: known }),
+    toolsOptional: !videoLoaded,
     streamChat: deps.streamChat,
-    runTool: modelToolRunner(toolCtx, model, resolution, listen, () => knownImages),
     store: deps.store,
-    tools: heard.tools,
-    toolGuidance: TOOL_GUIDANCE,
     veniceParameters,
     signal,
     answerNow,
@@ -368,7 +382,7 @@ async function runChatTurn(
     maxRounds: roundsFor(thoroughness, chat.settings.maxRounds),
     ...(timeline ? { timeline } : {}),
     ...(cast ? { cast } : {}),
-    persist: persister(ctx, chat.id, knownImages),
+    persist: persister(ctx, chat.id, known),
     onEvent: (event) => onTurnEvent(ctx, chat, event, heard.progress),
   };
   const turn = compareWith ? compareTurn(ctx, turnDeps, compareWith) : runTurn(turnDeps);
@@ -381,10 +395,10 @@ async function runChatTurn(
 function persister(
   { state, deps }: TurnsContext,
   chatId: string,
-  knownImages: ImageRef[],
+  known: ChatMessage[],
 ): TurnDeps["persist"] {
   return async (message) => {
-    knownImages.push(...imagesOf(message));
+    known.push(message);
     if (!state.chats.some((entry) => entry.id === chatId)) return;
     await deps.store.putMessage(chatId, message);
     if (state.currentChat?.id !== chatId) return;
