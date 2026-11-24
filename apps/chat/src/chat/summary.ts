@@ -6,7 +6,7 @@ import { storyCut } from "./story";
 import { sceneLogLines } from "./prompts";
 
 const SUMMARIZE_ABOVE_SHARE = 0.6;
-const FALLBACK_CONTEXT_TOKENS = 32_768;
+export const FALLBACK_CONTEXT_TOKENS = 32_768;
 const DEFAULT_KEEP_TURNS = 4;
 
 export const STORY_SYSTEM_PROMPT = [

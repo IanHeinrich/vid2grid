@@ -9,10 +9,18 @@ import {
 } from "../chat/agentLoop";
 import { archiveCurrentReply, compareWithModel } from "../chat/alternates";
 import { NEW_CHAT_TITLE, titleFromMessage } from "../chat/chats";
+import { newestUserMessage } from "../chat/imageSelection";
 import { videoForImage } from "../chat/messageVideo";
 import { currentModel } from "../chat/models";
+import { visibleMessages } from "../chat/story";
 import { shouldSummarize, summarizeStory } from "../chat/summary";
 import { messageThoroughness, roundsFor } from "../chat/thoroughness";
+import {
+  sameTranscript,
+  transcriptToCarry,
+  transcriptTokenCap,
+  type HeardSpeech,
+} from "../chat/transcript";
 import { imagesOf } from "../imageRefs";
 import {
   isRunningIn,
@@ -141,6 +149,7 @@ interface TurnSetup {
   model: ModelInfo;
   thoroughness: Thoroughness;
   audioCoverage: AudioCoverage | undefined;
+  speech: HeardSpeech | undefined;
   timeline: VideoTimeline | undefined;
   cast: VideoCast | undefined;
   videoLoaded: boolean;
@@ -353,12 +362,35 @@ function answerNotice(outcome: TurnOutcome): string | undefined {
 function audioFor(
   ctx: TurnsContext,
   on: boolean,
-  toolCtx: ToolContext | undefined,
+  { chat, toolCtx }: { chat: Chat; toolCtx: ToolContext | undefined },
   signal: AbortSignal,
 ): Promise<TurnAudio> {
   const { store, status } = ctx.deps;
-  const fileKey = toolCtx?.video.fileKey;
-  return turnAudio({ on, fileKey, store, settings: ctx.state.settings, status, signal });
+  const { settings } = ctx.state;
+  const keys = { fileKey: toolCtx?.video.fileKey, chatVideoKey: chat.video?.fileKey };
+  return turnAudio({ on, ...keys, store, settings, status, signal });
+}
+
+async function recordTranscript(
+  { state, deps }: TurnsContext,
+  chat: Chat,
+  model: ModelInfo,
+  speech: HeardSpeech | undefined,
+): Promise<void> {
+  const visible = visibleMessages(chat, state.messages);
+  const newest = newestUserMessage(visible);
+  if (newest?.audio !== true) return;
+  const carried = speech && transcriptToCarry(visible, speech, transcriptTokenCap(model));
+  const own = newest.transcript?.fileKey === chat.video?.fileKey ? newest.transcript : undefined;
+  const transcript = carried ?? own;
+  if (sameTranscript(transcript, newest.transcript)) return;
+  const message: UserMessage = { ...newest };
+  if (transcript) message.transcript = transcript;
+  else delete message.transcript;
+  await deps.store.putMessage(chat.id, message);
+  if (state.currentChat?.id !== chat.id) return;
+  upsertMessage(state, message);
+  deps.conversation.show(message);
 }
 
 async function runChatTurn(
@@ -369,17 +401,28 @@ async function runChatTurn(
   compareWith?: ModelInfo,
 ): Promise<void> {
   const { state, deps } = ctx;
+  const ended = () => signal.aborted || state.currentChat?.id !== touched.id;
   const model = compareWith ?? currentModel(state);
-  if (model === null) return;
+  if (model === null || ended()) return;
   const toolCtx = toolContext(state, deps.store);
   const timeline = deps.timeline();
   const cast = await loadCast(ctx, touched);
-  const heard = await audioFor(ctx, audio, toolCtx, signal);
+  const heard = await audioFor(ctx, audio, { chat: touched, toolCtx }, signal);
+  if (ended()) return;
+  const { speech } = heard;
+  // A comparison asks exactly what the first model was asked.
+  const records = audio && !compareWith;
+  if (records) await recordTranscript(ctx, touched, model, speech);
+  if (ended()) return;
   const audioCoverage = heard.on ? heard.coverage : undefined;
   const videoLoaded = toolCtx !== undefined;
-  const setup = { chat: touched, model, thoroughness, audioCoverage, timeline, cast, videoLoaded };
+  const loaded = { audioCoverage, speech, timeline, cast, videoLoaded };
+  const setup: TurnSetup = { chat: touched, model, thoroughness, ...loaded };
   const chat = await withStorySoFar(ctx, setup, signal);
-  if (signal.aborted) return;
+  if (ended()) return;
+  // The summary may have folded away the message that carried the transcript.
+  if (records && chat !== touched) await recordTranscript(ctx, chat, model, speech);
+  if (ended()) return;
   const { api, veniceParameters } = modelCallDeps(state, deps.streamChat, model.id, signal);
   const resolution = resolveSheetResolution(chat.settings.sheetResolution, model).px;
   // Kept here rather than read from state, so recall still finds images if the user switches chats.
@@ -400,6 +443,7 @@ async function runChatTurn(
     ...withImageTokens(modelVisionProfile(model.id).imageTokens),
     thoroughness,
     ...(heard.on ? { audioCoverage: heard.coverage } : {}),
+    ...(speech ? { speech } : {}),
     maxRounds: roundsFor(thoroughness, chat.settings.maxRounds),
     ...(timeline ? { timeline } : {}),
     ...(cast ? { cast } : {}),

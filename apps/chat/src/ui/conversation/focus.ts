@@ -27,3 +27,13 @@ export function messagePosition(ctx: ConversationContext, el: Element | null): n
     shown.findIndex((entry) => entry === el),
   );
 }
+
+const FOCUSABLE = "a[href], button, input, textarea, video, [tabindex]";
+
+// Replaces a message's element with one that has the same controls, leaving focus on the same one.
+export function replaceKeepingFocus(from: HTMLElement, to: HTMLElement): void {
+  const controls = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>(FOCUSABLE)];
+  const focused = controls(from).findIndex((control) => control === document.activeElement);
+  from.replaceWith(to);
+  controls(to)[focused]?.focus({ preventScroll: true });
+}

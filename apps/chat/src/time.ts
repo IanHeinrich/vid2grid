@@ -18,6 +18,14 @@ export function formatSpan(startSeconds: number, endSeconds: number): string {
   return `${formatTimestamp(startSeconds, tenths)} to ${formatTimestamp(endSeconds, tenths)}`;
 }
 
+export function spanListText(
+  spans: readonly { startSeconds: number; endSeconds: number }[],
+): string {
+  return spans
+    .map((span) => `${formatTimestamp(span.startSeconds)} to ${formatTimestamp(span.endSeconds)}`)
+    .join(", ");
+}
+
 const HOURS_MINUTES = String.raw`(?:(\d+):)?(\d{1,2}):`;
 // Captures hours, minutes and seconds; written by people or models, so seconds may be one digit.
 export const CLOCK_TIME = String.raw`${HOURS_MINUTES}(\d{1,2}(?:\.\d+)?)`;

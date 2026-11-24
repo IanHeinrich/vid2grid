@@ -69,6 +69,47 @@ describe("keep going, continuations and running", () => {
     expect(tags.map((tag) => tag.textContent)).toEqual(["Audio"]);
   });
 
+  it("says how far the transcript sent with a message went, on a continuation too", () => {
+    const conversation = initConversation(els, deps());
+    const transcript = { fileKey: "beach-key", spans: [{ startSeconds: 0, endSeconds: 2530 }] };
+    conversation.reset([
+      user("u1", "What is said?", { audio: true, transcript }),
+      assistant("a1", "Plenty."),
+      user("u2", "Keep going", { audio: true, continuation: true, transcript }),
+      assistant("a2", "More."),
+      user("u3", "And now?", { audio: true }),
+    ]);
+    const tags = [...list().querySelectorAll<HTMLElement>(".transcript-tag")];
+    expect(tags.map((tag) => tag.textContent)).toEqual([
+      "Transcript to 42:10 sent",
+      "Transcript to 42:10 sent",
+    ]);
+    expect(tags[0]?.title).toContain("0:00 to 42:10");
+  });
+
+  it("keeps focus on the same control when the message is shown again", () => {
+    const conversation = initConversation(els, deps());
+    const message = user("u1", "What is said?", { audio: true });
+    conversation.reset([message, assistant("a1", "Plenty.")]);
+    const [before] = buttonsLabelled("Copy message");
+    before?.focus();
+    expect(document.activeElement).toBe(before);
+    const transcript = { fileKey: "beach-key", spans: [{ startSeconds: 0, endSeconds: 60 }] };
+    conversation.show({ ...message, transcript });
+    const [after] = buttonsLabelled("Copy message");
+    expect(after).not.toBe(before);
+    expect(document.activeElement).toBe(after);
+  });
+
+  it("leaves focus elsewhere alone when a message is shown again", () => {
+    const conversation = initConversation(els, deps());
+    const message = user("u1", "What is said?");
+    conversation.reset([message]);
+    els.composer.messageInput.focus();
+    conversation.show({ ...message });
+    expect(document.activeElement).toBe(els.composer.messageInput);
+  });
+
   it("disables the actions while a turn runs", () => {
     const conversation = initConversation(els, deps());
     conversation.reset(exchanges());

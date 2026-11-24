@@ -3,9 +3,18 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { estimateNextRequest, estimateTokens } from "../src/app/requestEstimate";
 import { blankChat } from "../src/chat/chats";
 import { audioNote } from "../src/chat/prompts";
+import { loadAudio } from "../src/audio/videoAudio";
+import { createMemoryStore } from "../src/chat/store";
 import { DEFAULT_SETTINGS } from "../src/settings";
-import { addPending, createAppState, setCurrentChat, setModels, type AppState } from "../src/state";
-import type { ChatMessage, EarlierImages, ImageRef, ModelInfo } from "../src/types";
+import {
+  addPending,
+  createAppState,
+  replaceChat,
+  setCurrentChat,
+  setModels,
+  type AppState,
+} from "../src/state";
+import type { ChatMessage, EarlierImages, ImageRef, ModelInfo, StorySoFar } from "../src/types";
 import { LISTEN_SCHEMA } from "../src/video/tools";
 import { model as baseModel } from "./support/factories";
 import { MESSAGES, reply } from "./support/usageFixtures";
@@ -103,6 +112,90 @@ describe("audio in the estimate", () => {
     expect(estimateNextRequest(state, undefined, false, COVERAGE)).toBe(
       estimateNextRequest(state, undefined, false),
     );
+  });
+});
+
+describe("the transcript in the estimate", () => {
+  const VIDEO = {
+    name: "talk.mp4",
+    fileKey: "estimate-talk",
+    durationSeconds: 3600,
+    width: 640,
+    height: 360,
+  };
+  const WORDS = "words said ".repeat(15).trim();
+
+  async function hear(): Promise<void> {
+    const store = createMemoryStore();
+    await store.putAudio({
+      fileKey: VIDEO.fileKey,
+      labels: [],
+      backgroundLabels: [],
+      speechSpans: [{ startSeconds: 0, endSeconds: 3600 }],
+      soundSpans: [],
+      speech: Array.from({ length: 120 }, (_, index) => ({
+        start: index * 30,
+        end: index * 30 + 5,
+        text: WORDS,
+      })),
+      events: [],
+      updatedAt: 1,
+    });
+    await loadAudio(store, VIDEO.fileKey);
+  }
+
+  function estimateFor(
+    messages: ChatMessage[],
+    coverage = true,
+    extra: Partial<ModelInfo> = {},
+    story?: StorySoFar,
+  ) {
+    setModels(state, [model(extra)]);
+    const blank = { ...blankChat("m", "chat", 1), video: VIDEO };
+    const chat = story ? { ...blank, storySoFar: story } : blank;
+    replaceChat(state, chat);
+    setCurrentChat(state, chat, messages);
+    const heard = { text: "analysed", canListen: true };
+    return estimateNextRequest(state, undefined, coverage, coverage ? heard : undefined) ?? 0;
+  }
+
+  it("counts it on the message that would carry it, when audio is on", async () => {
+    const before = estimateFor([]);
+    const off = estimateFor([], false);
+    await hear();
+    const tokens = (120 * (WORDS.length + 8)) / 4;
+    expect(estimateFor([]) - before).toBeGreaterThanOrEqual(tokens);
+    expect(estimateFor([], false)).toBe(off);
+    const small = estimateFor([], true, { contextTokens: 8000 }) - before;
+    expect(small).toBeLessThan(2400);
+    expect(small).toBeGreaterThan(1500);
+  });
+
+  const sent: ChatMessage = {
+    id: "u1",
+    createdAt: 0,
+    role: "user",
+    text: "hi",
+    images: [],
+    audio: true,
+    transcript: { fileKey: VIDEO.fileKey, spans: [{ startSeconds: 0, endSeconds: 3600 }] },
+  };
+  const answered = reply("a1", 10, 10);
+
+  it("counts only the stub once it has been sent, or all of it without listen", async () => {
+    await hear();
+    const first = estimateFor([]);
+    expect(first - estimateFor([sent, answered])).toBeGreaterThan(5000);
+    const noTools = { tools: false };
+    const still = estimateFor([sent, answered], true, noTools) - estimateFor([], true, noTools);
+    expect(Math.abs(still)).toBeLessThan(50);
+  });
+
+  it("counts it again once the message that carried it is in the chat summary", async () => {
+    await hear();
+    const story = { text: "They spoke.", throughMessageId: answered.id, updatedAt: 1 };
+    const folded = estimateFor([sent, answered], true, {}, story);
+    expect(folded - estimateFor([sent, answered])).toBeGreaterThan(5000);
   });
 });
 

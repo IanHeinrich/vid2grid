@@ -347,6 +347,16 @@ describe("audio coverage", () => {
     });
   });
 
+  it("says only what the transcript does not, once speech has been heard", () => {
+    expect(audioCoverage(heard(), LABELS).besideTranscript).toBe(
+      "the speech heard is in the transcript; sounds analysed 0:00 to 12:30",
+    );
+    expect(audioCoverage(heard({ soundSpans: [] }), LABELS).besideTranscript).toBe(
+      "the speech heard is in the transcript; sounds not analysed yet",
+    );
+    expect(audioCoverage(heard({ speech: [] }), LABELS)).not.toHaveProperty("besideTranscript");
+  });
+
   it("names speech and sounds apart when they cover different stretches", () => {
     const labels = { labels: ["footsteps"], backgroundLabels: ["silence"] };
     expect(describeAudioCoverage(heard(), labels)).toBe(

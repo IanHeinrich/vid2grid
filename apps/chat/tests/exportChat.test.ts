@@ -121,6 +121,22 @@ describe("chatToMarkdown", () => {
     expect(markdown).not.toContain("Old reply.");
   });
 
+  it("says how far the transcript sent with a message went", () => {
+    const transcript = { fileKey: video.fileKey, spans: [{ startSeconds: 0, endSeconds: 125 }] };
+    const sent: ChatMessage = {
+      id: "u1",
+      createdAt: 1,
+      role: "user",
+      text: "What is said?",
+      images: [],
+      audio: true,
+      transcript,
+    };
+    expect(chatToMarkdown(chat("c"), [sent])).toContain(
+      "What is said?\n\n_Transcript to 2:05 sent_",
+    );
+  });
+
   it("writes a readable transcript", () => {
     expect(chatToMarkdown(chat("c"), messages)).toBe(
       [

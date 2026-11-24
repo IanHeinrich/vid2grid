@@ -191,8 +191,19 @@ export interface VideoAudio {
 // What the model is told about a video's audio on a message with audio on.
 export interface AudioCoverage {
   text: string;
+  // Replaces text in a request that carries the transcript; absent while no speech has been heard.
+  besideTranscript?: string;
   // False when the video has no audio track, so listen is not offered.
   canListen: boolean;
+}
+
+// Which of a video's heard speech a message sent; the text is rebuilt from the stored speech.
+export interface SentTranscript {
+  fileKey: string;
+  // What had been heard by then, so speech heard later does not change the text.
+  spans: AudioSpan[];
+  // Where the text stopped at its size cap.
+  cutSeconds?: number;
 }
 
 // The people or characters in a video, kept per video like its timeline.
@@ -280,6 +291,8 @@ export interface UserMessage extends MessageBase {
   reasoningEffort?: string;
   // Audio: this message's reply may call listen and is told what has been heard so far.
   audio?: true;
+  // The transcript the message's reply was given, when it was given one.
+  transcript?: SentTranscript;
   // Swipes: the replies not shown, in swipe order. The shown reply sits at replyIndex among them.
   alternates?: AlternateReply[];
   replyIndex?: number;

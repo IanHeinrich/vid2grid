@@ -4,8 +4,8 @@ import { overviewOptions } from "../src/video/overview";
 
 const RESOLUTION = 1568;
 
-function geometry(width: number, height: number) {
-  return { sourceAspect: width / height, outputResolution: RESOLUTION };
+function geometry(width: number, height: number, outputResolution = RESOLUTION) {
+  return { sourceAspect: width / height, outputResolution };
 }
 
 function blanksFor(framesPerGrid: number, width: number, height: number): number | null {
@@ -53,6 +53,33 @@ describe("overviewOptions", () => {
     expect(options.frameCount).toBe(options.framesPerGrid);
     expect(options.framesPerGrid).toBeLessThanOrEqual(10);
     expect(blanksFor(options.framesPerGrid, 1920, 1080)).toBe(0);
+  });
+
+  describe.each([1024, 1536, 1568, 2048, 2560])("for a long video at %d px", (resolution) => {
+    it.each([
+      ["16:9", 1920, 1080],
+      ["4:3", 1440, 1080],
+      ["9:16", 1080, 1920],
+      ["21:9", 2560, 1080],
+    ])("gives four sheets of 20 frames for %s", (_label, width, height) => {
+      for (const minutes of [30, 120]) {
+        expect(overviewOptions(minutes * 60, 10, geometry(width, height, resolution))).toEqual({
+          frameCount: 80,
+          framesPerGrid: 20,
+        });
+      }
+    });
+  });
+
+  it("still keeps half a small image cap free for a long video", () => {
+    expect(overviewOptions(1800, 4, geometry(1920, 1080, 2048))).toEqual({
+      frameCount: 40,
+      framesPerGrid: 20,
+    });
+  });
+
+  it("fills every sheet of a shorter video even where 20 would leave a blank", () => {
+    expect(overviewOptions(600, 10, geometry(1920, 1080, 2048)).framesPerGrid).toBe(18);
   });
 
   it("never returns fewer than one frame", () => {

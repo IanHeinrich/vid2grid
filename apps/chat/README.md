@@ -15,7 +15,7 @@ TypeScript and Vite, no framework.
   effort, sheet resolution and round limit, and is saved in IndexedDB.
 - Drag a video into a chat. It stays a playable video in a floating player.
   The app renders an overview of it with vid2grid and sends the sheets to the
-  model.
+  model. With Audio on, the transcript of the speech heard so far goes with it.
 - Gives the model five tools for the video, and a sixth when audio is on:
   - `look(start, end, frames, perSheet)` renders a time range at the density the
     model picks, up to 64 frames and 20 per sheet. Fewer frames per sheet means
@@ -292,6 +292,9 @@ and seeking the player work on the current video.
   as you typed it, so a descriptive phrase works too. Speech is transcribed in
   five second pieces, and a piece that is only a tag such as `(laughter)` is
   listed as a sound.
+- **Transcript.** A message sent with Audio on carries the speech heard so far as
+  text, next to the overview, and shows what it covered, such as "Transcript to
+  42:10 sent". See The transcript below.
 
 ## Storage and export
 
@@ -369,6 +372,41 @@ If the model needs an older part of the video, it can call `look` again.
 Rendered sheets are cached, so asking again costs no new rendering. If pinned
 images alone exceed the cap, the turn does not start until you unpin some.
 
+A video of 20 minutes or more gets an overview of 20 frames a sheet, so four
+sheets of 20 on a model that takes ten images. Measured on videos of 30 to 60
+minutes, that shape with the transcript did best. A shorter video gets the
+highest count up to 20 that leaves no blank cells.
+
+### The transcript
+
+The first message with Audio on, once some speech has been heard, carries the
+transcript: timed lines such as `[12:40] text`, after a line saying which ranges
+have been heard, so that silence is not mistaken for audio not heard yet. Sending
+never waits for the audio: what has not been heard by then is left out and said
+to be. A later message carries it again when the text has grown by at least a
+quarter since the last one that got a reply, when speech from before that one's
+start has been heard and the text is cut at its cap, or when the chat summary has
+replaced the message that carried it. Keep going never carries another one into a
+reply that already has it. On a message with Audio off, no transcript is sent.
+
+- It is capped at about 16,000 tokens or a quarter of the model's context,
+  whichever is smaller. Over the cap it runs from the start of the video to the
+  cap, and a last line says which range is left out.
+- For the rest of that turn, Keep going included, the text stays in the request.
+  On later turns it is a one line stub saying what it covered and that `listen`
+  can read any range again. Where `listen` is not offered, because the model
+  cannot use tools or the video's file is not loaded, the newest transcript stays
+  in full in its place, as long as Audio is on.
+- The message stores the ranges that had been heard and where the text was cut,
+  not the text, which is rebuilt from the speech stored for the video. Speech
+  heard later does not change it, so the server's prompt cache holds. A backup
+  holds no speech, so a transcript cannot be rebuilt in another browser.
+- Times on the transcript's lines count as seen for the receipt's "Cited without
+  looking" note, though only those exact times.
+- Replay decides again with what has been heard by then, and drops the transcript
+  of a video that has since been replaced. Compare with another model sends what
+  the first model was sent, cut to the other model's cap.
+
 ### The context block
 
 The system prompt holds only things that do not change during a chat: the
@@ -378,8 +416,10 @@ prompt cache can reuse it.
 
 What changes goes in a context block, a message placed just before your newest
 message. It holds the chat summary, the people, the study timeline, the scene log
-and, for a Thorough or Exhaustive reply, the extra guidance. A new note then only breaks the cache
-from that point on, and the receipt shows how much was cached.
+and, for a Thorough or Exhaustive reply, the extra guidance. With Audio on it
+also says what has been analysed, leaving out the speech the transcript already
+covers. A new note then only breaks the cache from that point on, and the
+receipt shows how much was cached.
 
 ### Sheet resolution
 

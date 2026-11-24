@@ -27,6 +27,12 @@ describe.each([
     expect([...idsIn({ messages, refs })].sort()).toEqual(all);
   });
 
+  it("reads a message that carried a transcript", () => {
+    const transcript = { fileKey: "k", spans: [{ startSeconds: 0, endSeconds: 60 }] };
+    const messages = [user("u", "hi", { audio: true, transcript, images: [uploadRef("p1")] })];
+    expect([...idsIn({ messages })]).toEqual(["p1"]);
+  });
+
   it("reads images and swipes wherever they are, assistant messages included", () => {
     const alternates = [{ messages: [tool("t", "c", [sheet("s2", 0, 1)])], createdAt: 1 }];
     const odd = as({ ...assistant("a", "hi"), images: [uploadRef("p", "big")], alternates });

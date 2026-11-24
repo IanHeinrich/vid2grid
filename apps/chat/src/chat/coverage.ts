@@ -74,7 +74,13 @@ export function seenSpans(messages: readonly ChatMessage[]): SeenSpan[] {
   }));
 }
 
-export function unseenCitations(text: string, spans: readonly SeenSpan[]): number[] {
+type CitableSpan = Pick<SeenSpan, "startSeconds" | "endSeconds">;
+
+export function instantSpans(times: readonly number[]): CitableSpan[] {
+  return times.map((t) => padded(t, t, 1));
+}
+
+export function unseenCitations(text: string, spans: readonly CitableSpan[]): number[] {
   const cited = new Set(findTimestamps(text, { bare: false }).map((found) => found.seconds));
   return [...cited].filter(
     (seconds) => !spans.some((span) => seconds >= span.startSeconds && seconds <= span.endSeconds),

@@ -22,7 +22,7 @@ import type {
   VideoCast,
   VideoTimeline,
 } from "../types";
-import { seenSpans, unseenCitations } from "./coverage";
+import { instantSpans, seenSpans, unseenCitations } from "./coverage";
 import { pinsExceedCap } from "./imageSelection";
 import { buildRequest } from "./request";
 import { keptImages } from "./story";
@@ -36,6 +36,7 @@ import { roundsFor } from "./thoroughness";
 import { estimateRequestTokens, requestImageCount, sheetSidesByUrl } from "./tokenEstimate";
 import { answerToolCalls } from "./toolCalls";
 import { stripToolMarkup } from "./toolMarkup";
+import { transcriptTimes, transcriptTokenCap, type HeardSpeech } from "./transcript";
 
 export { DEEP_MAX_ROUNDS, DEFAULT_MAX_ROUNDS } from "./thoroughness";
 export {
@@ -72,6 +73,8 @@ export interface TurnDeps {
   answerNow?: AbortSignal;
   // Present only when audio is on for this message: what has been heard so far, for the context.
   audioCoverage?: AudioCoverage;
+  // Read once for the turn, so every round sends the same transcript.
+  speech?: HeardSpeech;
   timeline?: VideoTimeline;
   cast?: VideoCast;
   now?: () => number;
@@ -272,11 +275,14 @@ function settleReply(
 }
 
 function withReceipt(turn: Turn, message: AssistantMessage, round: number): AssistantMessage {
+  const { model, speech } = turn.deps;
+  const read = transcriptTimes(turn.messages, speech, transcriptTokenCap(model));
+  const shown = [...seenSpans(turn.messages), ...instantSpans(read)];
   const receipt: TurnReceipt = {
     rounds: round + 1,
     imagesSent: turn.imagesSent,
     durationMs: turn.now() - turn.startedAt,
-    unseenCitations: unseenCitations(message.text, seenSpans(turn.messages)),
+    unseenCitations: unseenCitations(message.text, shown),
   };
   return { ...message, receipt };
 }
@@ -309,6 +315,7 @@ async function prepareRequest(
     thoroughness: turn.thoroughness,
     ...(answeringNow ? { answerNow: true } : {}),
     ...(deps.audioCoverage !== undefined ? { audioCoverage: deps.audioCoverage } : {}),
+    ...(deps.speech ? { speech: deps.speech } : {}),
     ...(deps.timeline ? { timeline: deps.timeline } : {}),
     ...(deps.cast ? { cast: deps.cast } : {}),
   });

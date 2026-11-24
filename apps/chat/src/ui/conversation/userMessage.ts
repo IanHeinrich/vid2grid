@@ -1,5 +1,7 @@
 import { messageThoroughness } from "../../chat/thoroughness";
-import type { AssistantMessage, UserMessage } from "../../types";
+import { sentSpans, transcriptSentText } from "../../chat/transcript";
+import { spanListText } from "../../time";
+import type { AssistantMessage, SentTranscript, UserMessage } from "../../types";
 import { editKeys, pinToggle, smallButton } from "../shared/buttons";
 import { answerOf } from "./activity";
 import { imageCaption } from "./captions";
@@ -14,7 +16,7 @@ import {
   type Entry,
   type TurnView,
 } from "./context";
-import { focusWithin } from "./focus";
+import { focusWithin, replaceKeepingFocus } from "./focus";
 import { renderMarkdownInto } from "./markdown";
 import { branchButton, copyButton, deleteButton, editButton } from "./replyControls";
 import { thumbnail, togglePin } from "./thumbnails";
@@ -35,7 +37,7 @@ export function renderUser(ctx: ConversationContext, turn: TurnView): void {
   const entry = message.continuation
     ? continuationMarker(ctx, message)
     : userElement(ctx, message, () => renderUser(ctx, turn));
-  previous.el.replaceWith(entry.el);
+  replaceKeepingFocus(previous.el, entry.el);
   turn.userEntry = entry;
 }
 
@@ -43,7 +45,9 @@ function continuationMarker(ctx: ConversationContext, message: UserMessage): Ent
   const entry = newEntry("li", "message continuation-marker");
   const label = document.createElement("span");
   label.textContent = "↻ Kept going";
-  entry.el.append(label, deleteButton(ctx, message));
+  entry.el.append(label);
+  if (message.transcript) entry.el.append(transcriptTag(message.transcript));
+  entry.el.append(deleteButton(ctx, message));
   return entry;
 }
 
@@ -51,6 +55,12 @@ function messageTag(className: string, text: string): HTMLSpanElement {
   const tag = document.createElement("span");
   tag.className = className;
   tag.textContent = text;
+  return tag;
+}
+
+function transcriptTag(transcript: SentTranscript): HTMLSpanElement {
+  const tag = messageTag("transcript-tag", transcriptSentText(transcript));
+  tag.title = `The speech heard from ${spanListText(sentSpans(transcript))} was given to the model as text`;
   return tag;
 }
 
@@ -69,6 +79,7 @@ function userElement(ctx: ConversationContext, message: UserMessage, rerender: (
     tag.title = "The model could read what is heard in the video";
     entry.el.append(tag);
   }
+  if (message.transcript) entry.el.append(transcriptTag(message.transcript));
   const video = videoPart(ctx, message);
   if (video) entry.el.append(video);
   if (message.text !== "") {

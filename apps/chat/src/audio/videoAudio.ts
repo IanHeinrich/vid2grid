@@ -11,9 +11,9 @@ import {
 } from "@vid2grid/core";
 import { abortable, isAbortError } from "../abort";
 import type { GlobalSettings } from "../settings";
-import { clamp, mergeSpans } from "../spans";
+import { clamp, mergeSpans, sameSpans } from "../spans";
 import { errorText } from "../text";
-import { formatTimestamp } from "../time";
+import { spanListText } from "../time";
 import type { AudioCoverage, AudioSpan, ChatStore, VideoAudio } from "../types";
 
 // Shorter stretches are not worth a decode, so coverage counts them as heard.
@@ -331,41 +331,48 @@ export function timedAudioLines(
   return [...speech, ...events].sort((a, b) => a.startSeconds - b.startSeconds);
 }
 
-function spanText(spans: readonly AudioSpan[]): string {
-  return spans
-    .map((span) => `${formatTimestamp(span.startSeconds)} to ${formatTimestamp(span.endSeconds)}`)
-    .join(", ");
-}
-
-function sameSpans(a: readonly AudioSpan[], b: readonly AudioSpan[]): boolean {
-  return (
-    a.length === b.length &&
-    a.every(
-      (span, index) =>
-        span.startSeconds === b[index]?.startSeconds && span.endSeconds === b[index]?.endSeconds,
-    )
-  );
-}
-
 export function describeAudioCoverage(audio: VideoAudio | undefined, labels: AudioLabels): string {
   if (audio?.noAudio) return "the video has no audio track";
   const current = audio && withLabels(audio, labels);
   const speech = current?.speechSpans ?? [];
   const sounds = current?.soundSpans ?? [];
   if (speech.length === 0 && sounds.length === 0) return "not analysed yet";
-  if (sameSpans(speech, sounds)) return `analysed ${spanText(speech)} (speech and sounds)`;
-  const part = (name: string, spans: readonly AudioSpan[]) =>
-    spans.length === 0 ? `${name} not analysed yet` : `${name} analysed ${spanText(spans)}`;
-  return `${part("speech", speech)}; ${part("sounds", sounds)}`;
+  if (sameSpans(speech, sounds)) return `analysed ${spanListText(speech)} (speech and sounds)`;
+  return `${analysedText("speech", speech)}; ${analysedText("sounds", sounds)}`;
+}
+
+function analysedText(name: string, spans: readonly AudioSpan[]): string {
+  return spans.length === 0
+    ? `${name} not analysed yet`
+    : `${name} analysed ${spanListText(spans)}`;
+}
+
+function coverageBesideTranscript(audio: VideoAudio, labels: AudioLabels): string {
+  const sounds = analysedText("sounds", withLabels(audio, labels).soundSpans);
+  return `the speech heard is in the transcript; ${sounds}`;
 }
 
 export function audioCoverage(audio: VideoAudio | undefined, labels: AudioLabels): AudioCoverage {
-  return { text: describeAudioCoverage(audio, labels), canListen: audio?.noAudio !== true };
+  return {
+    text: describeAudioCoverage(audio, labels),
+    ...(audio && hasSpeech(audio)
+      ? { besideTranscript: coverageBesideTranscript(audio, labels) }
+      : {}),
+    canListen: audio?.noAudio !== true,
+  };
 }
 
-// Synchronous, for the token meter: reads the last record loaded or saved for this video.
+function hasSpeech(audio: VideoAudio): boolean {
+  return audio.noAudio !== true && audio.speech.some((cue) => cue.text.trim() !== "");
+}
+
+// Synchronous, for the token meter: the last record loaded or saved for this video.
+export function cachedAudio(fileKey: string): VideoAudio | undefined {
+  return remembered.get(fileKey);
+}
+
 export function cachedAudioCoverage(fileKey: string, labels: AudioLabels): AudioCoverage {
-  return audioCoverage(remembered.get(fileKey), labels);
+  return audioCoverage(cachedAudio(fileKey), labels);
 }
 
 const STAGE_TEXT: Record<AudioAnalysisProgress["stage"], string> = {

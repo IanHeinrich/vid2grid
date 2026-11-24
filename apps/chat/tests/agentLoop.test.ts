@@ -305,6 +305,7 @@ describe("runTurn deep dives and timelines", () => {
   it("sends the audio note as context when audio is on", async () => {
     const { deps, requests } = setup([events({ type: "text", delta: "Heard." })], {
       audioCoverage: HEARD_MINUTE,
+      runTool: lookRunner(),
     });
     await runTurn(deps);
     expect(contextOf(requests[0])).toContain(audioNote(HEARD_MINUTE));
@@ -708,6 +709,38 @@ describe("runTurn receipts", () => {
       durationMs: clock - 1250,
       unseenCitations: [105],
     });
+  });
+
+  it("counts the times on the transcript's lines as read, but not those between them", async () => {
+    const fileKey = "talk";
+    const spans = [{ startSeconds: 0, endSeconds: 120 }];
+    const speech = {
+      fileKey,
+      speechSpans: spans,
+      speech: [
+        { start: 12.8, end: 16, text: "Hello." },
+        { start: 90, end: 94, text: "Goodbye." },
+      ],
+    };
+    const { deps, persisted } = setup(
+      [events({ type: "text", delta: "Hello at [0:12], a pause at [0:50], goodbye at [1:30]." })],
+      {
+        speech,
+        messages: [
+          {
+            id: "u1",
+            createdAt: 0,
+            role: "user",
+            text: "What is said?",
+            images: [],
+            audio: true,
+            transcript: { fileKey, spans },
+          },
+        ],
+      },
+    );
+    await runTurn(deps);
+    expect(persisted.at(-1)).toMatchObject({ receipt: { unseenCitations: [50] } });
   });
 
   it("puts a receipt on an answer forced at the round limit", async () => {

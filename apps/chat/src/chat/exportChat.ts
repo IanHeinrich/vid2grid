@@ -18,6 +18,7 @@ import type {
 import { imageIdsIn, type ImageHolder } from "../imageIds";
 import { namedVideo } from "./messageVideo";
 import { sceneLogLines } from "./prompts";
+import { transcriptSentText } from "./transcript";
 
 export const BACKUP_FORMAT = "vid2grid-chat-backup";
 export const BACKUP_VERSION = 1;
@@ -58,6 +59,7 @@ function userSection(message: UserMessage, name: string): string {
   const lines = [`## ${name}`];
   if (message.text.trim() !== "") lines.push(message.text.trim());
   for (const image of message.images) lines.push(`[image: ${imageCaption(image)}]`);
+  if (message.transcript) lines.push(`_${transcriptSentText(message.transcript)}_`);
   return lines.join("\n\n");
 }
 

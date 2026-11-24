@@ -2,7 +2,7 @@ import { addUsage } from "../api/usage";
 import { imagesOf } from "../imageRefs";
 import type { ChatMessage, ChatRequest, ImageRef, TokenUsage, WireMessage } from "../types";
 
-const CHARS_PER_TOKEN = 4;
+export const CHARS_PER_TOKEN = 4;
 export const FALLBACK_IMAGE_TOKENS = 1500;
 const WARN_SHARE = 0.7;
 const DANGER_SHARE = 0.9;
