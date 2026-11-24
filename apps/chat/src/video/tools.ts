@@ -1,70 +1,100 @@
 import type { PlanOptionInput, VideoInfo } from "@vid2grid/core";
-import { imageLabel, recallName, sheetLine } from "../imageRefs";
+import { sheetLine } from "../imageRefs";
 import { clamp } from "../spans";
-import { errorText, plural } from "../text";
+import { errorText } from "../text";
 import { formatTimestamp } from "../time";
-import type { ImageRef, RunTool, ToolResult } from "../types";
+import type { ImageRef, RunTool, ToolResult, ToolSchema } from "../types";
+import { exactTimes, latestFrameTime } from "./exactTimes";
 import { runListen, type ListenContext } from "./listenTool";
 import { MAX_FRAMES_PER_SHEET, choosePerSheet, type SheetGeometry } from "./packing";
+import { runRecall, type RecallContext } from "./recallTool";
 import { roundForLabel, sheetGeometry, sheetRefs, type SheetContext } from "./sheets";
 import {
   failure,
+  imagesFollow,
   integerArg,
-  namesArg,
   numberArg,
   parseArguments,
   timesArg,
   type Args,
-  type Parsed,
 } from "./toolArgs";
 import { MAX_FRAMES_TIMES, MAX_LOOK_FRAMES } from "./toolSchemas";
+import { runZoom, type ZoomContext } from "./zoomTool";
 
 export { MAX_LISTEN_LINES, type ListenContext } from "./listenTool";
 export { renderOverview, roundForLabel, sheetRefs, type SheetRenderExtras } from "./sheets";
-export { LISTEN_SCHEMA, TOOL_GUIDANCE, TOOL_SCHEMAS, toolSchemas } from "./toolSchemas";
+export { LISTEN_SCHEMA, toolOffer, type ToolOffer } from "./toolSchemas";
 
-// A frame at the very end of the video has nothing to decode, so keep the request inside it.
-const END_MARGIN_SECONDS = 0.05;
 const SAME_MOMENT_SECONDS = 0.05;
-// Keyframe ranges are inclusive, so the end only has to sit past the last time.
-const KEYFRAME_RANGE_PADDING_SECONDS = 0.01;
 // Above 1 fps the burned-in timestamps show milliseconds, so 1:45.5 is not printed as 1:45.
 const SUBSECOND_TIMESTAMP_FPS = 2;
 
-export interface ToolContext extends SheetContext {
+// The loaded video, as the overview, a study and its audio use it.
+export type ToolContext = SheetContext;
+
+// The video, in sheets, is present only while it is loaded.
+export interface ToolRunnerContext extends ZoomContext, Omit<RecallContext, "store"> {
+  // What the model was offered, listed when it calls something else.
+  tools: readonly ToolSchema[];
   // Present only when the user turned audio on for this message.
   audio?: ListenContext;
-  // The conversation's images so far, which recall finds by name; absent means none.
-  knownImages?: () => readonly ImageRef[];
 }
 
-export function createToolRunner(ctx: ToolContext): RunTool {
+type VideoTool = (sheets: SheetContext) => ToolResult | Promise<ToolResult>;
+
+export function createToolRunner(ctx: ToolRunnerContext): RunTool {
   return async (call) => {
     const args = parseArguments(call);
     if ("problem" in args) return failure(args.problem);
+    const withVideo = (run: VideoTool) =>
+      ctx.sheets ? run(ctx.sheets) : failure(needsVideo(ctx, call.name));
     switch (call.name) {
       case "look":
-        return runLook(ctx, args.value);
+        return withVideo((sheets) => runLook(sheets, args.value));
       case "frames":
-        return runFrames(ctx, args.value);
+        return withVideo((sheets) => runFrames(sheets, args.value));
       // Older chats called a single-moment frame(t) tool.
       case "frame":
-        return runFrames(ctx, { times: [args.value["t"]] });
+        return withVideo((sheets) => runFrames(sheets, { times: [args.value["t"]] }));
       case "note":
-        return runNote(ctx, args.value);
+        return withVideo((sheets) => runNote(sheets, args.value));
       case "listen":
-        return runListen(ctx, args.value);
+        return withVideo(({ file, info, video }) =>
+          runListen({ file, info, video, ...(ctx.audio && { audio: ctx.audio }) }, args.value),
+        );
       case "recall":
         return runRecall(ctx, args.value);
+      case "zoom":
+        return isOffered(ctx, "zoom") ? runZoom(ctx, args.value) : unknownTool(ctx, "zoom");
       default:
-        return failure(
-          `Unknown tool "${call.name}". The tools are look, frames, note${ctx.audio ? ", recall and listen" : " and recall"}.`,
-        );
+        return unknownTool(ctx, call.name);
     }
   };
 }
 
-async function runLook(ctx: ToolContext, args: Args): Promise<ToolResult> {
+function toolNames({ tools }: ToolRunnerContext): string[] {
+  return tools.map((tool) => tool.function.name);
+}
+
+function isOffered(ctx: ToolRunnerContext, name: string): boolean {
+  return toolNames(ctx).includes(name);
+}
+
+function availableTools(ctx: ToolRunnerContext): string {
+  const names = toolNames(ctx);
+  const last = names.pop() ?? "";
+  return `The tools are ${names.length > 0 ? `${names.join(", ")} and ${last}` : last}.`;
+}
+
+function unknownTool(ctx: ToolRunnerContext, name: string): ToolResult {
+  return failure(`Unknown tool "${name}". ${availableTools(ctx)}`);
+}
+
+function needsVideo(ctx: ToolRunnerContext, name: string): string {
+  return `${name} needs the chat's video, which is not loaded. ${availableTools(ctx)}`;
+}
+
+async function runLook(ctx: SheetContext, args: Args): Promise<ToolResult> {
   const duration = ctx.info.durationSeconds;
   const start = numberArg(args, "start");
   const end = numberArg(args, "end");
@@ -121,27 +151,23 @@ function snapToFullSheets(
   return { frames: sheets * snappedPerSheet, perSheet: snappedPerSheet };
 }
 
-async function runFrames(ctx: ToolContext, args: Args): Promise<ToolResult> {
+async function runFrames(ctx: SheetContext, args: Args): Promise<ToolResult> {
   const requested = timesArg(args, "times", MAX_FRAMES_TIMES);
   if ("problem" in requested) return failure(requested.problem);
   const times = distinctMoments(
     requested.value.map((t) => clamp(t, 0, latestFrameTime(ctx.info.durationSeconds))),
   );
-  const first = times[0] ?? 0;
-  const last = times[times.length - 1] ?? first;
+  const exact = exactTimes(ctx.info, times);
   return runRender(
     ctx,
     {
-      keyframeSampling: true,
-      startSeconds: first,
-      endSeconds: last + KEYFRAME_RANGE_PADDING_SECONDS,
-      framesPerGrid: times.length,
+      ...exact.values,
       outputResolution: ctx.resolution,
       ...(times.some(hasTenths) && { targetFps: SUBSECOND_TIMESTAMP_FPS }),
     },
     `frames(${times.map(momentLabel).join(", ")})`,
     undefined,
-    { ...ctx.info, keyframeTimestampsSeconds: times },
+    exact.info,
   );
 }
 
@@ -161,7 +187,7 @@ function momentLabel(seconds: number): string {
   return formatTimestamp(seconds, hasTenths(seconds));
 }
 
-function runNote(ctx: ToolContext, args: Args): ToolResult {
+function runNote(ctx: SheetContext, args: Args): ToolResult {
   const t = numberArg(args, "t");
   if ("problem" in t) return failure(t.problem);
   const { text } = args;
@@ -176,62 +202,8 @@ function runNote(ctx: ToolContext, args: Args): ToolResult {
   };
 }
 
-function recallKey(name: string): string {
-  return name.trim().replace(/\s+/g, " ").toLowerCase();
-}
-
-// A full name picks one image; a bare sheet name is accepted only while no other sheet shares it.
-function findRecalled(known: readonly ImageRef[], name: string): Parsed<ImageRef> {
-  const key = recallKey(name);
-  const exact = known.filter((ref) => recallKey(recallName(ref)) === key);
-  const bare = known.filter((ref) => recallKey(ref.source.name) === key);
-  const matches = exact.length > 0 ? exact : bare;
-  const latest = matches[matches.length - 1];
-  if (latest === undefined) {
-    return {
-      problem: `No earlier image is named "${name}". Use a name exactly as its stub gives it.`,
-    };
-  }
-  const distinct = new Set(matches.map((ref) => ref.id));
-  if (exact.length === 0 && distinct.size > 1) {
-    return {
-      problem: `"${name}" names ${distinct.size} images. Use the full name a stub gives, such as "${recallName(latest)}".`,
-    };
-  }
-  return { value: latest };
-}
-
-async function runRecall(ctx: ToolContext, args: Args): Promise<ToolResult> {
-  const names = namesArg(args, "names");
-  if ("problem" in names) return failure(names.problem);
-  const known = ctx.knownImages?.() ?? [];
-  const problems: string[] = [];
-  const found = new Map<string, ImageRef>();
-  for (const name of names.value) {
-    const match = findRecalled(known, name);
-    if ("problem" in match) problems.push(match.problem);
-    else found.set(match.value.id, { ...match.value, pinned: false });
-  }
-  const stored: ImageRef[] = [];
-  for (const ref of found.values()) {
-    if ((await ctx.store.getImage(ref.id)) !== undefined) stored.push(ref);
-    else problems.push(`${recallName(ref)} is no longer stored.`);
-  }
-  const pinned = new Set(known.filter((ref) => ref.pinned).map((ref) => ref.id));
-  const slots = Math.max(0, ctx.maxImages - pinned.size);
-  const images = stored.slice(0, slots);
-  if (stored.length > images.length) {
-    problems.push(
-      `Only ${plural(slots, "image")} fit in one request beside the pinned ones; recall the rest later.`,
-    );
-  }
-  if (images.length === 0) return failure(problems.join(" "));
-  const lines = [...images.map(imageLabel), ...problems.map((problem) => `Error: ${problem}`)];
-  return { text: [...lines, imagesFollow(images.length)].join("\n"), images };
-}
-
 async function runRender(
-  ctx: ToolContext,
+  ctx: SheetContext,
   values: PlanOptionInput,
   call: string,
   adjustment?: string,
@@ -246,15 +218,7 @@ async function runRender(
   }
 }
 
-function imagesFollow(count: number): string {
-  return count === 1 ? "1 image follows." : `${count} images follow.`;
-}
-
 function describeSheets(images: ImageRef[]): string {
   const lines = images.flatMap((image) => sheetLine(image) ?? []);
   return [...lines, imagesFollow(images.length)].join("\n");
-}
-
-function latestFrameTime(durationSeconds: number): number {
-  return Math.max(0, durationSeconds - END_MARGIN_SECONDS);
 }

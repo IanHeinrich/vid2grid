@@ -88,6 +88,7 @@ const fakeRender: NonNullable<ToolContext["render"]> = (_file, _info, values) =>
     startSeconds: start,
     endSeconds: values.endSeconds ?? start,
     frameCount: values.frameCount ?? 1,
+    cellTimes: [start],
   };
   return Promise.resolve([sheet]);
 };

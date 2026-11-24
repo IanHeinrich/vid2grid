@@ -1,7 +1,7 @@
 import type { AppElements } from "../../dom";
 import type { AppState } from "../../state";
 import type { ChatMessage, VideoAttachment } from "../../types";
-import { olderVideos } from "../conversation/messageVideo";
+import { olderVideos } from "../../chat/messageVideo";
 
 export interface ChatVideo {
   video: VideoAttachment;

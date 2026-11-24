@@ -19,7 +19,14 @@ import {
   setRunning,
   type AppState,
 } from "../src/state";
-import type { ChatSettings, ChatStore, ModelInfo, StreamChat, UserMessage } from "../src/types";
+import type {
+  ChatSettings,
+  ChatStore,
+  ImageRef,
+  ModelInfo,
+  StreamChat,
+  UserMessage,
+} from "../src/types";
 import { initComposer, type Composer, type ComposerDeps } from "../src/ui/composer/composer";
 import { initTurns } from "../src/app/turns";
 import { upload } from "./support/factories";
@@ -345,27 +352,88 @@ describe("stopping while the video is being saved", () => {
 });
 
 describe("dropped images and limits", () => {
-  it("stores a dropped image and adds it as a chip", async () => {
-    const scaled = new Blob(["jpeg"], { type: "image/jpeg" });
-    const downscale = vi.fn(() => Promise.resolve({ blob: scaled, width: 2, height: 1 }));
-    const turns = { run: vi.fn(), stop: vi.fn(), answerNow: vi.fn() };
+  const scaled = new Blob(["jpeg"], { type: "image/jpeg" });
+  const larger = new Blob(["jpeg-large"], { type: "image/jpeg" });
+
+  function composerWith(
+    downscale: NonNullable<ComposerDeps["downscale"]>,
+    dropped: ChatStore = store,
+  ): { composer: Composer; status: ReturnType<typeof makeSpies>["status"] } {
+    const { status } = makeSpies();
     const composer = initComposer(els, state, {
-      store,
-      status: makeSpies().status,
+      store: dropped,
+      status,
       video: noVideo,
-      turns,
+      turns: { run: vi.fn(), stop: vi.fn(), answerNow: vi.fn() },
       stopChecks: vi.fn(),
       onFiles: vi.fn(),
       onPendingChanged: vi.fn(),
       onReady: vi.fn(),
       downscale,
     });
-    await composer.addImages([new File(["png"], "cat.png", { type: "image/png" })]);
-    expect(downscale).toHaveBeenCalledWith(expect.any(File), expect.any(Number));
+    return { composer, status };
+  }
+
+  function firstImage(): ImageRef {
     const [attachment] = currentPending(state);
     if (attachment?.kind !== "image") throw new Error("No image chip");
-    expect(await store.getImage(attachment.ref.id)).toBe(scaled);
+    return attachment.ref;
+  }
+
+  const cat = () => [new File(["png"], "cat.png", { type: "image/png" })];
+
+  it("stores a dropped image that fits and adds it as a chip, with no larger copy", async () => {
+    const downscale = vi.fn(() => Promise.resolve({ sent: { blob: scaled, width: 2, height: 1 } }));
+    const putImage = vi.spyOn(store, "putImage");
+    await composerWith(downscale).composer.addImages(cat());
+    expect(downscale).toHaveBeenCalledWith(expect.any(File), expect.any(Number));
+    const ref = firstImage();
+    expect(await store.getImage(ref.id)).toBe(scaled);
+    expect(ref.source).toEqual({ kind: "upload", name: "cat.png" });
+    expect(putImage).toHaveBeenCalledTimes(1);
     expect(els.composer.pendingList.querySelector(".pending-label")?.textContent).toBe("cat.png");
+  });
+
+  it("keeps a larger copy of a big image for zooming", async () => {
+    const downscale = vi.fn(() =>
+      Promise.resolve({
+        sent: { blob: scaled, width: 2, height: 1 },
+        original: { blob: larger, width: 8, height: 4 },
+      }),
+    );
+    await composerWith(downscale).composer.addImages(cat());
+    const ref = firstImage();
+    expect(await store.getImage(ref.id)).toBe(scaled);
+    const { source } = ref;
+    if (source.kind !== "upload" || source.originalId === undefined) {
+      throw new Error("No original kept");
+    }
+    expect(source.originalId).not.toBe(ref.id);
+    expect(await store.getImage(source.originalId)).toBe(larger);
+  });
+
+  it("still attaches the image when the larger copy cannot be stored", async () => {
+    const downscale = vi.fn(() =>
+      Promise.resolve({
+        sent: { blob: scaled, width: 2, height: 1 },
+        original: { blob: larger, width: 8, height: 4 },
+      }),
+    );
+    const failing: ChatStore = {
+      ...store,
+      putImage: vi
+        .fn<ChatStore["putImage"]>()
+        .mockResolvedValueOnce("sent-id")
+        .mockRejectedValueOnce(new Error("quota")),
+    };
+    const { composer, status } = composerWith(downscale, failing);
+    await composer.addImages(cat());
+    expect(firstImage()).toEqual({
+      id: "sent-id",
+      source: { kind: "upload", name: "cat.png" },
+      pinned: false,
+    });
+    expect(status.show).not.toHaveBeenCalled();
   });
 
   it("blocks sending when pinned images exceed the model's limit", async () => {

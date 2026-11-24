@@ -1,4 +1,5 @@
 import { isAbortError } from "../abort";
+import { ApiError } from "../api/http";
 import { blobToDataUrl } from "../dataUrl";
 import { errorText } from "../text";
 import type {
@@ -25,9 +26,14 @@ import { seenSpans, unseenCitations } from "./coverage";
 import { pinsExceedCap } from "./imageSelection";
 import { buildRequest } from "./request";
 import { keptImages } from "./story";
-import { streamAssistant, type StreamEnding, type Streamed } from "./streamRound";
+import {
+  streamAssistant,
+  type StreamEnding,
+  type StreamOptions,
+  type Streamed,
+} from "./streamRound";
 import { roundsFor } from "./thoroughness";
-import { estimateRequestTokens, sheetSidesByUrl } from "./tokenEstimate";
+import { estimateRequestTokens, requestImageCount, sheetSidesByUrl } from "./tokenEstimate";
 import { answerToolCalls } from "./toolCalls";
 import { stripToolMarkup } from "./toolMarkup";
 
@@ -51,6 +57,8 @@ export interface TurnDeps {
   store: ImageStore;
   tools: readonly ToolSchema[];
   toolGuidance: string;
+  // Some servers refuse any request that lists tools; with this set, the turn goes on without them.
+  toolsOptional?: boolean;
   veniceParameters: boolean;
   signal: AbortSignal;
   persist(message: ChatMessage): Promise<void>;
@@ -102,6 +110,8 @@ export interface Turn {
   newId: () => string;
   startedAt: number;
   imagesSent: number;
+  // Set once the server has refused a request for listing tools.
+  toolsRefused: boolean;
   // Stored images never change, so each kept one is read and encoded once a turn, not every round.
   dataUrls: Map<string, string>;
 }
@@ -138,6 +148,7 @@ export async function runTurn(deps: TurnDeps): Promise<TurnOutcome> {
     newId: deps.newId ?? (() => crypto.randomUUID()),
     startedAt: now(),
     imagesSent: 0,
+    toolsRefused: false,
     dataUrls: new Map(),
   };
   try {
@@ -178,9 +189,7 @@ function answerNowWanted({ deps }: Turn): boolean {
 
 async function runRound(turn: Turn, round: number): Promise<RoundResult> {
   if (answerNowWanted(turn)) return answerNow(turn, round, "user");
-  const finalRound = round === turn.maxRounds - 1;
-  const prepared = await prepareRequest(turn, finalRound, false);
-  const first = await streamAssistant(turn, prepared, round, { watch: true });
+  const first = await streamPrepared(turn, round, false, { watch: true });
   if (first.ending.kind !== "cut") return first;
   return answerNow(turn, round, first.ending.reason, first.message);
 }
@@ -192,12 +201,39 @@ async function answerNow(
   reason: AnswerNowReason,
   cut?: AssistantMessage,
 ): Promise<RoundResult> {
-  const prepared = await prepareRequest(turn, round === turn.maxRounds - 1, true);
-  const streamed = await streamAssistant(turn, prepared, round, {
+  const streamed = await streamPrepared(turn, round, true, {
     watch: false,
     ...(cut ? { cut } : {}),
   });
   return { ...streamed, answeredNow: reason };
+}
+
+async function streamPrepared(
+  turn: Turn,
+  round: number,
+  answeringNow: boolean,
+  options: StreamOptions,
+): Promise<Streamed> {
+  const finalRound = round === turn.maxRounds - 1;
+  const prepared = await prepareRequest(turn, finalRound, answeringNow);
+  const streamed = await streamAssistant(turn, prepared, round, options);
+  if (!refusedTools(turn, prepared.request, streamed)) return streamed;
+  turn.toolsRefused = true;
+  turn.imagesSent -= requestImageCount(prepared.request);
+  const withoutTools = await prepareRequest(turn, finalRound, answeringNow);
+  return streamAssistant(turn, withoutTools, round, { ...options, retried: streamed.message });
+}
+
+// Any HTTP error, since llama.cpp answers 500 to a request listing tools it cannot take.
+function refusedTools(
+  { deps }: Turn,
+  request: ChatRequest,
+  { ending, producedNothing }: Streamed,
+): boolean {
+  if (deps.toolsOptional !== true || request.tools === undefined || !producedNothing) return false;
+  if (ending.kind !== "failed" || !(ending.error instanceof ApiError)) return false;
+  const { status, message } = ending.error;
+  return status >= 400 && /tool/i.test(message);
 }
 
 interface RoundPosition {
@@ -268,7 +304,7 @@ async function prepareRequest(
     tools: deps.tools,
     toolGuidance: deps.toolGuidance,
     veniceParameters: deps.veniceParameters,
-    allowTools: deps.runTool !== undefined,
+    allowTools: deps.runTool !== undefined && !turn.toolsRefused,
     finalRound,
     thoroughness: turn.thoroughness,
     ...(answeringNow ? { answerNow: true } : {}),

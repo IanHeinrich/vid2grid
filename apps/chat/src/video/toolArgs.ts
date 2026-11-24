@@ -59,6 +59,10 @@ export function integerArg(args: Args, name: string, min: number, max: number): 
     : { problem: `${name} must be an integer from ${min} to ${max}.` };
 }
 
+export function imagesFollow(count: number): string {
+  return count === 1 ? "1 image follows." : `${count} images follow.`;
+}
+
 export function failure(problem: string): ToolResult {
   return { text: `Error: ${problem}`, images: [] };
 }

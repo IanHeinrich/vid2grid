@@ -17,6 +17,7 @@ import type {
   ImageRef,
   VideoCast,
   VideoTimeline,
+  ZoomTarget,
 } from "../src/types";
 
 const video = {
@@ -457,5 +458,150 @@ describe("backups with alternate replies", () => {
     expect(image === undefined ? "" : await blobToDataUrl(image)).toBe(
       "data:image/jpeg;base64,CQkJ",
     );
+  });
+});
+
+function zoomRef(id: string, target: ZoomTarget): ImageRef {
+  return {
+    id,
+    pinned: false,
+    source: {
+      kind: "zoom",
+      name: "zoom",
+      target,
+      area: { left: 0, top: 0, right: 500, bottom: 500 },
+      width: 400,
+      height: 300,
+    },
+  };
+}
+
+describe("chatToMarkdown zooms", () => {
+  it("captions a zoom and summarises the call by what it looked at", () => {
+    const moment = zoomRef("z1", { kind: "moment", seconds: 62.5, fileKey: video.fileKey });
+    const picture = zoomRef("z2", { kind: "image", id: "u", name: "beach.jpg" });
+    const markdown = chatToMarkdown(chat("c"), [
+      { id: "u1", createdAt: 1, role: "user", text: "Closer", images: [picture] },
+      {
+        id: "a1",
+        createdAt: 2,
+        role: "assistant",
+        text: "",
+        toolCalls: [
+          { id: "c1", name: "zoom", arguments: "{}" },
+          { id: "c2", name: "zoom", arguments: "{}" },
+          { id: "c3", name: "zoom", arguments: "{}" },
+        ],
+      },
+      { id: "t1", createdAt: 3, role: "tool", toolCallId: "c1", text: "", images: [moment] },
+      { id: "t2", createdAt: 4, role: "tool", toolCallId: "c2", text: "", images: [picture] },
+      { id: "t3", createdAt: 5, role: "tool", toolCallId: "c3", text: "failed", images: [] },
+    ]);
+    expect(markdown).toContain("[image: zoom of beach.jpg]");
+    expect(markdown).toContain("_Zoomed in at 1:02.5, Zoomed in on beach.jpg, zoom call_");
+  });
+});
+
+describe("backups with originals and zooms", () => {
+  const uploadWithOriginal = (id: string, originalId: string): ImageRef => ({
+    id,
+    pinned: false,
+    source: { kind: "upload", name: "beach.jpg", originalId },
+  });
+
+  async function seed(store: ChatStore, uploads: ImageRef[], zooms: ImageRef[]): Promise<void> {
+    await store.putChat(chat("c1"));
+    await store.putMessage("c1", {
+      id: "u1",
+      createdAt: 1,
+      role: "user",
+      text: "Look",
+      images: uploads,
+    });
+    await store.putMessage("c1", {
+      id: "t1",
+      createdAt: 2,
+      role: "tool",
+      toolCallId: "x",
+      text: "",
+      images: zooms,
+    });
+  }
+
+  async function restoredRefs(target: ChatStore): Promise<ImageRef[]> {
+    return (await target.listMessages("c1")).flatMap((message) =>
+      message.role === "assistant" ? [] : message.images,
+    );
+  }
+
+  async function dataUrlOf(store: ChatStore, id: string): Promise<string> {
+    const blob = await store.getImage(id);
+    return blob === undefined ? "" : blobToDataUrl(blob);
+  }
+
+  it("round-trips an original and a zoom of an image under new ids", async () => {
+    const store = createMemoryStore();
+    const sentId = await store.putImage(jpeg([1, 2, 3]));
+    const originalId = await store.putImage(jpeg([4, 5, 6]));
+    const zoomId = await store.putImage(jpeg([7, 8, 9]));
+    await seed(
+      store,
+      [uploadWithOriginal(sentId, originalId)],
+      [zoomRef(zoomId, { kind: "image", id: sentId, name: "beach.jpg" })],
+    );
+    const blob = await exportBackup(store);
+    expect((await backupOf(blob)).images).toHaveLength(3);
+    const target = createMemoryStore();
+    expect((await importBackup(target, await asFile(blob))).images).toBe(3);
+    const [upload, zoom] = await restoredRefs(target);
+    const newOriginalId = upload?.source.kind === "upload" ? upload.source.originalId : undefined;
+    expect(newOriginalId).toBeDefined();
+    expect(newOriginalId).not.toBe(originalId);
+    expect(await dataUrlOf(target, newOriginalId ?? "")).toBe("data:image/jpeg;base64,BAUG");
+    expect(await dataUrlOf(target, upload?.id ?? "")).toBe("data:image/jpeg;base64,AQID");
+    const zoomTarget = zoom?.source.kind === "zoom" ? zoom.source.target : undefined;
+    expect(zoomTarget).toEqual({ kind: "image", id: upload?.id, name: "beach.jpg" });
+    expect(upload?.id).not.toBe(sentId);
+  });
+
+  it("backs up an original that only a zoom's image target points at", async () => {
+    const store = createMemoryStore();
+    const zoomId = await store.putImage(jpeg([1]));
+    const targetId = await store.putImage(jpeg([2]));
+    await seed(store, [], [zoomRef(zoomId, { kind: "image", id: targetId, name: "beach.jpg" })]);
+    expect((await backupOf(await exportBackup(store))).images.map((image) => image.id)).toEqual([
+      zoomId,
+      targetId,
+    ]);
+  });
+
+  it("keeps the ids of an original and a zoomed image the backup does not hold", async () => {
+    const store = createMemoryStore();
+    const sentId = await store.putImage(jpeg([1, 2, 3]));
+    const zoomId = await store.putImage(jpeg([7, 8, 9]));
+    await seed(
+      store,
+      [uploadWithOriginal(sentId, "gone")],
+      [zoomRef(zoomId, { kind: "image", id: "also-gone", name: "beach.jpg" })],
+    );
+    const target = createMemoryStore();
+    await importBackup(target, await asFile(await exportBackup(store)));
+    const [upload, zoom] = await restoredRefs(target);
+    expect(upload?.source).toEqual({ kind: "upload", name: "beach.jpg", originalId: "gone" });
+    expect(zoom?.source).toMatchObject({
+      target: { kind: "image", id: "also-gone", name: "beach.jpg" },
+    });
+  });
+
+  it("imports a backup written before originals and zooms as it was", async () => {
+    const { store } = await seededStore();
+    const written = await backupOf(await exportBackup(store));
+    expect(JSON.stringify(written)).not.toContain("originalId");
+    const target = createMemoryStore();
+    const counts = await importBackup(target, await asFile(await exportBackup(store)));
+    expect(counts).toMatchObject({ messages: 7, images: 2 });
+    const refs = await restoredRefs(target);
+    expect(refs.map((ref) => ref.source.kind)).toEqual(["upload", "sheet"]);
+    expect(refs[0]?.source).toEqual({ kind: "upload", name: "poster.png" });
   });
 });

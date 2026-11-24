@@ -14,23 +14,24 @@ import type { VideoCast, VideoTimeline } from "../src/types";
 import { baseChat, videoChat, NOT_YET } from "./support/requestFixtures";
 
 describe("buildSystemPrompt", () => {
-  it("is only the chat's prompt without a video", () => {
-    expect(buildSystemPrompt(baseChat, "Use look.")).toBe("Be brief.");
+  it("is the chat's prompt and any tool guidance without a video", () => {
+    expect(buildSystemPrompt(baseChat, "")).toBe("Be brief.");
+    expect(buildSystemPrompt(baseChat, "Use zoom.")).toBe(["Be brief.", "Use zoom."].join("\n\n"));
   });
 
   it("adds tool guidance, the analyst answer style and video facts, but no scene log", () => {
     expect(buildSystemPrompt(videoChat, "Use look.")).toBe(
       [
         "Be brief.",
-        "Use look.\nIf you write to the user before looking, keep it to one short line and claim nothing you have not seen yet.",
+        "Use look.",
         answerStyle("analyst", "free"),
         "Attached video: beach.mp4, 2:05 long, 1920x1080.",
       ].join("\n\n"),
     );
   });
 
-  it("leaves out the before looking line when there are no tools", () => {
-    expect(buildSystemPrompt(videoChat, "")).not.toContain("before looking");
+  it("keeps the video facts when there are no tools", () => {
+    expect(buildSystemPrompt(videoChat, "")).toContain("Attached video: beach.mp4");
   });
 
   it("swaps the answer style for the chat's voice and keeps the tool guidance", () => {
@@ -55,7 +56,7 @@ describe("buildSystemPrompt", () => {
       characterName: "Mira",
       userName: "Sam",
     };
-    expect(buildSystemPrompt({ ...baseChat, settings }, "Use look.")).toBe(
+    expect(buildSystemPrompt({ ...baseChat, settings }, "")).toBe(
       "You are Mira, talking to Sam. Mira is curious.",
     );
   });

@@ -6,6 +6,7 @@ import type {
   ImageRef,
   ToolMessage,
   UserMessage,
+  ZoomTarget,
 } from "../src/types";
 
 function sheet(
@@ -38,10 +39,34 @@ const reply: AssistantMessage = {
   toolCalls: [],
 };
 
+function zoom(id: string, target: ZoomTarget): ImageRef {
+  return {
+    id,
+    pinned: false,
+    source: {
+      kind: "zoom",
+      name: id,
+      target,
+      area: { left: 0, top: 0, right: 500, bottom: 500 },
+      width: 400,
+      height: 400,
+    },
+  };
+}
+
 describe("seenSpans", () => {
   it("is empty without sheets", () => {
     const upload: ImageRef = { id: "x", pinned: false, source: { kind: "upload", name: "x.jpg" } };
     expect(seenSpans([user([upload]), reply])).toEqual([]);
+  });
+
+  it("counts a zoom of a moment as that instant seen, and a zoom of an image as nothing", () => {
+    const moment = zoom("zm", { kind: "moment", seconds: 42.5, fileKey: "k" });
+    const image = zoom("zi", { kind: "image", id: "u", name: "beach.jpg" });
+    expect(seenSpans([tool([moment, image])])).toEqual([
+      { startSeconds: 42, endSeconds: 43, framesPerSecond: 1 },
+    ]);
+    expect(seenSpans([tool([image])])).toEqual([]);
   });
 
   it("pads a look's span and gives its frame density", () => {

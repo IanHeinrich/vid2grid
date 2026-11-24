@@ -6,6 +6,7 @@ import {
   type TurnDeps,
   type TurnEvent,
 } from "../src/chat/agentLoop";
+import { ApiError } from "../src/api/http";
 import {
   ANSWER_NOW_NOTE,
   audioNote,
@@ -997,5 +998,101 @@ describe("runTurn answer now during tools", () => {
       { answerNow: answerNow.signal },
     );
     expect(await runTurn(deps)).toEqual({ status: "stopped" });
+  });
+});
+
+describe("runTurn when the server refuses tools", () => {
+  const refuse = (status: number, message: string): Round =>
+    async function* () {
+      await Promise.resolve();
+      throw new ApiError(status, message);
+      yield { type: "done", finishReason: null };
+    };
+  const refusal = refuse(400, "llava does not support tools");
+  const photoMessage: ChatMessage = {
+    id: "u1",
+    createdAt: 0,
+    role: "user",
+    text: "What is this?",
+    images: [{ id: "p", pinned: false, source: { kind: "upload", name: "p.jpg" } }],
+  };
+  const optional = { runTool: lookRunner(), toolsOptional: true, messages: [photoMessage] };
+
+  it("asks again once without tools, as the same message, and stays without them", async () => {
+    const { deps, requests, persisted, emitted } = setup(
+      [
+        refusal,
+        events({ type: "toolCalls", calls: [lookCall] }),
+        events({ type: "text", delta: "A dog." }),
+      ],
+      optional,
+    );
+    expect(await runTurn(deps)).toEqual({ status: "done" });
+    expect(requests[0]).toMatchObject({ tools: [lookTool] });
+    expect(JSON.stringify(requests[0])).toContain("Use look.");
+    for (const request of requests.slice(1)) {
+      expect(request).not.toHaveProperty("tools");
+      expect(JSON.stringify(request)).not.toContain("Use look.");
+    }
+    const started = emitted.flatMap((e) => (e.type === "assistantStart" ? [e.message.id] : []));
+    expect(started[1]).toBe(started[0]);
+    expect(persisted.at(-1)).toMatchObject({ text: "A dog.", receipt: { imagesSent: 3 } });
+  });
+
+  it("retries a refused answer-now request too", async () => {
+    const answerNow = new AbortController();
+    answerNow.abort();
+    const { deps, requests } = setup([refusal, events({ type: "text", delta: "A dog." })], {
+      ...optional,
+      answerNow: answerNow.signal,
+    });
+    expect(await runTurn(deps)).toEqual({ status: "done", answeredNow: "user" });
+    expect(requests[1]).not.toHaveProperty("tool_choice");
+  });
+
+  it("asks again when the server answers 500 about tools", async () => {
+    const { deps, requests } = setup(
+      [refuse(500, "tools param requires --jinja flag"), events({ type: "text", delta: "A dog." })],
+      optional,
+    );
+    expect(await runTurn(deps)).toEqual({ status: "done" });
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).not.toHaveProperty("tools");
+  });
+
+  it.each<[string, StreamEvent]>([
+    ["text", { type: "text", delta: "A d" }],
+    ["reasoning", { type: "reasoning", delta: "Hm." }],
+    ["tool calls", { type: "toolCalls", calls: [lookCall] }],
+  ])("does not ask again once the stream has produced %s", async (_what, event) => {
+    const { deps, requests } = setup(
+      [
+        async function* () {
+          await Promise.resolve();
+          yield event;
+          throw new ApiError(500, "tool parser crashed");
+        },
+      ],
+      optional,
+    );
+    expect((await runTurn(deps)).status).toBe("error");
+    expect(requests).toHaveLength(1);
+  });
+
+  it("reports a failure of the retry itself", async () => {
+    const { deps, requests } = setup([refusal, refuse(400, "tools again")], optional);
+    expect(await runTurn(deps)).toEqual({ status: "error", error: "tools again" });
+    expect(requests).toHaveLength(2);
+  });
+
+  it.each([
+    ["the error is about something else", refuse(400, "context too long"), {}],
+    ["there was no HTTP status", refuse(0, "tools: connection closed"), {}],
+    ["the video is loaded", refusal, { toolsOptional: false }],
+    ["no tools were listed", refusal, { runTool: undefined }],
+  ])("does not ask again when %s", async (_why, round, overrides) => {
+    const { deps, requests } = setup([round], { ...optional, ...overrides });
+    expect((await runTurn(deps)).status).toBe("error");
+    expect(requests).toHaveLength(1);
   });
 });

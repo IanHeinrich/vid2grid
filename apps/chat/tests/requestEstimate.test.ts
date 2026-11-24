@@ -4,7 +4,7 @@ import { estimateNextRequest, estimateTokens } from "../src/app/requestEstimate"
 import { blankChat } from "../src/chat/chats";
 import { audioNote } from "../src/chat/prompts";
 import { DEFAULT_SETTINGS } from "../src/settings";
-import { createAppState, setCurrentChat, setModels, type AppState } from "../src/state";
+import { addPending, createAppState, setCurrentChat, setModels, type AppState } from "../src/state";
 import type { ChatMessage, EarlierImages, ImageRef, ModelInfo } from "../src/types";
 import { LISTEN_SCHEMA } from "../src/video/tools";
 import { model as baseModel } from "./support/factories";
@@ -86,7 +86,7 @@ describe("audio in the estimate", () => {
 
   it("counts the listen tool and the audio note when audio is on", () => {
     const chat = blankChat("m", "chat", 1);
-    const base = { chat, messages: MESSAGES, model: model(), allowTools: true };
+    const base = { chat, messages: MESSAGES, model: model(), videoLoaded: true };
     const without = estimateTokens(base);
     const withAudio = estimateTokens({ ...base, audioCoverage: COVERAGE });
     expect(withAudio - without).toBeGreaterThanOrEqual(Math.floor(listenChars / 4));
@@ -103,6 +103,45 @@ describe("audio in the estimate", () => {
     expect(estimateNextRequest(state, undefined, false, COVERAGE)).toBe(
       estimateNextRequest(state, undefined, false),
     );
+  });
+});
+
+describe("tools in the estimate", () => {
+  const withImage: ChatMessage[] = [
+    {
+      id: "u",
+      createdAt: 0,
+      role: "user",
+      text: "hi",
+      images: [{ id: "i", pinned: false, source: { kind: "upload", name: "i.jpg" } }],
+    },
+  ];
+
+  function toolTokens(vision: boolean, messages: ChatMessage[]): number {
+    const chat = blankChat("m", "chat", 1);
+    const base = { chat, messages, videoLoaded: false };
+    const offered = estimateTokens({ ...base, model: model({ vision }) });
+    return offered - estimateTokens({ ...base, model: model({ vision, tools: false }) });
+  }
+
+  it("counts recall and zoom for an image chat with a vision model, and nothing otherwise", () => {
+    expect(toolTokens(true, withImage)).toBeGreaterThan(200);
+    expect(toolTokens(false, withImage)).toBe(0);
+    expect(toolTokens(true, MESSAGES)).toBe(0);
+  });
+
+  it("counts an image waiting in the composer", () => {
+    setModels(state, [model()]);
+    setCurrentChat(state, blankChat("m", "chat", 1), []);
+    const before = estimateNextRequest(state, undefined, false) ?? 0;
+    addPending(state, "chat", {
+      kind: "image",
+      ref: { id: "p", pinned: false, source: { kind: "upload", name: "p.jpg" } },
+    });
+    const withTools = (estimateNextRequest(state, undefined, false) ?? 0) - before;
+    setModels(state, [model({ tools: false })]);
+    const withoutTools = (estimateNextRequest(state, undefined, false) ?? 0) - before;
+    expect(withTools - withoutTools).toBeGreaterThan(200);
   });
 });
 
@@ -131,7 +170,7 @@ describe("estimateTokens", () => {
     const messages: ChatMessage[] = [
       { id: "u", createdAt: 0, role: "user", text: "hi", images: [image] },
     ];
-    return estimateTokens({ chat, messages, model: model({ id: QWEN }), allowTools: false });
+    return estimateTokens({ chat, messages, model: model({ id: QWEN }), videoLoaded: false });
   }
 
   it("prices a sheet at its recorded side, falling back to the chat resolution", () => {

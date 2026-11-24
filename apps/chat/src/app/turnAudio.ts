@@ -1,9 +1,9 @@
 import type { AudioAnalysisProgress } from "@vid2grid/core";
 import { audioCoverage, audioProgressText, loadAudio, settingsLabels } from "../audio/videoAudio";
 import type { GlobalSettings } from "../settings";
-import type { AudioCoverage, ChatStore, ToolSchema } from "../types";
+import type { AudioCoverage, ChatStore } from "../types";
 import type { StatusLine } from "../ui/shared/status";
-import { toolSchemas, type ListenContext } from "../video/tools";
+import type { ListenContext } from "../video/tools";
 
 export interface AudioStatus {
   show: (progress: AudioAnalysisProgress) => void;
@@ -11,7 +11,6 @@ export interface AudioStatus {
 }
 
 interface TurnAudioBase {
-  tools: ToolSchema[];
   progress: AudioStatus;
 }
 
@@ -47,7 +46,7 @@ function audioStatus(status: StatusLine): AudioStatus {
 export async function turnAudio(input: TurnAudioInput): Promise<TurnAudio> {
   const progress = audioStatus(input.status);
   if (!input.on || input.fileKey === undefined) {
-    return { on: false, tools: toolSchemas(false), progress };
+    return { on: false, progress };
   }
   const labels = settingsLabels(input.settings);
   // Audio that cannot be read only reads as not analysed yet, so the turn goes ahead without it.
@@ -56,5 +55,5 @@ export async function turnAudio(input: TurnAudioInput): Promise<TurnAudio> {
   const listen: ListenContext | undefined = coverage.canListen
     ? { store: input.store, labels, signal: input.signal, onProgress: progress.show }
     : undefined;
-  return { on: true, coverage, listen, tools: toolSchemas(coverage.canListen), progress };
+  return { on: true, coverage, listen, progress };
 }

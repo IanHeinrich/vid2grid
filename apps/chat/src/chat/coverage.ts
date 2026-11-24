@@ -1,8 +1,8 @@
 import { findTimestamps } from "../time";
-import type { ChatMessage, ImageSource } from "../types";
-import { imagesOf } from "../imageRefs";
+import type { ChatMessage, ImageRef } from "../types";
+import { imagesOf, type SheetSource } from "../imageRefs";
 
-// Sheet times are rounded and frames sheets show instants, so a citation this close is seen.
+// Sheet times are rounded and frames sheets and zooms show instants, so a citation this close is seen.
 const SEEN_TOLERANCE_SECONDS = 0.5;
 
 export interface SeenSpan {
@@ -11,20 +11,14 @@ export interface SeenSpan {
   framesPerSecond: number;
 }
 
-type SheetSource = Extract<ImageSource, { kind: "sheet" }>;
-
 interface Coverage {
   startSeconds: number;
   endSeconds: number;
   frames: number;
 }
 
-function sheetSources(messages: readonly ChatMessage[]): SheetSource[] {
-  const sources = new Map<string, SheetSource>();
-  for (const image of messages.flatMap(imagesOf)) {
-    if (image.source.kind === "sheet") sources.set(image.id, image.source);
-  }
-  return [...sources.values()];
+function distinctImages(messages: readonly ChatMessage[]): ImageRef[] {
+  return [...new Map(messages.flatMap(imagesOf).map((image) => [image.id, image])).values()];
 }
 
 function frameInstants(call: string): number[] {
@@ -51,9 +45,17 @@ function sheetCoverage(source: SheetSource): Coverage[] {
   return [padded(source.startSeconds, source.endSeconds, source.frameCount)];
 }
 
+function imageCoverage({ source }: ImageRef): Coverage[] {
+  if (source.kind === "sheet") return sheetCoverage(source);
+  if (source.kind === "zoom" && source.target.kind === "moment") {
+    return [padded(source.target.seconds, source.target.seconds, 1)];
+  }
+  return [];
+}
+
 export function seenSpans(messages: readonly ChatMessage[]): SeenSpan[] {
-  const covered = sheetSources(messages)
-    .flatMap(sheetCoverage)
+  const covered = distinctImages(messages)
+    .flatMap(imageCoverage)
     .sort((a, b) => a.startSeconds - b.startSeconds);
   const merged: Coverage[] = [];
   for (const next of covered) {

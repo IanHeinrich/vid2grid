@@ -1,5 +1,6 @@
 import type { PlanOptionInput, VideoInfo } from "@vid2grid/core";
 import type { ImageRef, ImageStore, SheetCache, VideoAttachment } from "../types";
+import type { captureFrame } from "./captureFrame";
 import { overviewOptions } from "./overview";
 import type { SheetGeometry } from "./packing";
 import { renderSheets, type RenderedSheet } from "./render";
@@ -15,6 +16,7 @@ export interface SheetContext {
   // Picks the overview's resolution from its sheet count; absent means ctx.resolution.
   overviewResolution?: (sheets: number) => number;
   render?: typeof renderSheets;
+  capture?: typeof captureFrame;
 }
 
 export async function renderOverview(
@@ -54,19 +56,23 @@ export async function sheetRefs(
   const keyframes = values.keyframeSampling === true ? info.keyframeTimestampsSeconds : undefined;
   const key = sheetCacheKey(ctx.video.fileKey, values, keyframes);
   const cached = await ctx.store.getSheets(key);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) return cached.map((ref) => stamped(ref, ctx.video.fileKey));
   const render = ctx.render ?? renderSheets;
   const sheets = await render(ctx.file, info, values, onProgress);
   const { outputResolution } = values;
   const refs = await Promise.all(
-    sheets.map((sheet) => storeSheet(ctx.store, sheet, call, outputResolution)),
+    sheets.map((sheet) => storeSheet(ctx, sheet, call, outputResolution)),
   );
   await ctx.store.putSheets(key, refs);
   return refs;
 }
 
+function stamped(ref: ImageRef, fileKey: string): ImageRef {
+  return ref.source.kind === "sheet" ? { ...ref, source: { ...ref.source, fileKey } } : ref;
+}
+
 async function storeSheet(
-  store: ImageStore,
+  { store, video }: SheetContext,
   sheet: RenderedSheet,
   call: string,
   resolution: number | undefined,
@@ -81,6 +87,8 @@ async function storeSheet(
       startSeconds: sheet.startSeconds,
       endSeconds: sheet.endSeconds,
       frameCount: sheet.frameCount,
+      cellTimes: sheet.cellTimes,
+      fileKey: video.fileKey,
       ...(resolution === undefined ? {} : { resolution }),
     },
   };

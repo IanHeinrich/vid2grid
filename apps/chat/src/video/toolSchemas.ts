@@ -4,7 +4,7 @@ import { MAX_FRAMES_PER_SHEET } from "./packing";
 export const MAX_LOOK_FRAMES = 64;
 export const MAX_FRAMES_TIMES = 9;
 
-export const TOOL_SCHEMAS: ToolSchema[] = [
+const VIDEO_SCHEMAS: ToolSchema[] = [
   {
     type: "function",
     function: {
@@ -74,27 +74,28 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
       },
     },
   },
-  {
-    type: "function",
-    function: {
-      name: "recall",
-      description:
-        "Attach earlier images again, by the names their stubs give, without rendering anything.",
-      parameters: {
-        type: "object",
-        properties: {
-          names: {
-            type: "array",
-            items: { type: "string" },
-            minItems: 1,
-            description: 'Image names as the stubs give them, e.g. "grid_0002 from look(60, 90)".',
-          },
+];
+
+const RECALL_SCHEMA: ToolSchema = {
+  type: "function",
+  function: {
+    name: "recall",
+    description:
+      "Attach earlier images again, by the names their stubs give, without rendering anything.",
+    parameters: {
+      type: "object",
+      properties: {
+        names: {
+          type: "array",
+          items: { type: "string" },
+          minItems: 1,
+          description: 'Image names as the stubs give them, e.g. "grid_0002 from look(60, 90)".',
         },
-        required: ["names"],
       },
+      required: ["names"],
     },
   },
-];
+};
 
 // Listed only on a message with audio turned on, so the model is never offered it otherwise.
 export const LISTEN_SCHEMA: ToolSchema = {
@@ -119,16 +120,104 @@ export const LISTEN_SCHEMA: ToolSchema = {
   },
 };
 
-export function toolSchemas(audio: boolean): ToolSchema[] {
-  return audio ? [...TOOL_SCHEMAS, LISTEN_SCHEMA] : TOOL_SCHEMAS;
+const ZOOM_SCALE =
+  "The area is in thousandths of the picture as shown: 0, 0 is its top left and 1000, 1000 its bottom right.";
+
+function zoomEdge(edge: string, direction: string) {
+  return {
+    type: "number",
+    minimum: 0,
+    maximum: 1000,
+    description: `${edge} edge, 0 to 1000 ${direction} the picture.`,
+  };
+}
+
+// Without the loaded video there is no moment to name, only images.
+function zoomSchema(videoLoaded: boolean): ToolSchema {
+  const image = {
+    type: "string",
+    description:
+      'An image\'s name as its label or stub gives it, e.g. "grid_0002 from look(60, 90)" or "beach.jpg".',
+  };
+  const t = {
+    type: "number",
+    description: "A time in seconds in the video; the area is then of that whole frame.",
+  };
+  const area = {
+    left: zoomEdge("Left", "across"),
+    top: zoomEdge("Top", "down"),
+    right: zoomEdge("Right", "across"),
+    bottom: zoomEdge("Bottom", "down"),
+  };
+  return {
+    type: "function",
+    function: {
+      name: "zoom",
+      description: videoLoaded
+        ? `Show part of one video frame or image larger, at its source resolution. Give exactly one of image or t. ${ZOOM_SCALE}`
+        : `Show part of one image larger, at its source resolution. ${ZOOM_SCALE} Frames of a video need the user to load it again.`,
+      parameters: {
+        type: "object",
+        properties: { image, ...(videoLoaded ? { t } : {}), ...area },
+        required: [...(videoLoaded ? [] : ["image"]), ...Object.keys(area)],
+      },
+    },
+  };
 }
 
 // How to use the tools, the same for every voice; history adds the voice's answer style.
-export const TOOL_GUIDANCE = [
+const VIDEO_GUIDANCE = [
   "The attached video is available through the look, frames and note tools.",
   "Scan with a dense look first (16 to 20 frames per sheet). When a detail is unclear, repeat that range with fewer frames per sheet (6 to 9 for a normal look, 1 to 4 for fine detail), or check the moments with frames, instead of guessing.",
   "Batch the specific moments you want into one frames call rather than one call per moment, and make several tool calls in one round rather than one per round.",
   "perSheet is adjusted to fill each sheet without blank space, and the result says what was actually rendered.",
   "Every frame has its timestamp printed on it.",
   "Older images become text stubs; recall one by its stub's name, and use note for anything worth remembering.",
-].join("\n");
+];
+
+const BEFORE_LOOKING_GUIDANCE =
+  "If you write to the user before looking, keep it to one short line and claim nothing you have not seen yet.";
+
+const IMAGE_GUIDANCE =
+  "Older images become text stubs; recall one by its stub's name to see it again.";
+
+const ZOOM_GUIDANCE =
+  "When a detail is too small to read, use zoom. Its coordinates are of the picture as shown, 0 to 1000 each way. Prefer a generous area over a tight one.";
+
+const ZOOM_GRID_GUIDANCE = "From a grid, aim zoom at one frame.";
+
+export interface ToolSituation {
+  videoLoaded: boolean;
+  // The conversation holds at least one image.
+  images: boolean;
+  vision: boolean;
+  listen: boolean;
+}
+
+export interface ToolOffer {
+  tools: ToolSchema[];
+  guidance: string;
+}
+
+export function toolOffer(situation: ToolSituation): ToolOffer {
+  const { images, vision } = situation;
+  if (situation.videoLoaded) return videoOffer(situation);
+  if (!images || !vision) return { tools: [], guidance: "" };
+  return {
+    tools: [RECALL_SCHEMA, zoomSchema(false)],
+    guidance: [IMAGE_GUIDANCE, ZOOM_GUIDANCE].join("\n"),
+  };
+}
+
+function videoOffer({ vision, listen }: ToolSituation): ToolOffer {
+  const zoomGuidance = vision ? [`${ZOOM_GUIDANCE} ${ZOOM_GRID_GUIDANCE}`] : [];
+  return {
+    tools: [
+      ...VIDEO_SCHEMAS,
+      RECALL_SCHEMA,
+      ...(vision ? [zoomSchema(true)] : []),
+      ...(listen ? [LISTEN_SCHEMA] : []),
+    ],
+    guidance: [...VIDEO_GUIDANCE, ...zoomGuidance, BEFORE_LOOKING_GUIDANCE].join("\n"),
+  };
+}

@@ -1,8 +1,9 @@
 import { plural } from "./text";
-import { formatSpan } from "./time";
+import { formatSpan, formatTimestamp } from "./time";
 import type { ChatMessage, ImageRef, ImageSource } from "./types";
 
-type SheetSource = Extract<ImageSource, { kind: "sheet" }>;
+export type SheetSource = Extract<ImageSource, { kind: "sheet" }>;
+export type ZoomSource = Extract<ImageSource, { kind: "zoom" }>;
 
 export function imagesOf(message: ChatMessage): readonly ImageRef[] {
   return message.role === "assistant" ? [] : message.images;
@@ -10,6 +11,13 @@ export function imagesOf(message: ChatMessage): readonly ImageRef[] {
 
 function sheetContents(source: SheetSource): string {
   return `${formatSpan(source.startSeconds, source.endSeconds)}, ${plural(source.frameCount, "frame")}`;
+}
+
+export function zoomContents({ target, area }: ZoomSource): string {
+  const across = `${area.left} to ${area.right} across`;
+  const down = `${area.top} to ${area.bottom} down`;
+  const of = target.kind === "moment" ? formatTimestamp(target.seconds, true) : target.name;
+  return `part of ${of}, ${across} and ${down}, in thousandths`;
 }
 
 export function sheetLine({ source }: ImageRef): string | undefined {
@@ -28,6 +36,8 @@ export function imageLabel(ref: ImageRef): string {
       return `${recallName(ref)}: ${sheetContents(source)}`;
     case "upload":
       return `image ${source.name}`;
+    case "zoom":
+      return `${source.name}: ${zoomContents(source)}`;
   }
 }
 

@@ -29,6 +29,7 @@ import type { StatusLine } from "../ui/shared/status";
 import type { Toast, ToastHandle } from "../ui/shared/toast";
 import { offerUndo } from "./undo";
 import { modelCallDeps } from "./modelCallDeps";
+import { conversationTools } from "./toolContext";
 
 const REATTACH_TO_CHECK = "Reattach the video to check the timestamps.";
 
@@ -228,7 +229,14 @@ async function verify(
     return undefined;
   }
   const knownImages = state.messages.flatMap(imagesOf);
-  const runTool = createToolRunner({ ...toolCtx, knownImages: () => knownImages });
+  const runTool = createToolRunner({
+    store: toolCtx.store,
+    resolution: toolCtx.resolution,
+    maxImages: toolCtx.maxImages,
+    sheets: toolCtx,
+    tools: conversationTools(model, state.messages, { videoLoaded: true, listen: false }).tools,
+    knownImages: () => knownImages,
+  });
   try {
     const checks = await verifyClaims(
       {

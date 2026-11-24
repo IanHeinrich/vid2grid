@@ -1,9 +1,10 @@
 import type { VideoInfo } from "@vid2grid/core";
 import { currentModel, resolveModel } from "../chat/models";
 import type { AppState } from "../state";
-import type { Chat, ChatStore, ModelInfo, VideoAttachment } from "../types";
+import { imagesOf } from "../imageRefs";
+import type { Chat, ChatMessage, ChatStore, ModelInfo, VideoAttachment } from "../types";
 import { resolveOverviewResolution, resolveSheetResolution } from "../video/resolution";
-import type { ToolContext } from "../video/tools";
+import { toolOffer, type ToolContext, type ToolOffer } from "../video/tools";
 
 export interface SheetSource {
   file: File;
@@ -34,6 +35,21 @@ export function sheetContext(
     maxImages: model.maxImages,
     store,
   };
+}
+
+export interface LoadedParts {
+  videoLoaded: boolean;
+  // Audio is on for the message and the video has some to hear.
+  listen: boolean;
+}
+
+export function conversationTools(
+  model: Pick<ModelInfo, "vision">,
+  messages: readonly ChatMessage[],
+  loaded: LoadedParts,
+): ToolOffer {
+  const images = messages.some((message) => imagesOf(message).length > 0);
+  return toolOffer({ ...loaded, images, vision: model.vision });
 }
 
 export function chatModel(state: AppState, chat: Chat): ModelInfo | null {

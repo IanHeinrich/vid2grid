@@ -5,7 +5,13 @@ import { createMemoryStore } from "../src/chat/store";
 import type { ImageRef, ImageStore, SheetCache, ToolCall, VideoAttachment } from "../src/types";
 import type { RenderedSheet } from "../src/video/render";
 import { sheetCacheKey } from "../src/video/sheetCache";
-import { createToolRunner, renderOverview, type ToolContext } from "../src/video/tools";
+import {
+  createToolRunner,
+  renderOverview,
+  toolOffer,
+  type ToolContext,
+  type ToolRunnerContext,
+} from "../src/video/tools";
 import { MAX_LISTEN_LINES } from "../src/video/listenTool";
 
 class FakeStore implements ImageStore, SheetCache {
@@ -40,8 +46,20 @@ const video: VideoAttachment = {
   height: 1080,
 };
 
+function secondsFrom(start: number, count: number): number[] {
+  return Array.from({ length: count }, (_, index) => start + index);
+}
+
 function sheet(name: string, startSeconds: number, endSeconds: number, frameCount: number) {
-  return { name, blob: new Blob([name]), startSeconds, endSeconds, frameCount };
+  const cellTimes = secondsFrom(startSeconds, frameCount);
+  return { name, blob: new Blob([name]), startSeconds, endSeconds, frameCount, cellTimes };
+}
+
+const OFFER = toolOffer({ videoLoaded: true, images: true, vision: true, listen: false });
+
+function runnerContext(sheets: ToolContext, extra: Partial<ToolRunnerContext> = {}) {
+  const { store, resolution, maxImages } = sheets;
+  return { store, resolution, maxImages, sheets, tools: OFFER.tools, ...extra };
 }
 
 function setup(sheets: RenderedSheet[] = [sheet("grid_0001", 60, 89, 16)]) {
@@ -56,7 +74,7 @@ function setup(sheets: RenderedSheet[] = [sheet("grid_0001", 60, 89, 16)]) {
     store,
     render,
   };
-  return { ctx, store, render, run: createToolRunner(ctx) };
+  return { ctx, store, render, run: createToolRunner(runnerContext(ctx)) };
 }
 
 function call(name: string, args: unknown): ToolCall {
@@ -102,11 +120,10 @@ function listenSetup(durationSeconds = 1800, heard = HEARD_AT_A_MINUTE) {
   });
   const { ctx } = setup();
   const audioStore = createMemoryStore();
-  const listenCtx: ToolContext = {
-    ...ctx,
-    info: { ...ctx.info, durationSeconds },
-    audio: { store: audioStore, labels: LISTEN_LABELS, analyse },
-  };
+  const listenCtx = runnerContext(
+    { ...ctx, info: { ...ctx.info, durationSeconds } },
+    { audio: { store: audioStore, labels: LISTEN_LABELS, analyse } },
+  );
   return { analyse, audioStore, run: createToolRunner(listenCtx) };
 }
 
@@ -241,7 +258,9 @@ describe("look", () => {
           startSeconds: 60,
           endSeconds: 74,
           frameCount: 16,
+          cellTimes: secondsFrom(60, 16),
           resolution: 1568,
+          fileKey: video.fileKey,
         },
       },
       {
@@ -254,7 +273,9 @@ describe("look", () => {
           startSeconds: 75,
           endSeconds: 89,
           frameCount: 1,
+          cellTimes: [75],
           resolution: 1568,
+          fileKey: video.fileKey,
         },
       },
     ]);
@@ -489,9 +510,49 @@ describe("note", () => {
 describe("unknown tool", () => {
   it("explains the tools that exist", async () => {
     const { run } = setup();
-    const result = await run(call("zoom", {}));
-    expect(result.text).toContain('Unknown tool "zoom"');
-    expect(result.text).toContain("look, frames, note and recall");
+    const result = await run(call("peek", {}));
+    expect(result.text).toBe(
+      'Error: Unknown tool "peek". The tools are look, frames, note, recall and zoom.',
+    );
+  });
+
+  it("treats zoom as unknown for a model that was not offered it", async () => {
+    const { ctx } = setup();
+    const { tools } = toolOffer({ videoLoaded: true, images: true, vision: false, listen: true });
+    const run = createToolRunner(runnerContext(ctx, { tools }));
+    expect((await run(call("zoom", { t: 1, left: 0, top: 0, right: 10, bottom: 10 }))).text).toBe(
+      'Error: Unknown tool "zoom". The tools are look, frames, note, recall and listen.',
+    );
+  });
+});
+
+describe("without a loaded video", () => {
+  const { tools } = toolOffer({ videoLoaded: false, images: true, vision: true, listen: false });
+
+  it.each(["look", "frames", "frame", "note", "listen"])("%s says what it needs", async (name) => {
+    const run = createToolRunner({ store: new FakeStore(), resolution: 1024, maxImages: 4, tools });
+    expect(await run(call(name, {}))).toEqual({
+      text: `Error: ${name} needs the chat's video, which is not loaded. The tools are recall and zoom.`,
+      images: [],
+    });
+  });
+
+  it("still recalls", async () => {
+    const store = new FakeStore();
+    store.images.set("img-1", new Blob(["x"]));
+    const photo: ImageRef = {
+      id: "img-1",
+      pinned: false,
+      source: { kind: "upload", name: "beach.jpg" },
+    };
+    const run = createToolRunner({
+      store,
+      resolution: 1024,
+      maxImages: 4,
+      tools,
+      knownImages: () => [photo],
+    });
+    expect((await run(call("recall", { names: ["beach.jpg"] }))).images).toEqual([photo]);
   });
 });
 
@@ -506,7 +567,7 @@ function storedSheet(id: string, name: string, call: string, pinned = false): Im
 function recallSetup(known: ImageRef[], maxImages = 10) {
   const { ctx, store, render } = setup();
   for (const ref of known) store.images.set(ref.id, new Blob([ref.id]));
-  const run = createToolRunner({ ...ctx, maxImages, knownImages: () => known });
+  const run = createToolRunner(runnerContext(ctx, { maxImages, knownImages: () => known }));
   return { run, store, render };
 }
 
@@ -542,6 +603,45 @@ describe("recall", () => {
     expect(ambiguous.text).toContain('"grid_0001" names 2 images');
     const unique = recallSetup([first]);
     expect((await unique.run(call("recall", { names: ["GRID_0001"] }))).images).toEqual([first]);
+  });
+
+  it.each([
+    ["an upload's label", "image beach.jpg", photo],
+    ["a sheet's label", "grid_0001 from look(0, 30): 1:00 to 1:30, 16 frames", second],
+    ["a sheet's label misquoted after the colon", "grid_0001 from look(0, 30): all of it", second],
+  ])("accepts %s as a name", async (_what, name, expected) => {
+    const { run } = recallSetup([first, second, photo]);
+    expect((await run(call("recall", { names: [name] }))).images).toEqual([expected]);
+  });
+
+  it("prefers a name over a label that reads the same", async () => {
+    const named: ImageRef = { ...photo, id: "img-4", source: { ...photo.source, name: "image a" } };
+    const labelled: ImageRef = { ...photo, id: "img-5", source: { ...photo.source, name: "a" } };
+    const { run } = recallSetup([named, labelled]);
+    expect((await run(call("recall", { names: ["image a"] }))).images).toEqual([named]);
+  });
+
+  it("keeps asking for the full name when a sheet's short label is ambiguous", async () => {
+    const { run } = recallSetup([first, second]);
+    const ambiguous = await run(call("recall", { names: ["grid_0001: 1:00 to 1:30, 16 frames"] }));
+    expect(ambiguous.images).toEqual([]);
+    expect(ambiguous.text).toContain("names 2 images");
+    const { run: runOne } = recallSetup([first]);
+    const one = await runOne(call("recall", { names: ["grid_0001: 1:00 to 1:30, 16 frames"] }));
+    expect(one.images).toEqual([first]);
+  });
+
+  it("says when images share a full name, attaching the latest", async () => {
+    const again = { ...first, id: "img-6" };
+    const { run } = recallSetup([first, again, first]);
+    const shared = await run(call("recall", { names: ["grid_0001 from look(60, 90)"] }));
+    expect(shared.images).toEqual([first]);
+    expect(shared.text).toContain(
+      "2 images share the name grid_0001 from look(60, 90); this is the latest.",
+    );
+    const { run: repeated } = recallSetup([first, first]);
+    const same = await repeated(call("recall", { names: ["grid_0001 from look(60, 90)"] }));
+    expect(same.text).not.toContain("share the name");
   });
 
   it("says clearly when a name is unknown, while attaching the ones it found", async () => {
@@ -609,7 +709,7 @@ describe("renderOverview", () => {
     const { ctx, render } = setup();
     const overviewResolution = vi.fn((sheets: number) => (sheets > 2 ? 1024 : 1568));
     const withOverview = { ...ctx, overviewResolution };
-    const run = createToolRunner(withOverview);
+    const run = createToolRunner(runnerContext(withOverview));
     const refs = await renderOverview(withOverview);
     expect(overviewResolution).toHaveBeenCalledWith(4);
     expect(render.mock.calls[0]?.[2]).toMatchObject({
@@ -626,11 +726,9 @@ describe("renderOverview", () => {
     expect(frames.images[0]?.source).toMatchObject({ resolution: 1568 });
   });
 
-  it("reuses cached sheets", async () => {
+  it("reuses cached sheets, stamping older ones with their video", async () => {
     const { ctx, store, render } = setup();
-    const cached: ImageRef[] = [
-      { id: "kept", pinned: false, source: { kind: "upload", name: "x" } },
-    ];
+    const cached = storedSheet("kept", "grid_0001", "overview");
     const key = sheetCacheKey(video.fileKey, {
       startSeconds: 0,
       endSeconds: 120,
@@ -638,8 +736,10 @@ describe("renderOverview", () => {
       framesPerGrid: 20,
       outputResolution: 1568,
     });
-    await store.putSheets(key, cached);
-    expect(await renderOverview(ctx)).toBe(cached);
+    await store.putSheets(key, [cached]);
+    expect(await renderOverview(ctx)).toEqual([
+      { ...cached, source: { ...cached.source, fileKey: video.fileKey } },
+    ]);
     expect(render).not.toHaveBeenCalled();
   });
 });

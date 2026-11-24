@@ -85,9 +85,6 @@ export function answerStyle(
     .join(" ");
 }
 
-const BEFORE_LOOKING_GUIDANCE =
-  "If you write to the user before looking, keep it to one short line and claim nothing you have not seen yet.";
-
 const CHAR_PLACEHOLDER = /\{\{char\}\}/gi;
 const USER_PLACEHOLDER = /\{\{user\}\}/gi;
 
@@ -137,14 +134,10 @@ function castSection(cast: VideoCast): string {
 // Kept identical across a chat's requests so the server's prompt cache can reuse it.
 export function buildSystemPrompt(chat: Chat, toolGuidance: string): string {
   const { settings, video } = chat;
-  const sections = [applyPersonaNames(settings.systemPrompt, settings).trim()];
+  const sections = [applyPersonaNames(settings.systemPrompt, settings).trim(), toolGuidance.trim()];
   if (video) {
-    const tools = toolGuidance.trim();
     sections.push(
-      tools === "" ? "" : `${tools}\n${BEFORE_LOOKING_GUIDANCE}`,
       answerStyle(settings.voice, effectiveVideoReferences(settings)),
-    );
-    sections.push(
       `Attached video: ${video.name}, ${formatTimestamp(video.durationSeconds)} long, ${video.width}x${video.height}.`,
     );
   }

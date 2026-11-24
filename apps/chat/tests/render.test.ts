@@ -62,8 +62,22 @@ describe("renderSheets", () => {
     });
     const sheets = await renderSheets(file, info, { frameCount: 5, framesPerGrid: 3 });
     expect(sheets).toEqual([
-      { name: "grid_0001", blob: first, startSeconds: 0, endSeconds: 10, frameCount: 3 },
-      { name: "grid_0002", blob: second, startSeconds: 15, endSeconds: 20, frameCount: 2 },
+      {
+        name: "grid_0001",
+        blob: first,
+        startSeconds: 0,
+        endSeconds: 10,
+        frameCount: 3,
+        cellTimes: [0, 5, 10],
+      },
+      {
+        name: "grid_0002",
+        blob: second,
+        startSeconds: 15,
+        endSeconds: 20,
+        frameCount: 2,
+        cellTimes: [15, 20],
+      },
     ]);
   });
 

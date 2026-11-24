@@ -7,9 +7,11 @@ import type {
   ChatStore,
   Folder,
   ImageRef,
+  ImageSource,
   ToolCall,
   ToolMessage,
   UserMessage,
+  ZoomTarget,
   VideoCast,
   VideoTimeline,
 } from "../types";
@@ -24,9 +26,10 @@ export function chatToMarkdown(chat: Chat, messages: readonly ChatMessage[]): st
   const sections = [`# ${chat.title}`, headerLines(chat)];
   const prompt = chat.settings.systemPrompt.trim();
   if (prompt !== "") sections.push(prompt.replace(/^/gm, "> "));
+  const zooms = zoomTargetsByCall(messages);
   let replies: AssistantMessage[] = [];
   const flush = () => {
-    const section = assistantSection(replies, chat.settings.characterName ?? "Assistant");
+    const section = assistantSection(replies, chat.settings.characterName ?? "Assistant", zooms);
     if (section !== undefined) sections.push(section);
     replies = [];
   };
@@ -57,14 +60,45 @@ function userSection(message: UserMessage, name: string): string {
   return lines.join("\n\n");
 }
 
+function zoomOf(target: ZoomTarget): string {
+  return target.kind === "moment" ? formatTimestamp(target.seconds, true) : target.name;
+}
+
 function imageCaption({ source }: ImageRef): string {
+  if (source.kind === "zoom") return `zoom of ${zoomOf(source.target)}`;
   return source.kind === "sheet"
     ? `${source.name} from ${source.call}, ${formatSpan(source.startSeconds, source.endSeconds)}`
     : source.name;
 }
 
-function assistantSection(replies: readonly AssistantMessage[], name: string): string | undefined {
-  const tools = toolSummary(replies.flatMap((reply) => reply.toolCalls));
+// What a zoom call looked at is on the picture it returned, not in its arguments.
+function zoomTargetsByCall(messages: readonly ChatMessage[]): Map<string, ZoomTarget> {
+  const targets = new Map<string, ZoomTarget>();
+  for (const message of messages) {
+    if (message.role !== "tool") continue;
+    for (const { source } of message.images) {
+      if (source.kind === "zoom") targets.set(message.toolCallId, source.target);
+    }
+  }
+  return targets;
+}
+
+function zoomLabel(target: ZoomTarget | undefined): string {
+  if (target === undefined) return "zoom call";
+  return target.kind === "moment"
+    ? `Zoomed in at ${zoomOf(target)}`
+    : `Zoomed in on ${zoomOf(target)}`;
+}
+
+function assistantSection(
+  replies: readonly AssistantMessage[],
+  name: string,
+  zooms: ReadonlyMap<string, ZoomTarget>,
+): string | undefined {
+  const tools = toolSummary(
+    replies.flatMap((reply) => reply.toolCalls),
+    zooms,
+  );
   const texts = replies.flatMap((reply) => {
     const text = reply.text.trim();
     if (text === "") return [];
@@ -74,7 +108,10 @@ function assistantSection(replies: readonly AssistantMessage[], name: string): s
   return [`## ${name}`, ...(tools === undefined ? [] : [`_${tools}_`]), ...texts].join("\n\n");
 }
 
-function toolSummary(calls: readonly ToolCall[]): string | undefined {
+function toolSummary(
+  calls: readonly ToolCall[],
+  zooms: ReadonlyMap<string, ZoomTarget>,
+): string | undefined {
   const looks: string[] = [];
   const others: string[] = [];
   let notes = 0;
@@ -83,6 +120,7 @@ function toolSummary(calls: readonly ToolCall[]): string | undefined {
     if (call.name === "note") notes += 1;
     else if (call.name === "look") looks.push(lookSpan(args));
     else if (call.name === "frames") others.push(framesLabel(args));
+    else if (call.name === "zoom") others.push(zoomLabel(zooms.get(call.id)));
     else others.push(`${call.name} call`);
   }
   const parts = [
@@ -190,9 +228,15 @@ function imageRefsOf(message: ChatMessage): readonly ImageRef[] {
   return [...imagesOf(message), ...alternates.flatMap((alt) => alt.messages.flatMap(imageRefsOf))];
 }
 
+function blobIdsOf({ id, source }: ImageRef): string[] {
+  if (source.kind === "upload" && source.originalId !== undefined) return [id, source.originalId];
+  if (source.kind === "zoom" && source.target.kind === "image") return [id, source.target.id];
+  return [id];
+}
+
 async function imagesFor(store: ChatStore, chats: readonly BackupChat[]): Promise<BackupImage[]> {
   const ids = new Set(
-    chats.flatMap(({ messages }) => messages.flatMap(imageRefsOf).map((ref) => ref.id)),
+    chats.flatMap(({ messages }) => messages.flatMap(imageRefsOf).flatMap(blobIdsOf)),
   );
   const images = await Promise.all(
     [...ids].map(async (id): Promise<BackupImage | undefined> => {
@@ -309,8 +353,26 @@ async function putMissing<T extends { fileKey: string }>(
   return count;
 }
 
+// An id whose blob the backup does not hold is kept, since this browser may still hold it.
+function remapSource(source: ImageSource, imageIds: ReadonlyMap<string, string>): ImageSource {
+  if (source.kind === "upload") {
+    const { originalId } = source;
+    if (originalId === undefined) return source;
+    return { ...source, originalId: imageIds.get(originalId) ?? originalId };
+  }
+  if (source.kind === "zoom" && source.target.kind === "image") {
+    const { target } = source;
+    return { ...source, target: { ...target, id: imageIds.get(target.id) ?? target.id } };
+  }
+  return source;
+}
+
 function remapRefs(refs: readonly ImageRef[], imageIds: ReadonlyMap<string, string>): ImageRef[] {
-  return refs.map((ref) => ({ ...ref, id: imageIds.get(ref.id) ?? ref.id }));
+  return refs.map((ref) => ({
+    ...ref,
+    id: imageIds.get(ref.id) ?? ref.id,
+    source: remapSource(ref.source, imageIds),
+  }));
 }
 
 function remapReply(
