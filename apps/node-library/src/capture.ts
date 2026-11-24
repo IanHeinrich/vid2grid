@@ -16,6 +16,8 @@ import {
   type FrameHandler,
   type FrameStream,
 } from "./frameStream";
+import { readSeekLandings } from "./probe";
+import { seeksToTry, splitIntoSegments, type CaptureSegment } from "./segments";
 
 export interface RgbaFrame {
   width: number;
@@ -26,6 +28,20 @@ export interface RgbaFrame {
 }
 
 const RGBA_BYTES = 4;
+// Wider than the matcher's microsecond rounding, so the filter keeps every frame it could pick.
+const SELECT_MARGIN_SECONDS = 0.001;
+
+interface Source {
+  path: string;
+  plan: RenderPlan;
+  keyframesOnly: boolean;
+}
+
+interface SegmentOutcome {
+  filled: number;
+  // The first frame decoded was already past the first planned time.
+  landedLate: boolean;
+}
 
 export async function* captureFrames(
   path: string,
@@ -33,16 +49,55 @@ export async function* captureFrames(
   info: VideoInfo,
 ): AsyncGenerator<RgbaFrame, void, undefined> {
   const planned = plan.frames.map((frame) => frame.timestampSeconds);
-  const firstSeconds = planned[0];
-  if (firstSeconds === undefined) return;
-
-  const { width, height } = plan.cell;
-  const matcher = createFrameMatcher(planned);
-  const ready: RgbaFrame[] = [];
   const keyframesOnly = isKeyframePlan(plan, info.keyframeTimestampsSeconds);
-  const args = ffmpegArgs(path, plan, firstSeconds, keyframesOnly);
-  yield* decodeFrames(path, args, width * height * RGBA_BYTES, ready, (frame) => {
+  const source = { path, plan, keyframesOnly };
+  const segments = await planSegments(source, planned);
+  const [first] = segments;
+  if (!first) return;
+
+  let filled = 0;
+  for (const segment of segments) {
+    // Nothing comes before the first segment to fall back on, so it may land late.
+    const outcome = yield* captureSegment(source, segment, segment === first);
+    filled += outcome.filled;
+    if (outcome.landedLate) {
+      const rest = { ...first, plannedSeconds: planned.slice(filled) };
+      yield* captureSegment(source, rest, true);
+      return;
+    }
+    if (outcome.filled < segment.plannedSeconds.length) return;
+  }
+}
+
+async function planSegments(
+  { path, keyframesOnly }: Source,
+  planned: number[],
+): Promise<CaptureSegment[]> {
+  // A keyframe-only decode is quick, and ffmpeg can time its frames differently after a seek.
+  const seeks = keyframesOnly ? [] : seeksToTry(planned);
+  // Decoding straight through needs no landings, and reports a file that cannot be read.
+  const landings = await readSeekLandings(path, seeks).catch(() => new Map<number, number>());
+  return splitIntoSegments(planned, landings);
+}
+
+async function* captureSegment(
+  source: Source,
+  segment: CaptureSegment,
+  mayLandLate: boolean,
+): AsyncGenerator<RgbaFrame, SegmentOutcome, undefined> {
+  const { width, height } = source.plan.cell;
+  const { plannedSeconds } = segment;
+  const [firstPlanned = 0] = plannedSeconds;
+  const matcher = createFrameMatcher(plannedSeconds);
+  const ready: RgbaFrame[] = [];
+  let landed = mayLandLate;
+  let filledCount = 0;
+  const args = ffmpegArgs(source, segment.seekSeconds, firstPlanned);
+  yield* decodeFrames(source.path, args, width * height * RGBA_BYTES, ready, (frame) => {
     const { exactSeconds, pixels } = frame;
+    const decodedSeconds = roundToMicroseconds(exactSeconds);
+    landed ||= decodedSeconds <= firstPlanned;
+    if (!landed) return Number.isFinite(decodedSeconds);
     const filled = matcher.fill(exactSeconds);
     if (filled.length === 0) return false;
     // Checked only on kept frames: a frame lost from either stream shifts every pairing
@@ -52,19 +107,19 @@ export async function* captureFrames(
       width,
       height,
       data: new Uint8ClampedArray(pixels.buffer, pixels.byteOffset, pixels.length),
-      decodedTimestampSeconds: roundToMicroseconds(exactSeconds),
+      decodedTimestampSeconds: decodedSeconds,
     };
     filled.forEach(() => ready.push(image));
+    filledCount += filled.length;
     return matcher.done;
   });
+  return { filled: filledCount, landedLate: !landed };
 }
 
-// One ffmpeg process for the whole plan, from the keyframe before the first planned time.
 function ffmpegArgs(
-  path: string,
-  plan: RenderPlan,
-  firstSeconds: number,
-  keyframesOnly: boolean,
+  { path, plan, keyframesOnly }: Source,
+  seekSeconds: number,
+  firstPlanned: number,
 ): string[] {
   return [
     "-hide_banner",
@@ -73,8 +128,8 @@ function ffmpegArgs(
     ...(keyframesOnly ? ["-skip_frame", "nokey"] : []),
     // -seek_timestamp keeps ffmpeg from adding the container's start time to -ss, and
     // -copyts keeps the stream's own timestamps: the raw times Python's capture seeks by.
-    ...(firstSeconds > 0
-      ? ["-seek_timestamp", "1", "-ss", firstSeconds.toFixed(6), "-noaccurate_seek"]
+    ...(seekSeconds > 0
+      ? ["-seek_timestamp", "1", "-ss", seekSeconds.toFixed(6), "-noaccurate_seek"]
       : []),
     "-copyts",
     "-i",
@@ -82,13 +137,21 @@ function ffmpegArgs(
     "-map",
     "0:v:0",
     "-vf",
-    `${cropFilters(plan)}scale=${plan.cell.width}:${plan.cell.height}:flags=bicubic,format=rgba,showinfo`,
+    filterGraph(plan, firstPlanned),
     "-fps_mode",
     "passthrough",
     "-f",
     "rawvideo",
     "pipe:1",
   ];
+}
+
+// Frames before the first planned time are decoded but not scaled or piped out, except the
+// very first, which shows where the seek landed.
+function filterGraph(plan: RenderPlan, firstPlanned: number): string {
+  const { width, height } = plan.cell;
+  const wanted = `select='eq(n,0)+gte(t,${(firstPlanned - SELECT_MARGIN_SECONDS).toFixed(6)})'`;
+  return `${wanted},${cropFilters(plan)}scale=${width}:${height}:flags=bicubic,format=rgba,showinfo`;
 }
 
 // Cropped as rgba because on subsampled formats the crop filter rounds to whole chroma pixels.

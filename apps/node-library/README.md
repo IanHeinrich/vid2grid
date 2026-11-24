@@ -65,10 +65,13 @@ The library also exports:
 - **Probe**: ffprobe reads the duration and coded size; core applies the
   sample aspect ratio and rotation, as for every host. Keyframe times are read
   only when keyframe sampling asks for them.
-- **Capture**: one ffmpeg process per run decodes from the keyframe before
-  the first planned time, scales each frame to its cell and pipes it out as
-  raw RGBA. Each planned time takes the first frame at or after it. When every
-  planned time is a keyframe, ffmpeg decodes keyframes alone.
+- **Capture**: ffmpeg decodes from the keyframe before the first planned time,
+  scales each frame to its cell and pipes it out as raw RGBA. Each planned time
+  takes the first frame at or after it. Where a keyframe lets it skip five
+  seconds or more of video, it seeks there with a new ffmpeg process instead of
+  decoding through, one process at a time, so a sparse plan over a long video
+  is quick. When every planned time is a keyframe, one process decodes
+  keyframes alone.
 - **Render**: core's `paintSheetFromPlan` paints each sheet onto an
   `@napi-rs/canvas` canvas, which encodes it as JPEG. Two sheets encode at
   once.
@@ -79,9 +82,9 @@ The library also exports:
 
 - No transcription. A request with `transcript` set still renders its sheets
   and reports a `no_transcription_port` warning.
-- ffmpeg decodes every frame between the first and last planned time. The
-  Python library seeks across long gaps instead, so a very low frame rate over
-  a long video is slower here.
+- A sparse plan decodes straight through, which is slow on a long video, when
+  a seek does not land on a keyframe with a known time (MPEG-TS, AVI) or the
+  video has too few keyframes to skip to.
 
 ## Development
 

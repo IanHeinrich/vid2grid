@@ -5,7 +5,7 @@ import { join } from "node:path";
 import ffmpegPath from "ffmpeg-static";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Vid2GridError } from "@vid2grid/core";
-import { probeVideo, readKeyframeTimes } from "../src/probe";
+import { probeVideo, readKeyframeTimes, readSeekLandings } from "../src/probe";
 import { fixtureVideo } from "../../../packages/core/tests/fixturePaths";
 
 const TINY_MP4 = fixtureVideo("tiny.mp4");
@@ -80,5 +80,35 @@ describe("readKeyframeTimes", () => {
     expect(error).toBeInstanceOf(Vid2GridError);
     expect(error).toMatchObject({ code: "internal" });
     expect(error instanceof Error && error.cause instanceof Error).toBe(true);
+  });
+});
+
+describe("readSeekLandings", () => {
+  const KEYFRAMES_MP4 = fixtureVideo("keyframes-20s.mp4");
+
+  it("maps each time to the keyframe at or before it", async () => {
+    const landings = await readSeekLandings(KEYFRAMES_MP4, [7.95, 3, 12.5, 40]);
+    expect([...landings]).toEqual([
+      [7.95, 7],
+      [3, 3],
+      [12.5, 12],
+      [40, 19],
+    ]);
+  });
+
+  it("keeps times and landings together over several ffprobe runs", async () => {
+    const times = Array.from({ length: 1200 }, (_, i) => i / 100);
+    const landings = await readSeekLandings(KEYFRAMES_MP4, times);
+    expect(landings).toEqual(new Map(times.map((time) => [time, Math.floor(time)])));
+  });
+
+  it("leaves out a time whose seek lands between keyframes", async () => {
+    const stream = join(scratch, "stream.ts");
+    ffmpeg(["-i", KEYFRAMES_MP4, "-c", "copy", stream]);
+    expect(await readSeekLandings(stream, [7.95, 12.5])).toEqual(new Map());
+  });
+
+  it("reads nothing when there is nothing to seek to", async () => {
+    expect(await readSeekLandings(join(scratch, "missing.mp4"), [])).toEqual(new Map());
   });
 });
