@@ -4,13 +4,20 @@ import type {
   ChatStore,
   Folder,
   ImageRef,
+  ImageRelease,
+  ImageUse,
+  UnsavedUse,
+  UnusedImages,
   VideoAudio,
   VideoCast,
   VideoTimeline,
 } from "../types";
+import { imageIdsIn, type ImageHolder } from "../imageIds";
+import { planRelease, planSweep, type DeletePlan, type StoredUse } from "./imagePlan";
 
 const DEFAULT_NAME = "vid2grid-chat";
-const VERSION = 5;
+// Raised to 6 with no schema change: older builds close on it, and they hold no lock to be seen by.
+const VERSION = 6;
 
 const CHATS = "chats";
 const MESSAGES = "messages";
@@ -24,6 +31,9 @@ const FOLDERS = "folders";
 
 const BLOCKED_MESSAGE =
   "The chat database is open in an older version elsewhere. Close other vid2grid chat tabs and reload.";
+
+const UPGRADED_MESSAGE =
+  "A newer version of the app has opened the chat database in another tab. Reload this page.";
 
 const BY_CHAT = "byChat";
 const BY_MESSAGE = "byMessage";
@@ -125,8 +135,90 @@ export function videoKeysOf(chat: Chat, messages: readonly ChatMessage[]): strin
   return videoKeysByChat([chat], records).get(chat.id) ?? [];
 }
 
+// Images this tab has saved that no saved message or cached sheet names yet, so a sweep leaves them.
+class NewImages {
+  private readonly ids = new Set<string>();
+
+  add(id: string): void {
+    this.ids.add(id);
+  }
+
+  settle(ids: Iterable<string>): void {
+    for (const id of ids) this.ids.delete(id);
+  }
+
+  // Never throws, since what names them is saved by now.
+  settleSaved(holder: ImageHolder): void {
+    try {
+      this.settle(imageIdsIn(holder));
+    } catch {
+      // They only stay spared by this tab's sweeps.
+    }
+  }
+
+  with(unsaved: ImageUse): ImageUse {
+    return { ...unsaved, images: new Set([...unsaved.images, ...this.ids]) };
+  }
+}
+
+function totalSize(blobs: readonly (Blob | undefined)[]): number {
+  return blobs.reduce((total, blob) => total + (blob?.size ?? 0), 0);
+}
+
+const NONE_UNUSED: UnusedImages = { images: [], sheets: [], bytes: 0 };
+const IMAGE_USERS = [CHATS, MESSAGES, SHEET_CACHE, IMAGES];
+
+async function readStoredUse(transaction: IDBTransaction): Promise<StoredUse> {
+  const cache = transaction.objectStore(SHEET_CACHE);
+  const [chats, records, keys, sheets] = await Promise.all([
+    requestResult(transaction.objectStore(CHATS).getAll() as IDBRequest<Chat[]>),
+    requestResult(transaction.objectStore(MESSAGES).getAll() as IDBRequest<MessageRecord[]>),
+    requestResult(cache.getAllKeys() as IDBRequest<string[]>),
+    requestResult(cache.getAll() as IDBRequest<ImageRef[][]>),
+  ]);
+  return {
+    chats,
+    messages: records.map((record) => record.message),
+    sheets: keys.map((key, index) => [key, sheets[index]] as const),
+  };
+}
+
+async function readSweep(
+  transaction: IDBTransaction,
+  unsaved: UnsavedUse,
+  only?: DeletePlan,
+): Promise<UnusedImages | undefined> {
+  const images = transaction.objectStore(IMAGES);
+  const [stored, ids] = await Promise.all([
+    readStoredUse(transaction),
+    requestResult(images.getAllKeys() as IDBRequest<string[]>),
+  ]);
+  const inUse = unsaved();
+  if (!inUse) return undefined;
+  const plan = planSweep(stored, ids, inUse, only);
+  const blobs = await Promise.all(
+    plan.images.map((id) => requestResult(images.get(id) as IDBRequest<Blob | undefined>)),
+  );
+  return { ...plan, bytes: totalSize(blobs) };
+}
+
+function applyPlan(transaction: IDBTransaction, plan: DeletePlan): void {
+  const cache = transaction.objectStore(SHEET_CACHE);
+  const images = transaction.objectStore(IMAGES);
+  for (const key of plan.sheets) cache.delete(key);
+  for (const id of plan.images) images.delete(id);
+}
+
 class IndexedDbChatStore implements ChatStore {
-  constructor(private readonly db: IDBDatabase) {}
+  private readonly newImages = new NewImages();
+
+  private upgraded = false;
+
+  constructor(private readonly db: IDBDatabase) {
+    db.addEventListener("versionchange", () => {
+      this.upgraded = true;
+    });
+  }
 
   async listChats(): Promise<Chat[]> {
     const chats = await this.read<Chat[]>(CHATS, (store) => store.getAll());
@@ -152,7 +244,7 @@ class IndexedDbChatStore implements ChatStore {
   }
 
   async listVideoKeysByChat(): Promise<Map<string, string[]>> {
-    const transaction = this.db.transaction([CHATS, MESSAGES], "readonly");
+    const transaction = this.begin([CHATS, MESSAGES], "readonly");
     const [chats, records] = await Promise.all([
       requestResult(transaction.objectStore(CHATS).getAll() as IDBRequest<Chat[]>),
       requestResult(transaction.objectStore(MESSAGES).getAll() as IDBRequest<MessageRecord[]>),
@@ -180,8 +272,8 @@ class IndexedDbChatStore implements ChatStore {
     return records.map((record) => record.message).sort(byCreatedAt);
   }
 
-  putMessage(chatId: string, message: ChatMessage): Promise<void> {
-    return this.write([MESSAGES], (transaction) => {
+  async putMessage(chatId: string, message: ChatMessage): Promise<void> {
+    await this.write([MESSAGES], (transaction) => {
       const messages = transaction.objectStore(MESSAGES);
       const existing = messages.index(BY_MESSAGE).getKey([chatId, message.id]);
       existing.onsuccess = () => {
@@ -195,6 +287,7 @@ class IndexedDbChatStore implements ChatStore {
         messages.put(record);
       };
     });
+    this.newImages.settleSaved({ messages: [message] });
   }
 
   deleteMessages(chatId: string, ids: readonly string[]): Promise<void> {
@@ -238,6 +331,7 @@ class IndexedDbChatStore implements ChatStore {
 
   async putImage(blob: Blob): Promise<string> {
     const id = crypto.randomUUID();
+    this.newImages.add(id);
     await this.write([IMAGES], (transaction) => transaction.objectStore(IMAGES).put(blob, id));
     return id;
   }
@@ -250,10 +344,45 @@ class IndexedDbChatStore implements ChatStore {
     return this.read<ImageRef[] | undefined>(SHEET_CACHE, (store) => store.get(key));
   }
 
-  putSheets(key: string, refs: ImageRef[]): Promise<void> {
-    return this.write([SHEET_CACHE], (transaction) =>
+  async putSheets(key: string, refs: ImageRef[]): Promise<void> {
+    await this.write([SHEET_CACHE], (transaction) =>
       transaction.objectStore(SHEET_CACHE).put(refs, key),
     );
+    this.newImages.settleSaved({ refs });
+  }
+
+  // One transaction over every store that names an image, so no other tab can save a use in between.
+  async releaseImages(dropped: ImageUse, unsaved: UnsavedUse): Promise<void> {
+    this.newImages.settle(dropped.images);
+    if (!unsaved()) return;
+    await this.transact("readwrite", async (transaction) => {
+      const stored = await readStoredUse(transaction);
+      const inUse = unsaved();
+      if (inUse) applyPlan(transaction, planRelease(stored, dropped, inUse));
+    });
+  }
+
+  async countUnusedImages(unsaved: () => ImageUse): Promise<UnusedImages> {
+    const unused = await this.transact("readonly", (transaction) =>
+      readSweep(transaction, () => this.newImages.with(unsaved())),
+    );
+    return unused ?? NONE_UNUSED;
+  }
+
+  async deleteUnusedImages(
+    counted: UnusedImages,
+    unsaved: UnsavedUse,
+  ): Promise<UnusedImages | undefined> {
+    if (!unsaved()) return undefined;
+    return this.transact("readwrite", async (transaction) => {
+      const inUse = () => {
+        const held = unsaved();
+        return held && this.newImages.with(held);
+      };
+      const unused = await readSweep(transaction, inUse, counted);
+      if (unused) applyPlan(transaction, unused);
+      return unused;
+    });
   }
 
   getVideoHandle(chatId: string): Promise<FileSystemFileHandle | undefined> {
@@ -272,16 +401,37 @@ class IndexedDbChatStore implements ChatStore {
     );
   }
 
-  private read<T>(storeName: string, query: (store: IDBObjectStore) => IDBRequest): Promise<T> {
-    const store = this.db.transaction(storeName, "readonly").objectStore(storeName);
+  // A connection closed by a newer version's upgrade can begin nothing.
+  private begin(storeNames: string[], mode: IDBTransactionMode): IDBTransaction {
+    if (this.upgraded) throw new Error(UPGRADED_MESSAGE);
+    return this.db.transaction(storeNames, mode);
+  }
+
+  private async read<T>(
+    storeName: string,
+    query: (store: IDBObjectStore) => IDBRequest,
+  ): Promise<T> {
+    const store = this.begin([storeName], "readonly").objectStore(storeName);
     return requestResult(query(store) as IDBRequest<T>);
   }
 
-  private write(storeNames: string[], apply: (transaction: IDBTransaction) => void): Promise<void> {
-    const transaction = this.db.transaction(storeNames, "readwrite");
+  private async write(
+    storeNames: string[],
+    apply: (transaction: IDBTransaction) => void,
+  ): Promise<void> {
+    const transaction = this.begin(storeNames, "readwrite");
     const done = transactionDone(transaction);
     apply(transaction);
-    return done;
+    await done;
+  }
+
+  private async transact<T>(
+    mode: IDBTransactionMode,
+    work: (transaction: IDBTransaction) => Promise<T>,
+  ): Promise<T> {
+    const transaction = this.begin(IMAGE_USERS, mode);
+    const [result] = await Promise.all([work(transaction), transactionDone(transaction)]);
+    return result;
   }
 }
 
@@ -292,11 +442,11 @@ export function createMemoryStore(): ChatStore {
   const images = new Map<string, Blob>();
   const sheets = new Map<string, ImageRef[]>();
   const handles = new Map<string, FileSystemFileHandle>();
-  const timelines = new Map<string, VideoTimeline>();
-  const casts = new Map<string, VideoCast>();
-  const audio = new Map<string, VideoAudio>();
+  const newImages = new NewImages();
 
   return {
+    ...memoryVideoRecords(),
+    ...memoryImageRelease({ chats, messages, images, sheets, newImages }),
     listChats: () => Promise.resolve([...chats.values()].map(copy).sort(newestFirst)),
     getChat: (id) => Promise.resolve(copyOptional(chats.get(id))),
     putChat: (chat) => resolved(() => chats.set(chat.id, copy(chat))),
@@ -317,40 +467,116 @@ export function createMemoryStore(): ChatStore {
         const chatMessages = messages.get(chatId) ?? new Map<string, ChatMessage>();
         chatMessages.set(message.id, copy(message));
         messages.set(chatId, chatMessages);
+        newImages.settleSaved({ messages: [message] });
       }),
     deleteMessages: (chatId, ids) =>
       resolved(() => {
         const chatMessages = messages.get(chatId);
         for (const id of ids) chatMessages?.delete(id);
       }),
-    getTimeline: (fileKey) => Promise.resolve(copyOptional(timelines.get(fileKey))),
-    putTimeline: (timeline) => resolved(() => timelines.set(timeline.fileKey, copy(timeline))),
-    getCast: (fileKey) => Promise.resolve(copyOptional(casts.get(fileKey))),
-    putCast: (cast) => resolved(() => casts.set(cast.fileKey, copy(cast))),
-    getAudio: (fileKey) => Promise.resolve(copyOptional(audio.get(fileKey))),
-    putAudio: (record) => resolved(() => audio.set(record.fileKey, copy(record))),
     putImage: (blob) => {
       const id = crypto.randomUUID();
+      newImages.add(id);
       images.set(id, blob);
       return Promise.resolve(id);
     },
     getImage: (id) => Promise.resolve(images.get(id)),
     getSheets: (key) => Promise.resolve(copyOptional(sheets.get(key))),
-    putSheets: (key, refs) => resolved(() => sheets.set(key, copy(refs))),
+    putSheets: (key, refs) =>
+      resolved(() => {
+        sheets.set(key, copy(refs));
+        newImages.settleSaved({ refs });
+      }),
     getVideoHandle: (chatId) => Promise.resolve(handles.get(chatId)),
     putVideoHandle: (chatId, handle) => resolved(() => handles.set(chatId, handle)),
     deleteVideoHandle: (chatId) => resolved(() => handles.delete(chatId)),
   };
 }
 
-function memoryVideoKeys(
-  chats: ReadonlyMap<string, Chat>,
-  messages: ReadonlyMap<string, ReadonlyMap<string, ChatMessage>>,
-): Map<string, string[]> {
-  const records = [...messages].flatMap(([chatId, chatMessages]) =>
+type VideoRecords = Pick<
+  ChatStore,
+  "getTimeline" | "putTimeline" | "getCast" | "putCast" | "getAudio" | "putAudio"
+>;
+
+function memoryVideoRecords(): VideoRecords {
+  const timelines = new Map<string, VideoTimeline>();
+  const casts = new Map<string, VideoCast>();
+  const audio = new Map<string, VideoAudio>();
+  return {
+    getTimeline: (fileKey) => Promise.resolve(copyOptional(timelines.get(fileKey))),
+    putTimeline: (timeline) => resolved(() => timelines.set(timeline.fileKey, copy(timeline))),
+    getCast: (fileKey) => Promise.resolve(copyOptional(casts.get(fileKey))),
+    putCast: (cast) => resolved(() => casts.set(cast.fileKey, copy(cast))),
+    getAudio: (fileKey) => Promise.resolve(copyOptional(audio.get(fileKey))),
+    putAudio: (record) => resolved(() => audio.set(record.fileKey, copy(record))),
+  };
+}
+
+interface MemoryImages {
+  chats: ReadonlyMap<string, Chat>;
+  messages: MemoryMessages;
+  images: Map<string, Blob>;
+  sheets: Map<string, ImageRef[]>;
+  newImages: NewImages;
+}
+
+function memoryImageRelease({
+  chats,
+  messages,
+  images,
+  sheets,
+  newImages,
+}: MemoryImages): ImageRelease {
+  const stored = (): StoredUse => ({
+    chats: [...chats.values()],
+    messages: memoryRecords(messages).map(({ message }) => message),
+    sheets: [...sheets],
+  });
+  const sweep = (unsaved: ImageUse, only?: DeletePlan): UnusedImages => {
+    const plan = planSweep(stored(), [...images.keys()], newImages.with(unsaved), only);
+    return { ...plan, bytes: totalSize(plan.images.map((id) => images.get(id))) };
+  };
+  const apply = (plan: DeletePlan): void => {
+    for (const key of plan.sheets) sheets.delete(key);
+    for (const id of plan.images) images.delete(id);
+  };
+  return {
+    releaseImages: (dropped, unsaved) =>
+      settledBy(() => {
+        newImages.settle(dropped.images);
+        const inUse = unsaved();
+        if (inUse) apply(planRelease(stored(), dropped, inUse));
+      }),
+    countUnusedImages: (unsaved) => settledBy(() => sweep(unsaved())),
+    deleteUnusedImages: (counted, unsaved) =>
+      settledBy(() => {
+        const inUse = unsaved();
+        if (!inUse) return undefined;
+        const unused = sweep(inUse, counted);
+        apply(unused);
+        return unused;
+      }),
+  };
+}
+
+type MemoryMessages = ReadonlyMap<string, ReadonlyMap<string, ChatMessage>>;
+
+function memoryRecords(messages: MemoryMessages): MessageOfChat[] {
+  return [...messages].flatMap(([chatId, chatMessages]) =>
     [...chatMessages.values()].map((message) => ({ chatId, message })),
   );
-  return videoKeysByChat([...chats.values()], records);
+}
+
+function memoryVideoKeys(
+  chats: ReadonlyMap<string, Chat>,
+  messages: MemoryMessages,
+): Map<string, string[]> {
+  return videoKeysByChat([...chats.values()], memoryRecords(messages));
+}
+
+// As in IndexedDB, what throws rejects.
+function settledBy<T>(work: () => T): Promise<T> {
+  return new Promise((resolve) => resolve(work()));
 }
 
 function resolved(apply: () => unknown): Promise<void> {

@@ -1,5 +1,6 @@
 import type { readFrameTimes } from "@vid2grid/browser";
 import type { VideoInfo } from "@vid2grid/core";
+import type { ImageCleanup } from "../../app/imageCleanup";
 import type { SheetSource } from "../../app/toolContext";
 import type { AnalyseAudio } from "../../audio/videoAudio";
 import type { AppElements } from "../../dom";
@@ -19,6 +20,7 @@ export interface VideoView {
 export interface VideoPanelDeps {
   store: ChatStore;
   status: StatusLine;
+  images: Pick<ImageCleanup, "release">;
   onChatChanged(): void;
   onVideoChanged(): void;
   onOverview(chatId: string, refs: ImageRef[]): void;

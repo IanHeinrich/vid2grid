@@ -245,6 +245,18 @@ describe("exportBackup", () => {
   });
 });
 
+describe("exportBackup of records this version does not know", () => {
+  it("still writes the backup", async () => {
+    const store = createMemoryStore();
+    await store.putChat(chat("c"));
+    const source = { kind: "clip", name: "c" };
+    const odd = { id: "odd", createdAt: 1, role: "system", images: [{ id: "x", source }, null] };
+    await store.putMessage("c", odd as unknown as ChatMessage);
+    const backup = await backupOf(await exportBackup(store));
+    expect(backup.chats[0]?.messages).toEqual([odd]);
+  });
+});
+
 describe("importBackup", () => {
   it("restores into an empty store, remapping image ids", async () => {
     const { store, uploadId } = await seededStore();

@@ -1,5 +1,6 @@
 import type { VideoInfo } from "@vid2grid/core";
 import type { GlobalSettings } from "./settings";
+import type { ImageHolder } from "./imageIds";
 import type { Chat, ChatMessage, ChatStore, ImageRef, ModelInfo, VideoAttachment } from "./types";
 
 export type PendingAttachment =
@@ -160,12 +161,27 @@ export function addPending(
   setPendingFor(state, chatId, [...pendingFor(state, chatId), attachment]);
 }
 
-export function removePending(state: WritableAppState, chatId: string, index: number): void {
+// Returns what was dropped, as removePendingVideo does, so its images can be let go.
+export function removePending(
+  state: WritableAppState,
+  chatId: string,
+  index: number,
+): readonly PendingAttachment[] {
+  return dropPending(state, chatId, (_, i) => i === index);
+}
+
+function dropPending(
+  state: WritableAppState,
+  chatId: string,
+  drops: (attachment: PendingAttachment, index: number) => boolean,
+): readonly PendingAttachment[] {
+  const pending = pendingFor(state, chatId);
   setPendingFor(
     state,
     chatId,
-    pendingFor(state, chatId).filter((_, i) => i !== index),
+    pending.filter((attachment, index) => !drops(attachment, index)),
   );
+  return pending.filter(drops);
 }
 
 export function setPendingPinned(
@@ -201,14 +217,11 @@ export function pendingVideo(pending: readonly PendingAttachment[]): VideoAttach
 }
 
 // The overview belongs to the pending video, so it goes with it.
-export function removePendingVideo(state: WritableAppState, chatId: string): void {
-  setPendingFor(
-    state,
-    chatId,
-    pendingFor(state, chatId).filter(
-      (attachment) => attachment.kind !== "video" && attachment.kind !== "overview",
-    ),
-  );
+export function removePendingVideo(
+  state: WritableAppState,
+  chatId: string,
+): readonly PendingAttachment[] {
+  return dropPending(state, chatId, ({ kind }) => kind === "video" || kind === "overview");
 }
 
 // A video dropped into the message being written shows in place of the chat's own until sent.
@@ -266,4 +279,9 @@ export function pendingImages(pending: readonly PendingAttachment[]): ImageRef[]
         return [];
     }
   });
+}
+
+export function pendingHolder(pending: readonly PendingAttachment[]): ImageHolder {
+  const video = pendingVideo(pending);
+  return { refs: pendingImages(pending), videoKeys: video ? [video.fileKey] : [] };
 }

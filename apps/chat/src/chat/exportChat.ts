@@ -15,7 +15,7 @@ import type {
   VideoCast,
   VideoTimeline,
 } from "../types";
-import { imagesOf } from "../imageRefs";
+import { imageIdsIn } from "../imageIds";
 import { sceneLogLines } from "./prompts";
 
 export const BACKUP_FORMAT = "vid2grid-chat-backup";
@@ -223,21 +223,8 @@ async function perVideo<T>(
   return found.filter((entry) => entry !== undefined);
 }
 
-function imageRefsOf(message: ChatMessage): readonly ImageRef[] {
-  const alternates = message.role === "user" ? (message.alternates ?? []) : [];
-  return [...imagesOf(message), ...alternates.flatMap((alt) => alt.messages.flatMap(imageRefsOf))];
-}
-
-function blobIdsOf({ id, source }: ImageRef): string[] {
-  if (source.kind === "upload" && source.originalId !== undefined) return [id, source.originalId];
-  if (source.kind === "zoom" && source.target.kind === "image") return [id, source.target.id];
-  return [id];
-}
-
 async function imagesFor(store: ChatStore, chats: readonly BackupChat[]): Promise<BackupImage[]> {
-  const ids = new Set(
-    chats.flatMap(({ messages }) => messages.flatMap(imageRefsOf).flatMap(blobIdsOf)),
-  );
+  const ids = imageIdsIn({ messages: chats.flatMap(({ messages }) => messages) });
   const images = await Promise.all(
     [...ids].map(async (id): Promise<BackupImage | undefined> => {
       const blob = await store.getImage(id);

@@ -289,10 +289,19 @@ and seeking the player work on the current video.
   in the browser's private file storage so it opens again after a restart. It
   asks first above a size you set (4 GB by default). Settings lists the
   stored copies with usage and quota, and each can be removed.
+- Images are kept while anything uses them: a message, a reply you can swipe back
+  to, a picture waiting to be sent or a cached sheet of a video some chat still
+  has. Once a deletion can no longer be undone, the images only it used are
+  deleted, unless a reply is running or the app is open in another tab. Settings
+  shows how many stored images nothing uses and how much space they take, and
+  deletes them on request once the other tabs are closed. A browser without Web
+  Locks cannot tell whether other tabs are open, so there images are never deleted.
 - Download a chat as Markdown from the sidebar: the title, model, video,
   prompt, every turn and the scene log.
 - Backup in Settings saves all chats, messages and timelines to one JSON file,
-  with or without images, and Restore reads it back.
+  with or without images, and Restore reads it back. A backup made without images
+  shows the pictures this browser still has, so it cannot get them back once the
+  chat they came from is deleted.
 - The sidebar groups chats by recent activity, and the search box matches chat
   titles and video names. Rename or delete a chat from its row. A deleted chat
   can be undone for a short time.

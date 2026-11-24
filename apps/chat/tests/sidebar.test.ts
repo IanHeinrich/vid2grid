@@ -8,6 +8,7 @@ import type { Chat, ChatMessage, ChatStore, Folder, VideoAttachment } from "../s
 import { initSidebar, type SidebarDeps } from "../src/ui/shell/sidebar";
 import { initToast } from "../src/ui/shared/toast";
 import { initVideoCopies, type VideoStorage } from "../src/ui/video/videoCopies";
+import { idleImages } from "./support/images";
 import { mountPage } from "./support/page";
 
 const SETTINGS = {
@@ -113,6 +114,7 @@ beforeEach(() => {
   deps = {
     store,
     status: { show: vi.fn(), clear: vi.fn() },
+    images: idleImages(),
     toast: initToast(els, { set: (run) => timers.push(run), clear: vi.fn() }),
     ...spies,
     newId: () => `chat-${++next}`,
