@@ -38,7 +38,10 @@ command after `--`.
 **`video_to_sheets`** renders the sheets. It returns each sheet's path with
 the first and last timestamp captured on it, any transcript paths, any
 warnings, the frame count, the timings and the vid2grid version: the same
-dict the command line's `--json` prints.
+dict the command line's `--json` prints. Each sheet also comes back as an MCP
+image block, in sheet order, so a client without access to the local files
+still sees the frames. Past 10 sheets only the paths come back, with a note
+saying so. Set `includeImages` to false to skip the images altogether.
 
 **`plan_video`** plans without rendering. It returns the `RenderPlan`, with
 every sheet's file name and frame timestamps, and any warnings, so an agent
@@ -50,6 +53,7 @@ Both take:
 | ------------------ | ----------------------------- | ---------------------------------------------------------------------- |
 | `path`             | required                      | path to the video file                                                 |
 | `outDir`           | a new folder beside the video | folder for the sheets; `video_to_sheets` only                          |
+| `includeImages`    | true                          | return the sheets as images as well as paths; `video_to_sheets` only   |
 | `startSeconds`     | 0                             | start time in seconds                                                  |
 | `endSeconds`       | the video's duration          | end time in seconds                                                    |
 | `targetFps`        | 1                             | frames sampled per second                                              |
@@ -66,6 +70,31 @@ Both take:
 The options are core's option specs, the same ones every way of using
 vid2grid offers, and core checks the values. A bad value comes back as a tool
 error carrying core's error code and message.
+
+**`zoom_frame`** shows one moment up close: one frame, or part of it, as an
+MCP image block. An agent looks at sheets first, then zooms into a moment it
+wants to see better. It also returns the timestamp really captured, the area,
+the image's size in pixels and any warnings. No files are written. It takes:
+
+| Input              | Default            | What it is                                               |
+| ------------------ | ------------------ | -------------------------------------------------------- |
+| `path`             | required           | path to the video file                                   |
+| `timeSeconds`      | required           | time in seconds; the first frame at or after it is shown |
+| `left`             | the whole frame    | left edge of the area, 0 to 1000 across the whole frame  |
+| `top`              | the whole frame    | top edge of the area, 0 to 1000 down the whole frame     |
+| `right`            | the whole frame    | right edge of the area, 0 to 1000 across the whole frame |
+| `bottom`           | the whole frame    | bottom edge of the area, 0 to 1000 down the whole frame  |
+| `outputResolution` | fitted to the area | side in pixels of a square the image fits inside         |
+| `jpegQuality`      | 80                 | JPEG quality, 1 to 100                                   |
+
+`left`, `top`, `right` and `bottom` count from the frame's top left, in
+thousandths of the whole frame, not of the sheet it was seen on. Give all four
+or none. With none, the whole frame comes back at full size. An area is shown
+at up to twice its size in the video, and never smaller than its size there,
+unless `outputResolution` says otherwise.
+
+`timestampSeconds` in the result is the time of the frame shown, which is the
+first one at or after the time asked for.
 
 ## Development
 
