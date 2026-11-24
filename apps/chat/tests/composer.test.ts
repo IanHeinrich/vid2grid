@@ -30,6 +30,7 @@ import type {
 import { initComposer, type Composer, type ComposerDeps } from "../src/ui/composer/composer";
 import { initTurns } from "../src/app/turns";
 import { upload } from "./support/factories";
+import { idleImages } from "./support/images";
 import { mountPage } from "./support/page";
 import { replyWith, textThenWait, waitForAbort } from "./support/streams";
 
@@ -78,6 +79,7 @@ function setup(
     streamChat?: StreamChat;
     video?: ComposerDeps["video"];
     onReady?: ComposerDeps["onReady"];
+    images?: ComposerDeps["images"];
   } = {},
 ): Composer {
   const turns = initTurns(state, {
@@ -85,6 +87,7 @@ function setup(
     status: spies.status,
     conversation: spies.conversation,
     video: { renderSceneLog: vi.fn() },
+    images: idleImages(),
     streamChat: options.streamChat ?? reply,
     timeline: () => undefined,
     onChatChanged: vi.fn(),
@@ -96,6 +99,7 @@ function setup(
     status: spies.status,
     video: options.video ?? noVideo,
     turns,
+    images: options.images ?? idleImages(),
     stopChecks: spies.stopChecks,
     onFiles: vi.fn(),
     onPendingChanged: vi.fn(),
@@ -365,6 +369,7 @@ describe("dropped images and limits", () => {
       status,
       video: noVideo,
       turns: { run: vi.fn(), stop: vi.fn(), answerNow: vi.fn() },
+      images: idleImages(),
       stopChecks: vi.fn(),
       onFiles: vi.fn(),
       onPendingChanged: vi.fn(),
@@ -478,6 +483,7 @@ describe("the pending video", () => {
       status: makeSpies().status,
       video: noVideo,
       turns: { run: vi.fn(), stop: vi.fn(), answerNow: vi.fn() },
+      images: idleImages(),
       stopChecks: vi.fn(),
       onFiles: vi.fn(),
       onPendingChanged,
@@ -652,6 +658,7 @@ describe("audio coverage for the usage meter", () => {
       status: makeSpies().status,
       video: noVideo,
       turns: { run: vi.fn(), stop: vi.fn(), answerNow: vi.fn() },
+      images: idleImages(),
       stopChecks: vi.fn(),
       onFiles: vi.fn(),
       onPendingChanged: vi.fn(),
@@ -890,6 +897,7 @@ describe("reasoning saved per chat", () => {
       status: makeSpies().status,
       video: noVideo,
       turns: { run: vi.fn(), stop: vi.fn(), answerNow: vi.fn() },
+      images: idleImages(),
       stopChecks: vi.fn(),
       onFiles: vi.fn(),
       onPendingChanged: vi.fn(),
@@ -909,6 +917,7 @@ describe("answer now", () => {
       status: makeSpies().status,
       video: noVideo,
       turns: { run: vi.fn(), stop: vi.fn(), answerNow },
+      images: idleImages(),
       stopChecks: vi.fn(),
       onFiles: vi.fn(),
       onPendingChanged: vi.fn(),

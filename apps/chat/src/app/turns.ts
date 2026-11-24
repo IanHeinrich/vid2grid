@@ -44,6 +44,7 @@ import { resolveSheetResolution } from "../video/resolution";
 import { createToolRunner, type ToolContext } from "../video/tools";
 import type { StatusLine } from "../ui/shared/status";
 import type { Toast } from "../ui/shared/toast";
+import type { ImageCleanup } from "./imageCleanup";
 import { modelCallDeps } from "./modelCallDeps";
 import { estimateTokens } from "./requestEstimate";
 import { conversationTools, toolContext } from "./toolContext";
@@ -97,6 +98,7 @@ export interface TurnsDeps {
   toast?: Pick<Toast, "show">;
   conversation: TurnView;
   video: { renderSceneLog(): void };
+  images: Pick<ImageCleanup, "release">;
   streamChat: StreamChat;
   timeline(): VideoTimeline | undefined;
   onChatChanged(): void;
@@ -479,11 +481,17 @@ function lastUserIndex(ctx: TurnsContext): number {
   return -1;
 }
 
-async function truncateAfter(ctx: TurnsContext, chatId: string, index: number): Promise<void> {
-  const ids = ctx.state.messages.slice(index + 1).map((message) => message.id);
+async function truncateAfter(
+  ctx: TurnsContext,
+  chatId: string,
+  index: number,
+): Promise<readonly ChatMessage[]> {
+  const removed = ctx.state.messages.slice(index + 1);
+  const ids = removed.map((message) => message.id);
   if (ids.length > 0) await ctx.deps.store.deleteMessages(chatId, ids);
   removeMessages(ctx.state, ids);
   ctx.deps.conversation.reset(ctx.state.messages);
+  return removed;
 }
 
 // Replay keeps the reply it replaces as a swipe.
@@ -521,6 +529,23 @@ function compare(ctx: TurnsContext, model: ModelInfo): Promise<void> {
   });
 }
 
+async function rerunEdited(
+  ctx: TurnsContext,
+  chatId: string,
+  message: UserMessage,
+  index: number,
+): Promise<void> {
+  let removed: readonly ChatMessage[] = [];
+  await run(ctx, async () => {
+    await ctx.deps.store.putMessage(chatId, message);
+    upsertMessage(ctx.state, message);
+    removed = await truncateAfter(ctx, chatId, index);
+    return { thoroughness: messageThoroughness(message), audio: message.audio === true };
+  });
+  // Not before the reply is written: nothing is released while one runs.
+  await ctx.deps.images.release({ messages: removed });
+}
+
 async function edit(
   ctx: TurnsContext,
   message: UserMessage | AssistantMessage,
@@ -536,12 +561,7 @@ async function edit(
   const updated = { ...message, text };
   const index = lastUserIndex(ctx);
   if (updated.role === "user" && ctx.state.messages[index]?.id === updated.id) {
-    await run(ctx, async () => {
-      await ctx.deps.store.putMessage(chat.id, updated);
-      upsertMessage(ctx.state, updated);
-      await truncateAfter(ctx, chat.id, index);
-      return { thoroughness: messageThoroughness(updated), audio: updated.audio === true };
-    });
+    await rerunEdited(ctx, chat.id, updated, index);
     return;
   }
   await ctx.deps.store.putMessage(chat.id, updated);

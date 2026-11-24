@@ -6,9 +6,11 @@ import {
   type MessageActions,
   type MessageActionsDeps,
 } from "./app/messageActions";
+import { createImageCleanup, type ImageCleanup } from "./app/imageCleanup";
 import { createModelList, shouldLoadModels, type ModelList } from "./app/modelList";
 import { createChatOpener, type ChatOpener } from "./app/openChat";
 import { persistMessage } from "./app/persistMessage";
+import { browserLocks, joinTabs, type Tabs } from "./app/tabs";
 import { toolContext } from "./app/toolContext";
 import { initTurns, type Turns, type TurnsDeps } from "./app/turns";
 import { currentModel } from "./chat/models";
@@ -47,6 +49,7 @@ import {
   type SettingsDialogDeps,
 } from "./ui/settings/settingsDialog";
 import { initSidebar, type Sidebar, type SidebarDeps } from "./ui/shell/sidebar";
+import { initUnusedImages, type UnusedImagesPanel } from "./ui/settings/unusedImages";
 import { initVideoPicker, type VideoPicker } from "./ui/video/knowledgeVideos";
 import { initMemoryPanel, type MemoryPanel } from "./ui/knowledge/memoryPanel";
 import { storedPickerSettings } from "./ui/modelPicker/pickerModel";
@@ -73,6 +76,7 @@ interface App {
   usage: UsageMeter;
   balance: Balance;
   copies: VideoCopies;
+  images: ImageCleanup;
   sidebar: Sidebar;
   chatSettings: ChatSettingsPanel;
   chatDrawer: ChatDrawer;
@@ -98,6 +102,18 @@ function surface(app: App, action: string, work: Promise<unknown>): void {
 function refreshBalance(app: Pick<App, "balance">): void {
   app.balance.refresh().catch(() => undefined);
 }
+
+// On the status line, since a toast would end an Undo that is still open.
+function surfaceQuietly(app: App, action: string, work: Promise<unknown>): void {
+  work.catch((error: unknown) => {
+    app.status.show(`Could not ${action}: ${errorText(error)}`, "error");
+  });
+}
+
+const imagesOf = (app: () => App): Pick<ImageCleanup, "hold" | "release"> => ({
+  hold: (use) => app().images.hold(use),
+  release: (dropped) => app().images.release(dropped),
+});
 
 const confirm = (message: string) => window.confirm(message);
 
@@ -148,6 +164,7 @@ function actionsDeps(
     store,
     status,
     toast,
+    images: imagesOf(app),
     streamChat,
     toolContext: () => toolContext(state, store),
     conversation: { reset: (messages) => app().conversation.reset(messages) },
@@ -173,6 +190,7 @@ function sidebarDeps(
     store,
     status,
     toast,
+    images: imagesOf(app),
     onOpen: (chatId) => openChatSafely(app(), chatId),
     onDeletingCurrent: () => {
       app().turns.stop();
@@ -181,7 +199,7 @@ function sidebarDeps(
     onDeleted: () => app().study.render(),
     onDeleteFinal: (videoKeys) => {
       for (const fileKey of videoKeys) {
-        surface(app(), "remove the stored video", app().copies.release(fileKey));
+        surfaceQuietly(app(), "remove the stored video", app().copies.release(fileKey));
       }
     },
     onCurrentDeleted: () => openFallbackSafely(app()),
@@ -195,6 +213,7 @@ function videoDeps(app: () => App, store: ChatStore, status: StatusLine): VideoP
   return {
     store,
     status,
+    images: imagesOf(app),
     onChatChanged: () => app().refresh(),
     onVideoChanged: () => app().refresh(),
     onOverviewProgress: () => app().composer.updateProgress(),
@@ -208,7 +227,8 @@ function videoDeps(app: () => App, store: ChatStore, status: StatusLine): VideoP
       app().copies.save(file, video.fileKey);
       if (!replaced) return;
       app().study.render();
-      surface(app(), "remove the stored video", app().copies.release(replaced.fileKey));
+      const released = app().copies.release(replaced.fileKey);
+      surfaceQuietly(app(), "remove the stored video", released);
     },
   };
 }
@@ -254,6 +274,7 @@ function turnsDeps(
     toast: { show: (text) => app().toast.show(text) },
     conversation,
     video: { renderSceneLog: () => app().sceneLog.render() },
+    images: imagesOf(app),
     streamChat,
     timeline: () => app().study.timeline(),
     onChatChanged: () => app().refresh(),
@@ -306,6 +327,7 @@ function composerDeps(
     status,
     video,
     turns,
+    images: imagesOf(app),
     stopChecks: () => conversation.stopChecks(),
     onFiles: (files) => surface(app(), "attach the files", attachPicked(app(), files)),
     onPendingChanged: () => onPendingChanged(app()),
@@ -315,11 +337,18 @@ function composerDeps(
   };
 }
 
-function settingsDialogDeps(app: () => App, copies: VideoCopies): SettingsDialogDeps {
+function settingsDialogDeps(
+  app: () => App,
+  copies: VideoCopies,
+  unusedImages: UnusedImagesPanel,
+): SettingsDialogDeps {
   return {
     loadModels: (settings) => app().modelList.load(settings),
     onSaved: (previous) => app().modelList.onSettingsSaved(previous),
-    onOpen: () => surface(app(), "list the stored videos", copies.renderList()),
+    onOpen: () => {
+      surface(app(), "list the stored videos", copies.renderList());
+      void unusedImages.render();
+    },
   };
 }
 
@@ -373,7 +402,28 @@ function initDrawer(
   };
 }
 
-function wire(els: AppElements, state: AppState, store: ChatStore, status: StatusLine): App {
+function initStored(
+  els: AppElements,
+  state: AppState,
+  store: ChatStore,
+  status: StatusLine,
+  { app, tabs }: { app: () => App; tabs: Tabs },
+): Pick<App, "copies" | "images" | "settingsDialog"> {
+  const onProgress = () => app().video.render();
+  const copies = initVideoCopies(els, state, { store, status, confirm, onProgress });
+  const images = createImageCleanup(state, { store, tabs });
+  const unusedImages = initUnusedImages(els, { images, confirm });
+  const deps = settingsDialogDeps(app, copies, unusedImages);
+  return { copies, images, settingsDialog: initSettingsDialog(els, state, deps) };
+}
+
+function wire(
+  els: AppElements,
+  state: AppState,
+  store: ChatStore,
+  status: StatusLine,
+  tabs: Tabs,
+): App {
   const self = () => app;
   const refresh = () => refreshAll(app);
   const conversation = initConversation(els, conversationDeps(self, store, state));
@@ -392,12 +442,6 @@ function wire(els: AppElements, state: AppState, store: ChatStore, status: Statu
     currentTime: () => video.attachedPlaybackTime(),
   });
   const balance = initBalance(els, state, { getBalance });
-  const copies = initVideoCopies(els, state, {
-    store,
-    status,
-    confirm,
-    onProgress: () => video.render(),
-  });
   const usage = initUsageMeter(els, state, {
     timeline: () => study.timeline(),
     toolsAvailable: () => toolContext(state, store) !== undefined,
@@ -405,7 +449,6 @@ function wire(els: AppElements, state: AppState, store: ChatStore, status: Statu
   });
   const chatSettings = initChatSettings(els, state, chatSettingsDeps(store, toast, refresh));
   const sidebar = initSidebar(els, state, sidebarDeps(self, store, status, toast));
-  const settingsDialog = initSettingsDialog(els, state, settingsDialogDeps(self, copies));
   const base: Omit<App, "opener" | "modelList"> = {
     state,
     store,
@@ -418,12 +461,11 @@ function wire(els: AppElements, state: AppState, store: ChatStore, status: Statu
     study,
     usage,
     balance,
-    copies,
     sidebar,
     chatSettings,
-    settingsDialog,
     toast,
     refresh,
+    ...initStored(els, state, store, status, { app: self, tabs }),
     ...initFirstRun(els, state, store, self),
     ...initDrawer(els, state, store, toast, { app: self, videoPicker }),
   };
@@ -482,6 +524,8 @@ async function start(): Promise<void> {
   const els = queryElements();
   const state = createAppState(loadSettings());
   const status = initStatus(els);
+  // Joined before anything is read, so no other tab deletes images this one is about to use.
+  const tabs = await joinTabs(browserLocks());
   let store: ChatStore;
   try {
     store = await openChatStore();
@@ -490,7 +534,7 @@ async function start(): Promise<void> {
     status.show(`Could not open the chat database: ${errorText(error)}`, "error");
     return;
   }
-  const app = wire(els, state, store, status);
+  const app = wire(els, state, store, status, tabs);
   listenForDrops(els.main, (files) => surface(app, "attach the files", attachFiles(app, files)));
   initShortcuts(els, {
     isRunning: () => state.running || app.conversation.isChecking(),

@@ -4,7 +4,7 @@ import type { captureFrame } from "./captureFrame";
 import { overviewOptions } from "./overview";
 import type { SheetGeometry } from "./packing";
 import { renderSheets, type RenderedSheet } from "./render";
-import { sheetCacheKey } from "./sheetCache";
+import { sheetCacheKey, storedSheets } from "./sheetCache";
 
 export interface SheetContext {
   file: File;
@@ -55,7 +55,7 @@ export async function sheetRefs(
 ): Promise<ImageRef[]> {
   const keyframes = values.keyframeSampling === true ? info.keyframeTimestampsSeconds : undefined;
   const key = sheetCacheKey(ctx.video.fileKey, values, keyframes);
-  const cached = await ctx.store.getSheets(key);
+  const cached = await storedSheets(ctx.store, key);
   if (cached !== undefined) return cached.map((ref) => stamped(ref, ctx.video.fileKey));
   const render = ctx.render ?? renderSheets;
   const sheets = await render(ctx.file, info, values, onProgress);

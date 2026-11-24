@@ -16,6 +16,7 @@ import { browserPictures, type PictureTools } from "./cropPicture";
 import { latestFrameTime } from "./exactTimes";
 import { findRecalled } from "./recallTool";
 import { frameAreaOnSheet } from "./sheetArea";
+import { storedSheets, zoomCacheKey } from "./sheetCache";
 import { sheetCellTimes, sheetGrid } from "./sheetCells";
 import type { SheetContext } from "./sheets";
 import { failure, imagesFollow, numberArg, type Args, type Parsed } from "./toolArgs";
@@ -178,12 +179,6 @@ async function storedWidth(ctx: ZoomContext, ref: ImageRef): Promise<number | un
   return width;
 }
 
-export function zoomCacheKey(target: ZoomTarget, wanted: ImageArea, resolution: number): string {
-  const { left, top, right, bottom } = wanted;
-  const of = target.kind === "moment" ? [target.fileKey, target.seconds] : [target.id, target.name];
-  return `zoom#${JSON.stringify([target.kind, ...of, left, top, right, bottom, resolution])}`;
-}
-
 // To the millisecond where tenths are not exact, so neighbouring frames get names of their own.
 function momentName(seconds: number): string {
   const milliseconds = Math.floor(seconds * 1000 + 1e-3);
@@ -224,7 +219,7 @@ async function zoomImage(
 }
 
 async function cachedZoom(ctx: ZoomContext, key: string): Promise<ImageRef | undefined> {
-  return (await ctx.store.getSheets(key))?.[0];
+  return (await storedSheets(ctx.store, key))?.[0];
 }
 
 function zoomed(ref: ImageRef, asked: ZoomTarget): Parsed<Zoomed> {

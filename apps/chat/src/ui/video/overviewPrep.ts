@@ -50,7 +50,10 @@ export function startOverview(ctx: VideoPanelContext, chatId: string): void {
     report({ kind: "rendering", fileKey: key, done: finished, total });
   })
     .then((refs) => {
-      if (!stillShown()) return;
+      if (!stillShown()) {
+        void ctx.deps.images.release({ refs, videoKeys: [key] });
+        return;
+      }
       report({
         kind: "ready",
         fileKey: key,

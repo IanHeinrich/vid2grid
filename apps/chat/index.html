@@ -1021,6 +1021,22 @@
                 <p id="storageUsage" class="muted small"></p>
                 <ul id="storedVideoList" class="stored-video-list"></ul>
               </section>
+              <section class="unused-images" aria-labelledby="unusedImagesTitle">
+                <h4 id="unusedImagesTitle">Unused images</h4>
+                <div class="models-row">
+                  <span id="unusedImagesText" class="muted small"></span>
+                  <button
+                    id="deleteUnusedImagesButton"
+                    type="button"
+                    class="button ghost"
+                    aria-label="Delete unused images"
+                    hidden
+                  >
+                    Delete
+                  </button>
+                </div>
+                <p id="unusedImagesStatus" class="muted small" aria-live="polite"></p>
+              </section>
               <section class="backup" aria-labelledby="backupTitle">
                 <h4 id="backupTitle">Backup</h4>
                 <label class="checkbox-field">

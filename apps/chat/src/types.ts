@@ -391,7 +391,31 @@ export interface SheetCache {
   putSheets(key: string, refs: ImageRef[]): Promise<void>;
 }
 
-export interface ChatStore extends ImageStore, SheetCache {
+// The stored images and videos that something refers to, by blob id and fileKey.
+export interface ImageUse {
+  images: ReadonlySet<string>;
+  videos: ReadonlySet<string>;
+}
+
+// What is in use but not saved, or undefined to delete nothing; asked again inside the transaction.
+export type UnsavedUse = () => ImageUse | undefined;
+
+export interface UnusedImages {
+  images: readonly string[];
+  // The cache entries that go with them.
+  sheets: readonly string[];
+  bytes: number;
+}
+
+export interface ImageRelease {
+  // Deletes those of the images, and the cached sheets of those videos, that nothing uses any more.
+  releaseImages(dropped: ImageUse, unsaved: UnsavedUse): Promise<void>;
+  countUnusedImages(unsaved: () => ImageUse): Promise<UnusedImages>;
+  // Deletes what was counted and is still unused; undefined when unsaved said to delete nothing.
+  deleteUnusedImages(counted: UnusedImages, unsaved: UnsavedUse): Promise<UnusedImages | undefined>;
+}
+
+export interface ChatStore extends ImageStore, SheetCache, ImageRelease {
   listChats(): Promise<Chat[]>;
   getChat(id: string): Promise<Chat | undefined>;
   putChat(chat: Chat): Promise<void>;

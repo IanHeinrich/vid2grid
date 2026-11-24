@@ -1,6 +1,6 @@
-import { IDBFactory } from "fake-indexeddb";
-import { describe, expect, it } from "vitest";
-import { createMemoryStore, openChatStore } from "../src/chat/store";
+import { IDBDatabase, IDBFactory } from "fake-indexeddb";
+import { describe, expect, it, vi } from "vitest";
+import { openChatStore } from "../src/chat/store";
 import type {
   AssistantMessage,
   Chat,
@@ -14,6 +14,8 @@ import type {
   VideoCast,
   VideoTimeline,
 } from "../src/types";
+import { tool } from "./support/factories";
+import { isStored, NOTHING, saveImage, stores, sweep, use } from "./support/images";
 
 function chat(id: string, updatedAt: number): Chat {
   return {
@@ -87,11 +89,6 @@ const audio: VideoAudio = {
 };
 
 const handle = { kind: "file", name: "video.mp4" } as unknown as FileSystemFileHandle;
-
-const stores: [string, () => Promise<ChatStore>][] = [
-  ["IndexedDB", () => openChatStore({ name: "test", factory: new IDBFactory() })],
-  ["memory", () => Promise.resolve(createMemoryStore())],
-];
 
 describe.each(stores)("%s chat store chats and messages", (_name, open) => {
   it("round-trips a chat", async () => {
@@ -531,12 +528,215 @@ describe("IndexedDB chat store upgrade", () => {
     await openChatStore({ name: "newer", factory });
 
     const newer = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = factory.open("newer", 6);
+      const request = factory.open("newer", 7);
       request.onblocked = () => reject(new Error("blocked"));
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error ?? new Error("open failed"));
     });
-    expect(newer.version).toBe(6);
+    expect(newer.version).toBe(7);
     newer.close();
+  });
+
+  it("says to reload once another tab has upgraded the database", async () => {
+    const factory = new IDBFactory();
+    const store = await openChatStore({ name: "upgraded", factory });
+    const request = factory.open("upgraded", 7);
+    await new Promise((resolve) => (request.onsuccess = resolve));
+    request.result.close();
+    const reload = "Reload this page";
+    await expect(store.listChats()).rejects.toThrow(reload);
+    await expect(store.listVideoKeysByChat()).rejects.toThrow(reload);
+    await expect(store.putChat(chat("a", 1))).rejects.toThrow(reload);
+    await expect(store.releaseImages(use(["x"]), () => NOTHING)).rejects.toThrow(reload);
+  });
+});
+
+function openVersion5(factory: IDBFactory, name: string): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = factory.open(name, 5);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      db.createObjectStore("chats", { keyPath: "id" });
+      const messages = db.createObjectStore("messages", { keyPath: "seq", autoIncrement: true });
+      messages.createIndex("byChat", "chatId");
+      messages.createIndex("byMessage", ["chatId", "messageId"], { unique: true });
+      for (const store of ["images", "sheetCache", "videoHandles"]) db.createObjectStore(store);
+      for (const store of ["timelines", "cast", "audio"]) {
+        db.createObjectStore(store, { keyPath: "fileKey" });
+      }
+      db.createObjectStore("folders", { keyPath: "id" });
+    };
+    request.onsuccess = () => {
+      const db = request.result;
+      // As the older build does.
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
+    request.onerror = () => reject(request.error ?? new Error("open failed"));
+  });
+}
+
+function writeVersion5(db: IDBDatabase, image: Blob): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([...db.objectStoreNames], "readwrite");
+    const message = userMessage("m1", 1, "kept");
+    const put = (store: string, value: unknown, key?: string) =>
+      transaction.objectStore(store).put(value, key);
+    put("chats", chat("old", 3));
+    put("messages", { chatId: "old", messageId: "m1", message });
+    put("images", image, "image-1");
+    put("sheetCache", [sheetRef], "key");
+    put("videoHandles", { name: "video.mp4" }, "old");
+    put("timelines", timeline);
+    put("cast", cast);
+    put("audio", audio);
+    put("folders", { id: "f", name: "Trips", createdAt: 1 });
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error ?? new Error("write failed"));
+  });
+}
+
+describe("IndexedDB chat store upgrade that closes older builds", () => {
+  it("keeps everything in a version 5 database", async () => {
+    const factory = new IDBFactory();
+    const old = await openVersion5(factory, "upgrade-5");
+    await writeVersion5(old, await jpeg("pixels"));
+    old.close();
+
+    const store = await openChatStore({ name: "upgrade-5", factory });
+
+    expect(await store.listChats()).toEqual([chat("old", 3)]);
+    expect(await store.listMessages("old")).toEqual([userMessage("m1", 1, "kept")]);
+    expect((await store.getImage("image-1"))?.size).toBe(6);
+    expect(await store.getSheets("key")).toEqual([sheetRef]);
+    expect(await store.getVideoHandle("old")).toEqual({ name: "video.mp4" });
+    expect(await store.getTimeline(timeline.fileKey)).toEqual(timeline);
+    expect(await store.getCast(cast.fileKey)).toEqual(cast);
+    expect(await store.getAudio(audio.fileKey)).toEqual(audio);
+    expect(await store.listFolders()).toEqual([{ id: "f", name: "Trips", createdAt: 1 }]);
+  });
+
+  it("closes a tab of the older build, which can save nothing afterwards", async () => {
+    const factory = new IDBFactory();
+    const old = await openVersion5(factory, "open-5");
+    const store = await openChatStore({ name: "open-5", factory });
+    expect(() => old.transaction("messages", "readwrite")).toThrow();
+    await store.putChat(chat("a", 1));
+    expect(await store.listChats()).toHaveLength(1);
+  });
+
+  it("says to close the other tabs when an older build keeps the database open", async () => {
+    const factory = new IDBFactory();
+    const old = await openVersion5(factory, "stuck-5");
+    old.onversionchange = null;
+    await expect(openChatStore({ name: "stuck-5", factory })).rejects.toThrow(
+      "Close other vid2grid chat tabs and reload.",
+    );
+    old.close();
+  });
+});
+
+describe.each(stores)("%s chat store unused images", (_name, open) => {
+  async function orphan(store: ChatStore, text: string): Promise<string> {
+    const id = await saveImage(store, text);
+    await store.putMessage("gone", tool("t", "call", [{ ...sheetRef, id }]));
+    await store.deleteMessages("gone", ["t"]);
+    return id;
+  }
+
+  it("counts what nothing refers to, then deletes just that", async () => {
+    const store = await open();
+    const kept = await saveImage(store, "kept");
+    await store.putMessage("c", tool("t", "call", [{ ...sheetRef, id: kept }]));
+    const ids = [await orphan(store, "12345"), await orphan(store, "123")];
+    const counted = await store.countUnusedImages(() => NOTHING);
+    expect([...counted.images].sort()).toEqual([...ids].sort());
+    expect(counted.bytes).toBe(8);
+    expect(await store.deleteUnusedImages(counted, () => NOTHING)).toEqual(counted);
+    expect(await sweep(store)).toEqual({ images: [], sheets: [], bytes: 0 });
+    expect(await Promise.all(ids.map((id) => isStored(store, id)))).toEqual([false, false]);
+    expect(await isStored(store, kept)).toBe(true);
+  });
+
+  it("spares what is in use but not saved", async () => {
+    const store = await open();
+    const id = await orphan(store, "123");
+    const counted = await store.countUnusedImages(() => NOTHING);
+    expect((await store.countUnusedImages(() => use([id]))).images).toEqual([]);
+    await store.deleteUnusedImages(counted, () => use([id]));
+    expect(await isStored(store, id)).toBe(true);
+  });
+
+  it("spares an image this tab has just saved, until it is released", async () => {
+    const store = await open();
+    const id = await saveImage(store);
+    expect((await sweep(store))?.images).toEqual([]);
+    expect(await isStored(store, id)).toBe(true);
+    await store.releaseImages(use([id]), () => undefined);
+    expect((await store.countUnusedImages(() => NOTHING)).images).toEqual([id]);
+  });
+
+  it("deletes nothing when asked not to", async () => {
+    const store = await open();
+    const id = await orphan(store, "123");
+    const counted = await store.countUnusedImages(() => NOTHING);
+    await store.releaseImages(use([id]), () => undefined);
+    expect(await store.deleteUnusedImages(counted, () => undefined)).toBeUndefined();
+    expect(await isStored(store, id)).toBe(true);
+  });
+
+  it("saves a message and sheets even when their images cannot be read", async () => {
+    const store = await open();
+    const odd = { ...userMessage("odd", 1), images: [{ id: 3 }, "x"], alternates: [null] };
+    await store.putMessage("c", odd as unknown as ChatMessage);
+    await store.putSheets("key", [null] as unknown as ImageRef[]);
+    expect(await store.listMessages("c")).toHaveLength(1);
+    expect(await store.getSheets("key")).toHaveLength(1);
+  });
+});
+
+describe("IndexedDB chat store image release", () => {
+  it("asks again inside the transaction, and deletes nothing when told not to", async () => {
+    const store = await openChatStore({ name: "again", factory: new IDBFactory() });
+    const id = await saveImage(store);
+    await store.releaseImages(use([id]), () => undefined);
+    const counted = await store.countUnusedImages(() => NOTHING);
+    expect(counted.images).toEqual([id]);
+    const onlyAtFirst = () => {
+      const answers = [NOTHING, undefined];
+      return () => answers.shift();
+    };
+    await store.releaseImages(use([id]), onlyAtFirst());
+    expect(await store.deleteUnusedImages(counted, onlyAtFirst())).toBeUndefined();
+    expect(await isStored(store, id)).toBe(true);
+  });
+
+  it("opens no transaction when it is already refused", async () => {
+    const store = await openChatStore({ name: "refused", factory: new IDBFactory() });
+    const counted = await store.countUnusedImages(() => NOTHING);
+    const begun = vi.spyOn(IDBDatabase.prototype, "transaction");
+    await store.releaseImages(use(["x"]), () => undefined);
+    await store.deleteUnusedImages(counted, () => undefined);
+    expect(begun).not.toHaveBeenCalled();
+    begun.mockRestore();
+  });
+
+  it("sees what another tab saved before it, and makes a later save wait", async () => {
+    const tabs = { name: "test", factory: new IDBFactory() };
+    const [here, there] = [await openChatStore(tabs), await openChatStore(tabs)];
+    const id = await saveImage(here);
+    const message = tool("t", "call", [{ ...sheetRef, id }]);
+    const saving = there.putMessage("c", message);
+    await Promise.all([saving, here.releaseImages(use([id]), () => NOTHING)]);
+    expect(await isStored(here, id)).toBe(true);
+    await here.deleteMessages("c", ["t"]);
+    const order: string[] = [];
+    const releasing = here.releaseImages(use([id]), () => {
+      order.push("asked");
+      return NOTHING;
+    });
+    const later = there.putMessage("c", message).then(() => order.push("saved"));
+    await Promise.all([releasing, later]);
+    expect(order).toEqual(["asked", "asked", "saved"]);
   });
 });
