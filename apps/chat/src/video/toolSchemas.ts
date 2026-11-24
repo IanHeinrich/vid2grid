@@ -223,6 +223,7 @@ const IMAGE_GUIDANCE =
 const LOOKING_GUIDANCE = [
   "You cannot see pictures yourself. A separate looking model looks at every picture, and what it says is written in the picture's place, with the picture's name.",
   "Its descriptions leave things out. When a detail matters, call ask with a question and the pictures' names instead of guessing, about pictures from any earlier turn too. Never invent what it has not said.",
+  "Ask it only about what can be seen, and leave what was heard in the video out of your questions.",
   "Do not mention the looking model to the user unless they ask about it.",
 ];
 

@@ -220,10 +220,14 @@ export function pickedModel(ctx: StudyContext, modelId: string): ModelInfo {
   return pickedStudyModel(ctx.state, ctx.state.currentChat, modelId);
 }
 
+export function wasPicked(ctx: StudyContext, fileKey: string, modelId: string): boolean {
+  const picked = ctx.picked.get(fileKey);
+  return picked?.modelId === modelId && picked.server === studyServer(ctx);
+}
+
 // What a study goes on with: the model picked for it, where its pictures would still go there.
 export function modelFor(ctx: StudyContext, { fileKey, modelId }: VideoTimeline): ModelInfo {
-  const picked = ctx.picked.get(fileKey);
-  return picked?.modelId === modelId && picked.server === studyServer(ctx)
+  return wasPicked(ctx, fileKey, modelId)
     ? pickedModel(ctx, modelId)
     : studyModel(ctx.state, ctx.state.currentChat, modelId);
 }

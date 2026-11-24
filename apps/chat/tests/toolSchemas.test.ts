@@ -76,6 +76,13 @@ describe("guidance", () => {
 describe("with a looking model", () => {
   const LOOKING: ToolSituation = { ...VIDEO, vision: false, looking: true };
 
+  it("tells the writer to leave what was heard out of its questions", () => {
+    const line = "leave what was heard in the video out of your questions";
+    expect(toolOffer(LOOKING).guidance).toContain(line);
+    expect(toolOffer({ ...IMAGES, looking: true }).guidance).toContain(line);
+    expect(toolOffer(VIDEO).guidance).not.toContain(line);
+  });
+
   function properties(situation: ToolSituation, name: string): unknown {
     const found = toolOffer(situation).tools.find((schema) => schema.function.name === name);
     return found?.function.parameters["properties"];

@@ -264,13 +264,14 @@ function stub(record: SentTranscript, { video, listen }: TranscriptContext): str
   return `[${what}. Sent earlier${how}.]`;
 }
 
-// With no listen to read it again, the model keeps the text it was given on later turns too.
-function staysInFull(
-  { id, transcript }: UserMessage,
-  inTurn: ReadonlySet<string>,
+// With no listen to read it again, the model keeps the text it was given of the chat's video on
+// later turns too.
+function keptInFull(
+  carriers: readonly UserMessage[],
   { video, listen }: TranscriptContext,
-): boolean {
-  return inTurn.has(id) || (!listen && transcript?.fileKey === video?.fileKey);
+): UserMessage | undefined {
+  if (listen) return undefined;
+  return carriers.filter(({ transcript }) => transcript?.fileKey === video?.fileKey).at(-1);
 }
 
 export function transcriptTexts(
@@ -282,11 +283,12 @@ export function transcriptTexts(
   );
   const inTurn = new Set(currentTurn(messages).map((message) => message.id));
   const newest = carriers.at(-1);
+  const kept = keptInFull(carriers, context);
   const byMessage = new Map<string, string>();
   let sentInFull = false;
   for (const message of carriers) {
     if (!message.transcript) continue;
-    const inFull = message === newest && staysInFull(message, inTurn, context);
+    const inFull = message === kept || (message === newest && inTurn.has(message.id));
     const text = inFull ? fullText(message.transcript, context) : undefined;
     byMessage.set(message.id, text ?? stub(message.transcript, context));
     if (text !== undefined) sentInFull = true;

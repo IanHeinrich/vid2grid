@@ -219,22 +219,28 @@ async function overviewUrls(ctx: CastContext): Promise<string[]> {
   return Promise.all(blobs.flatMap((blob) => (blob ? [toDataUrl(blob)] : [])));
 }
 
+const NO_OVERVIEW = "Wait for the overview to finish.";
+const NO_OVERVIEW_OR_NOTES = "Wait for the overview to finish, or add some scene notes first.";
+
 async function suggest(ctx: CastContext): Promise<void> {
   const chat = ctx.state.currentChat;
   const video = chat?.video;
   if (!chat || !video) return;
-  const modelId = lookingModelId(chat) ?? chatModelId(ctx.state, chat);
+  const looking = lookingModelId(chat);
+  const modelId = looking ?? chatModelId(ctx.state, chat);
+  // The log can hold what was heard, and a looking model is sent only what can be seen.
+  const sceneLog = looking === undefined ? chat.sceneLog : [];
   const suggested = await ctx.task.run("Looking for the people in the video…", async (signal) => {
     const overview = await overviewUrls(ctx);
-    if (overview.length === 0 && chat.sceneLog.length === 0) {
-      throw new Error("Wait for the overview to finish, or add some scene notes first.");
+    if (overview.length === 0 && sceneLog.length === 0) {
+      throw new Error(looking === undefined ? NO_OVERVIEW_OR_NOTES : NO_OVERVIEW);
     }
     return suggestCast(
       {
         ...pictureCallDeps(ctx.state, chat, ctx.deps.streamChat, modelId, signal),
         ...(ctx.deps.newId ? { newId: ctx.deps.newId } : {}),
       },
-      { overview, sceneLog: chat.sceneLog, durationSeconds: video.durationSeconds },
+      { overview, sceneLog, durationSeconds: video.durationSeconds },
     );
   });
   if (!suggested) return;

@@ -400,6 +400,33 @@ describe("studying with a looking model", () => {
     });
   });
 
+  it("plans again to resume with a model that takes fewer pictures", async () => {
+    lookingChat();
+    vi.mocked(runStudy).mockImplementationOnce(async (deps) => {
+      const progress = { ...deps.timeline, nextWindow: 1 };
+      await deps.saveTimeline(progress);
+      return progress;
+    });
+    setup().open();
+    setInput(els.study.densityInput, "dense");
+    startStudy();
+    await vi.waitFor(() => expect(els.study.button.textContent).toBe("Resume"));
+    const studied = vi.mocked(runStudy).mock.calls[0]?.[0].plan;
+    expect(studied?.sheetsPerWindow).toBeGreaterThan(1);
+    const other = "http://localhost:5002/v1";
+    setSettings(state, { ...state.settings, lookingBaseUrl: other, apiKeys: { [other]: "key" } });
+    setLookingModels(state, [{ ...model("narrow"), maxImages: 1 }]);
+    const chat = { ...blankChat(STUDY_MODEL_ID, "chat", 1, "narrow", other), video: VIDEO };
+    replaceChat(state, chat);
+    vi.mocked(runStudy).mockImplementationOnce((deps) => Promise.resolve(deps.timeline));
+    els.study.button.click();
+    await vi.waitFor(() => expect(runStudy).toHaveBeenCalledTimes(2));
+    const resumed = vi.mocked(runStudy).mock.calls[1]?.[0];
+    expect(resumed?.model.id).toBe("narrow");
+    expect(resumed?.plan.sheetsPerWindow).toBe(1);
+    expect(resumed?.plan.windows).toEqual(studied?.windows);
+  });
+
   it("confirms and changes nothing when its server is no longer set up", async () => {
     const done = timeline([{ startSeconds: 0, endSeconds: 5, text: "She walks in" }]);
     await store.putTimeline(done);

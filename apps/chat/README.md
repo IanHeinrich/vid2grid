@@ -173,8 +173,8 @@ never to the writer, so the writer can be a model that only reads text.
 - If a look fails, the reply fails with the looking model and its server named,
   and Retry looks again. If an `ask` fails, the writer is told and goes on.
 - Study, Check timestamps and Suggest from video send pictures, so they use the
-  looking model as well. Receipts and totals count its tokens, at its own price
-  where that is known.
+  looking model as well. Suggest sends it the overview alone, without the scene
+  log. Receipts and totals count its tokens, at its own price where that is known.
 
 To set it up with KoboldCpp as the writer:
 
@@ -198,9 +198,12 @@ What goes where: the writer's server gets your messages, the replies, the words
 about the pictures and, with Audio on, the transcript. The looking server gets
 the pictures, the questions about them, your message where it says what to look
 for, and earlier questions and answers about the same pictures. It gets nothing
-else of the conversation, and nothing that was heard.
-Its key is kept like the other and sent only to its own URL. Settings and the
-Model tab both name the host that pictures are sent to.
+else of the conversation and no transcript, and the writer is told to leave what
+was heard out of its questions. Check timestamps sends the sentences it checks,
+so on a reply to a message with Audio on it first asks, naming the host, when
+that is another server than the chat's. The looking server's key is kept like the
+other and sent only to its own URL. Settings and the Model tab both name the host
+that pictures are sent to.
 
 A chat remembers which server its looking model was picked on, the chat's own
 server included. If that server is no longer in Settings, the chat does not send

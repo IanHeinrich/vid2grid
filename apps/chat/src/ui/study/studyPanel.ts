@@ -34,6 +34,7 @@ import {
   shownVideo,
   studyState,
   videoKey,
+  wasPicked,
   zoomPlanFor,
   type RunningPass,
   type RunningStudy,
@@ -314,7 +315,9 @@ async function resume(ctx: StudyContext): Promise<void> {
   const timeline = currentTimeline(ctx);
   if (!timeline || refused(ctx)) return;
   const model = modelFor(ctx, timeline);
-  const plan = ctx.plans.get(timeline.fileKey) ?? planFor(ctx, model, timeline.plan);
+  const { fileKey } = timeline;
+  const cached = wasPicked(ctx, fileKey, model.id) ? ctx.plans.get(fileKey) : undefined;
+  const plan = cached ?? planFor(ctx, model, timeline.plan);
   if (!plan || plan.windows.length !== timeline.windowCount) {
     ctx.deps.status.show("The study settings changed, so start the study again.");
     openDialog(ctx, true);

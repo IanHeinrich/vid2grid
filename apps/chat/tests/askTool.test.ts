@@ -90,6 +90,9 @@ describe("ask", () => {
       text: "Error: The looking model Eyes at localhost:5001 could not look at the pictures: offline",
       images: [],
     });
+    const long = setup([new Error("x".repeat(5000))]).ctx;
+    const clipped = await runAsk(long, { question: "Breed?", pictures: ["b.png"] });
+    expect(clipped.text.length).toBeLessThan(520);
     const empty = await runAsk(setup([""]).ctx, { question: "Breed?", pictures: ["b.png"] });
     expect(empty.text).toContain("its answer was empty");
   });

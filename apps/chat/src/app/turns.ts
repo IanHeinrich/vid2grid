@@ -553,11 +553,13 @@ async function compareTurn(
       turn,
       saveUser: async (message) => {
         await deps.store.putMessage(chatId, message);
+        if (state.currentChat?.id !== chatId) return;
         upsertMessage(state, message);
         deps.conversation.reset(state.messages);
       },
       removeMessages: async (ids) => {
         if (ids.length > 0) await deps.store.deleteMessages(chatId, ids);
+        if (state.currentChat?.id !== chatId) return;
         removeMessages(state, ids);
       },
     },
@@ -598,17 +600,16 @@ function lastUserIndex(ctx: TurnsContext): number {
   return -1;
 }
 
-async function truncateAfter(
-  ctx: TurnsContext,
+async function deleteReply(
+  { state, deps }: TurnsContext,
   chatId: string,
-  index: number,
-): Promise<readonly ChatMessage[]> {
-  const removed = ctx.state.messages.slice(index + 1);
-  const ids = removed.map((message) => message.id);
-  if (ids.length > 0) await ctx.deps.store.deleteMessages(chatId, ids);
-  removeMessages(ctx.state, ids);
-  ctx.deps.conversation.reset(ctx.state.messages);
-  return removed;
+  reply: readonly ChatMessage[],
+): Promise<void> {
+  const ids = reply.map((message) => message.id);
+  if (ids.length > 0) await deps.store.deleteMessages(chatId, ids);
+  if (state.currentChat?.id !== chatId) return;
+  removeMessages(state, ids);
+  deps.conversation.reset(state.messages);
 }
 
 // Replay keeps the reply it replaces as a swipe.
@@ -619,6 +620,7 @@ async function archiveReply(ctx: TurnsContext, chat: Chat, user: UserMessage): P
   if (archived.removeIds.length > 0) {
     await ctx.deps.store.deleteMessages(chat.id, archived.removeIds);
   }
+  if (ctx.state.currentChat?.id !== chat.id) return;
   removeMessages(ctx.state, archived.removeIds);
   upsertMessage(ctx.state, archived.user);
   ctx.deps.conversation.reset(ctx.state.messages);
@@ -656,10 +658,13 @@ async function rerunEdited(
   let removed: readonly ChatMessage[] = [];
   let saved = false;
   await run(ctx, async () => {
+    // Read before any await, so another chat's messages are never taken for the reply.
+    const reply = ctx.state.messages.slice(index + 1);
     await ctx.deps.store.putMessage(chatId, message);
     saved = true;
-    upsertMessage(ctx.state, message);
-    removed = await truncateAfter(ctx, chatId, index);
+    if (ctx.state.currentChat?.id === chatId) upsertMessage(ctx.state, message);
+    await deleteReply(ctx, chatId, reply);
+    removed = reply;
     return { thoroughness: messageThoroughness(message), audio: message.audio === true };
   });
   if (!saved) onUnsaved?.();
@@ -694,6 +699,7 @@ async function edit(
     return;
   }
   await orUnsaved(ctx.deps.store.putMessage(chat.id, updated), onUnsaved);
+  if (ctx.state.currentChat?.id !== chat.id) return;
   upsertMessage(ctx.state, updated);
   ctx.deps.conversation.show(updated);
 }

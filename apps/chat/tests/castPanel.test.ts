@@ -323,8 +323,9 @@ describe("cast panel suggestions", () => {
 });
 
 describe("cast panel suggestions with a looking model", () => {
-  it("sends the overview to it on its own connection", async () => {
-    const own = "http://localhost:5001/v1";
+  const own = "http://localhost:5001/v1";
+
+  async function openLooking(messages: ChatMessage[]): Promise<void> {
     state = createAppState({ ...state.settings, lookingBaseUrl: own, apiKeys: { [own]: "key" } });
     const chat: Chat = {
       ...blankChat("model", "chat", 1, "eyes", own),
@@ -333,15 +334,40 @@ describe("cast panel suggestions with a looking model", () => {
     };
     await store.putChat(chat);
     replaceChat(state, chat);
-    setCurrentChat(state, chat, []);
+    setCurrentChat(state, chat, messages);
+  }
+
+  it("sends it the overview alone, on its own connection", async () => {
+    const id = await store.putImage(new Blob(["sheet"], { type: "image/jpeg" }));
+    const source = {
+      ...{ kind: "sheet" as const, call: "overview", name: "grid_0001" },
+      ...{ startSeconds: 0, endSeconds: 120, frameCount: 16 },
+    };
+    const images = [{ id, pinned: false, source }];
+    await openLooking([{ id: "u1", createdAt: 1, role: "user", text: "", images }]);
     const sent: { baseUrl: string; model: string }[] = [];
-    const reply = replyWith("Mara | in red | 0:12");
+    const requests: ChatRequest[] = [];
+    const reply = replyWith("Mara | in red | 0:12", requests);
     panel((api, request, signal) => {
       sent.push({ baseUrl: api.baseUrl, model: request.model });
       return reply(api, request, signal);
     });
     els.cast.suggestButton.click();
     await vi.waitFor(() => expect(sent).toEqual([{ baseUrl: own, model: "eyes" }]));
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    expect(JSON.stringify(requests)).toContain("data:image/jpeg");
+    expect(JSON.stringify(requests)).not.toMatch(/Scene log|Mara waves/);
+  });
+
+  it("asks for the overview, whatever notes there are", async () => {
+    await openLooking([]);
+    const streamChat = vi.fn<StreamChat>();
+    panel(streamChat);
+    els.cast.suggestButton.click();
+    await vi.waitFor(() =>
+      expect(els.cast.status.textContent).toBe("Wait for the overview to finish."),
+    );
+    expect(streamChat).not.toHaveBeenCalled();
   });
 });
 

@@ -117,6 +117,13 @@ describe("lookAt failures", () => {
     await expect(lookAt(looking, request())).rejects.toThrow("is no longer stored");
   });
 
+  it("clips a long error", async () => {
+    const failing = lookAt(looker([new Error("x".repeat(5000))]), request());
+    const error = await failing.catch((problem: unknown) => problem);
+    if (!(error instanceof Error)) throw new Error("Expected an error");
+    expect(error.message).toBe(`${FAILED}${"x".repeat(500)}…`);
+  });
+
   it("leaves a stop as it is", async () => {
     const controller = new AbortController();
     const streamChat: StreamChat = (_api, _request, signal) => waitForAbort(signal);

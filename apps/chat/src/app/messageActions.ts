@@ -32,7 +32,7 @@ import type { StatusLine } from "../ui/shared/status";
 import type { Toast, ToastHandle } from "../ui/shared/toast";
 import type { HeldImages, ImageCleanup } from "./imageCleanup";
 import { offerUndo } from "./undo";
-import { pictureCallDeps, pictureModel } from "./lookingConnection";
+import { otherLookingHost, pictureCallDeps, pictureModel } from "./lookingConnection";
 import { conversationTools } from "./toolContext";
 
 const REATTACH_TO_CHECK = "Reattach the video to check the timestamps.";
@@ -58,6 +58,7 @@ export interface MessageActionsDeps {
   toast: Toast;
   images: Pick<ImageCleanup, "hold">;
   streamChat: StreamChat;
+  confirm(message: string): boolean;
   toolContext(): ToolContext | undefined;
   onOpen(chatId: string): void;
   onChatsChanged(): void;
@@ -169,9 +170,11 @@ async function remove(ctx: MessageActionsContext, message: ChatMessage): Promise
     held.letGo();
     throw error;
   }
-  removeMessages(state, ids);
-  deps.conversation.reset(state.messages);
-  deps.onMessagesChanged?.();
+  if (state.currentChat?.id === chat.id) {
+    removeMessages(state, ids);
+    deps.conversation.reset(state.messages);
+    deps.onMessagesChanged?.();
+  }
   showUndo(ctx, chat.id, group, held);
 }
 
@@ -288,6 +291,25 @@ async function loadImage(store: ImageStore, ref: ImageRef): Promise<string> {
   return blobToDataUrl(blob);
 }
 
+function askedWithAudio(messages: readonly ChatMessage[], reply: AssistantMessage): boolean {
+  const at = messages.findIndex((entry) => entry.id === reply.id);
+  const asked = messages.slice(0, at).filter((entry) => entry.role === "user");
+  return asked.at(-1)?.audio === true;
+}
+
+// What was heard can be in the sentences to check, and the looking model is otherwise never sent it.
+function refusedCheck(
+  { state, deps }: MessageActionsContext,
+  chat: Chat,
+  reply: AssistantMessage,
+): boolean {
+  const host = otherLookingHost(state, chat);
+  if (host === undefined || !askedWithAudio(state.messages, reply)) return false;
+  return !deps.confirm(
+    `The sentences to check, which can repeat what was heard, will be sent to ${host}. Check them?`,
+  );
+}
+
 async function verify(
   ctx: MessageActionsContext,
   message: AssistantMessage,
@@ -304,6 +326,7 @@ async function verify(
     deps.toast.show(REATTACH_TO_CHECK);
     return undefined;
   }
+  if (refusedCheck(ctx, chat, message)) return undefined;
   const knownImages = state.messages.flatMap(imagesOf);
   const runTool = createToolRunner({
     store: toolCtx.store,

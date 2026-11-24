@@ -33,7 +33,13 @@ export function withCurrentSeen<T extends ChatMessage>(
   const updated: T & Pick<PictureMessage, "seen" | "lookAgain"> = { ...message };
   delete updated.seen;
   delete updated.lookAgain;
-  return { ...updated, ...(seen ? { seen } : {}), ...(lookAgain ? { lookAgain } : {}) };
+  const swipes = current.role === "user" && current.alternates;
+  return {
+    ...updated,
+    ...(seen ? { seen } : {}),
+    ...(lookAgain ? { lookAgain } : {}),
+    ...(swipes ? { alternates: swipes } : {}),
+  };
 }
 
 const NONE: ReadonlySet<string> = new Set();

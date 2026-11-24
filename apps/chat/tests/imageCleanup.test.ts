@@ -134,6 +134,7 @@ function actions(): MessageActions {
     images,
     conversation: { reset: vi.fn(), show: vi.fn() },
     streamChat: replyWith("ok"),
+    confirm: () => true,
     toolContext: () => undefined,
     onOpen: vi.fn(),
     onChatsChanged: vi.fn(),

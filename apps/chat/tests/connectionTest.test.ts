@@ -153,6 +153,11 @@ describe("connectionResult failures", () => {
     const api = { ...VENICE, apiKey: "sk-secret" };
     const { detail } = await resultOf(api, fails(new ApiError(401, "Bad key sk-secret given")));
     expect(detail).toBe("HTTP 401: Bad key … given");
+    // The key is taken out before the clip, which could leave the start of it.
+    const long = fails(new ApiError(500, `${"x".repeat(496)}sk-secret ${"y".repeat(500)}`));
+    const clipped = (await resultOf(api, long)).detail;
+    expect(clipped).toMatch(/x… y+…$/);
+    expect(clipped?.length).toBeLessThan(520);
   });
 });
 

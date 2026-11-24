@@ -2,18 +2,11 @@ import type { listModels } from "../api/client";
 import { isVenice, normaliseBaseUrl } from "../api/venice";
 import { latestCalls } from "../latest";
 import type { GlobalSettings } from "../settings";
-import {
-  isRunningIn,
-  setLookingModels,
-  setModels,
-  setModelsError,
-  updateChat,
-  type AppState,
-} from "../state";
+import { isRunningIn, setLookingModels, setModels, setModelsError, type AppState } from "../state";
 import { errorText } from "../text";
 import type { ApiSettings, ChatStore, ModelInfo } from "../types";
 import type { StatusLine } from "../ui/shared/status";
-import { withNewChatDefaults } from "./chatDefaults";
+import { followDefaults, withNewChatDefaults } from "./chatDefaults";
 import { lookingApi, lookingHasOwnServer } from "./lookingConnection";
 
 export interface ModelList {
@@ -159,10 +152,10 @@ function lookingChanged(previous: GlobalSettings, settings: GlobalSettings): boo
 export function fillChatModel(deps: FillChatModelDeps): void {
   const { state, store, status } = deps;
   const chat = state.currentChat;
-  if (!chat) return;
+  if (!chat || !state.chats.some((entry) => entry.id === chat.id)) return;
   const empty = state.messages.length === 0 && !isRunningIn(state, chat.id);
   if (withNewChatDefaults(state, chat, empty) === chat) return;
-  updateChat(state, store, chat.id, (latest) => withNewChatDefaults(state, latest, empty)).then(
+  followDefaults(state, store, chat, empty).then(
     () => deps.refresh(),
     (error: unknown) =>
       status.show(`Could not save the chat's model: ${errorText(error)}`, "error"),

@@ -8,7 +8,7 @@ import {
   withSeen,
   withSeenNotes,
 } from "../src/chat/seen";
-import type { ImageRef } from "../src/types";
+import type { ImageRef, ToolMessage } from "../src/types";
 import { assistant, tool, upload, user } from "./support/factories";
 import { answered, described, timedSheet } from "./support/looking";
 
@@ -108,6 +108,15 @@ describe("withCurrentSeen", () => {
     expect(withCurrentSeen(edited, [saved])).toEqual({ ...saved, text: "New." });
     expect(withCurrentSeen({ ...saved, text: "New." }, [edited])).toEqual(edited);
     expect(withCurrentSeen(edited, [])).toBe(edited);
+  });
+
+  it("takes its swipes from there too, so a mark that was cleared stays so", () => {
+    const swipe = (reply: ToolMessage) => [{ messages: [reply], createdAt: 1 }];
+    const current = user("u", "Hi.", { images: [a], alternates: swipe(tool("t", "c", [a])) });
+    const marked = swipe({ ...tool("t", "c", [a]), lookAgain: true });
+    const pinned = [{ ...a, pinned: true }];
+    const stale = user("u", "Hi.", { images: pinned, alternates: marked });
+    expect(withCurrentSeen(stale, [current])).toEqual({ ...current, images: pinned });
   });
 });
 

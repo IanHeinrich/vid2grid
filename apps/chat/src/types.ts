@@ -474,6 +474,11 @@ export interface ChatStore extends ImageStore, SheetCache, ImageRelease {
   listChats(): Promise<Chat[]>;
   getChat(id: string): Promise<Chat | undefined>;
   putChat(chat: Chat): Promise<void>;
+  // Changes the chat as it is stored, in one step; undefined when it is gone.
+  changeChat(
+    id: string,
+    change: (stored: Chat, hasMessages: boolean) => Chat,
+  ): Promise<Chat | undefined>;
   deleteChat(id: string): Promise<void>;
   // Per chat id, the fileKey of every video its chat or messages refer to; chats with none are absent.
   listVideoKeysByChat(): Promise<Map<string, string[]>>;

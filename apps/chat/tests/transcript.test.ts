@@ -250,6 +250,33 @@ describe("transcriptTexts", () => {
       expect(byMessage.get("u2")).toContain("[9:30] Sentence 19.");
     });
 
+    const otherVideo = { ...heardTo(300), fileKey: "other" };
+    const back = [
+      carrying("u1", heardTo(600)),
+      assistant("a1", "Ok"),
+      carrying("u2", otherVideo),
+      assistant("a2", "Ok"),
+      user("u3", "And here?", { audio: true }),
+    ];
+
+    it("keeps the full text of a video the chat came back to after another", () => {
+      expect(transcriptToCarry(back, spoken(600), CAP)).toBeUndefined();
+      const { byMessage, sentInFull } = only(back, { listen: false });
+      expect(byMessage.get("u1")).toContain("[9:30] Sentence 19.");
+      expect(byMessage.get("u2")).toBe(
+        "[Transcript of an earlier video's speech up to 5:00. Sent earlier.]",
+      );
+      expect(sentInFull).toBe(true);
+      expect(only(back).byMessage.get("u1")).toContain("call listen(start, end)");
+      expect(only(back).sentInFull).toBe(false);
+    });
+
+    it("keeps it through a turn begun with the other video", () => {
+      const { byMessage } = only(back.slice(0, 4), { listen: false });
+      expect(byMessage.get("u1")).toContain("[9:30] Sentence 19.");
+      expect(byMessage.get("u2")).toContain("an earlier video's speech");
+    });
+
     it("is a stub when the text cannot be rebuilt, as when audio is off", () => {
       const { byMessage, sentInFull } = only(later, { listen: false, speech: undefined });
       expect(byMessage.get("u1")).toBe(

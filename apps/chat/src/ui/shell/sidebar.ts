@@ -22,7 +22,7 @@ import { downloadBlob, safeFilename } from "../shared/download";
 import { icon } from "../shared/icons";
 import { attachMenu } from "../shared/menu";
 import type { StatusLine } from "../shared/status";
-import { withNewChatDefaults } from "../../app/chatDefaults";
+import { followDefaults } from "../../app/chatDefaults";
 import type { HeldImages, ImageCleanup } from "../../app/imageCleanup";
 import { offerUndo } from "../../app/undo";
 import type { Toast } from "../shared/toast";
@@ -165,15 +165,15 @@ async function startNewChat(ctx: SidebarContext, createChat: () => Promise<Chat>
     state.messages.length === 0 &&
     currentPending(state).length === 0
   ) {
-    await followDefaults(ctx, current);
-    deps.onFocusComposer();
-    return;
+    if (await reuse(ctx, current)) {
+      deps.onFocusComposer();
+      return;
+    }
   }
   for (const chat of state.chats) {
     if (chat.id === current?.id || !isBlank(chat) || pendingFor(state, chat.id).length > 0)
       continue;
-    if ((await deps.store.listMessages(chat.id)).length === 0) {
-      await followDefaults(ctx, chat);
+    if ((await deps.store.listMessages(chat.id)).length === 0 && (await reuse(ctx, chat))) {
       deps.onOpen(chat.id);
       return;
     }
@@ -182,12 +182,10 @@ async function startNewChat(ctx: SidebarContext, createChat: () => Promise<Chat>
 }
 
 // An empty chat made earlier is as new as any, so it takes the defaults of now.
-async function followDefaults({ state, deps }: SidebarContext, chat: Chat): Promise<void> {
-  if (withNewChatDefaults(state, chat, true) === chat) return;
-  await updateChat(state, deps.store, chat.id, (latest) =>
-    withNewChatDefaults(state, latest, true),
-  );
-  deps.onChatChanged?.();
+async function reuse({ state, deps }: SidebarContext, chat: Chat): Promise<boolean> {
+  const reusable = await followDefaults(state, deps.store, chat, true);
+  if (state.chats.find((entry) => entry.id === chat.id) !== chat) deps.onChatChanged?.();
+  return reusable;
 }
 
 function showError(ctx: SidebarContext, action: string, error: unknown): void {

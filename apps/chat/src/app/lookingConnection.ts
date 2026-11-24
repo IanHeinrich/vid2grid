@@ -101,6 +101,12 @@ export function lookingHost(chat: Chat): string {
   return serverName(chat.settings.lookingBaseUrl ?? "");
 }
 
+// The same, only where it is another server than the one the chat itself is sent to.
+export function otherLookingHost(state: KnownModels, chat: Chat): string | undefined {
+  const own = lookingModelId(chat) !== undefined && lookingServer(state, chat) === "own";
+  return own ? lookingHost(chat) : undefined;
+}
+
 // For a model something was done with earlier, on either server.
 export function knownModel(
   { models, lookingModels, settings }: KnownModels,

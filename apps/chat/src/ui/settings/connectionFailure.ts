@@ -1,4 +1,4 @@
-import { ApiError, safeErrorText } from "../../api/http";
+import { ApiError, safeError } from "../../api/http";
 import { errorText } from "../../text";
 import type { ApiSettings } from "../../types";
 import type { ConnectionResult } from "./connectionBlock";
@@ -50,6 +50,6 @@ export function connectionFailure(
     heading: "Could not connect",
     lines: [host, line],
     advice,
-    detail: `${status}${safeErrorText(errorText(error), api)}`,
+    detail: `${status}${errorText(safeError(error, api))}`,
   };
 }

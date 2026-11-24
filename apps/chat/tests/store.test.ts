@@ -99,6 +99,38 @@ describe.each(stores)("%s chat store chats and messages", (_name, open) => {
     expect(await store.getChat("missing")).toBeUndefined();
   });
 
+  it("changes a chat as it is stored, knowing whether it has messages", async () => {
+    const store = await open();
+    await store.putChat(chat("a", 1));
+    await store.putChat(chat("b", 1));
+    await store.putMessage("b", userMessage("m", 1));
+    const known: boolean[] = [];
+    const rename = (stored: Chat, hasMessages: boolean): Chat => {
+      known.push(hasMessages);
+      return { ...stored, title: "Renamed" };
+    };
+    const renamed = { ...chat("a", 1), title: "Renamed" };
+    expect(await store.changeChat("a", rename)).toEqual(renamed);
+    expect(await store.getChat("a")).toEqual(renamed);
+    await store.changeChat("b", rename);
+    expect(known).toEqual([false, true]);
+    expect(await store.changeChat("a", (stored) => stored)).toEqual(renamed);
+  });
+
+  it("changes no chat that is gone, and leaves one alone when the change fails", async () => {
+    const store = await open();
+    const change = vi.fn((stored: Chat) => stored);
+    expect(await store.changeChat("gone", change)).toBeUndefined();
+    expect(change).not.toHaveBeenCalled();
+    expect(await store.listChats()).toEqual([]);
+    await store.putChat(chat("a", 1));
+    const failing = store.changeChat("a", () => {
+      throw new Error("no");
+    });
+    await expect(failing).rejects.toThrow("no");
+    expect(await store.getChat("a")).toEqual(chat("a", 1));
+  });
+
   it("lists chats newest updatedAt first", async () => {
     const store = await open();
     await store.putChat(chat("old", 1));
@@ -176,6 +208,22 @@ describe.each(stores)("%s chat store chats and messages", (_name, open) => {
 });
 
 describe("IndexedDB chat store messages of a deleted chat", () => {
+  it("changes nothing between another tab's read and save of the same chat", async () => {
+    const factory = new IDBFactory();
+    const here = await openChatStore({ name: "two-tabs", factory });
+    const there = await openChatStore({ name: "two-tabs", factory });
+    await here.putChat(chat("a", 1));
+    await Promise.all([
+      here.changeChat("a", (stored) => ({ ...stored, title: `${stored.title}, here` })),
+      there.changeChat("a", (stored) => ({ ...stored, title: `${stored.title}, there` })),
+    ]);
+    expect((await here.getChat("a"))?.title).toBe("Chat a, here, there");
+    const deleting = there.deleteChat("a");
+    expect(await here.changeChat("a", (stored) => ({ ...stored, title: "Back" }))).toBeUndefined();
+    await deleting;
+    expect(await here.listChats()).toEqual([]);
+  });
+
   it("refuses one saved in another tab just after the chat is deleted", async () => {
     const tabs = { name: "deleted", factory: new IDBFactory() };
     const [here, there] = [await openChatStore(tabs), await openChatStore(tabs)];

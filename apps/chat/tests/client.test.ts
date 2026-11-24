@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError, getBalance, listModels, streamChat } from "../src/api/client";
-import { safeError, safeErrorText } from "../src/api/http";
+import { safeError } from "../src/api/http";
 import { VENICE_BASE_URL } from "../src/api/venice";
 import type { ChatRequest, StreamEvent } from "../src/types";
 import { fakeFetch, jsonResponse, localSettings, veniceSettings } from "./support/apiFakes";
@@ -413,7 +413,9 @@ describe("streamChat usage", () => {
 
 describe("errors that repeat the key", () => {
   const api = { baseUrl: VENICE_BASE_URL, apiKey: " sk-secret-1 " };
-  const body = { error: { code: 401, message: `Bad key sk-secret-1: ${"x".repeat(2000)}` } };
+  const body = {
+    error: { code: 401, message: `Bad key sk-secret-1: ${"x".repeat(2000)} tools sk-secret-1` },
+  };
   async function streamed(response: () => Response): Promise<unknown> {
     const { fetch } = fakeFetch(response);
     const reply = streamChat(api, request, new AbortController().signal, fetch);
@@ -423,12 +425,13 @@ describe("errors that repeat the key", () => {
   function expectSafe(error: unknown): void {
     if (!(error instanceof Error)) throw new Error("Expected an error");
     expect(error.message).toMatch(/^Bad key …/);
-    expect(error.message.length).toBeLessThanOrEqual(501);
+    // Whole, so that what it is about can be told from its end too.
+    expect(error.message).toMatch(/ tools …$/);
     expect(error.cause).toBeUndefined();
     expect(JSON.stringify(error, Object.getOwnPropertyNames(error))).not.toContain("sk-secret-1");
   }
 
-  it("are cleaned and clipped before anyone sees them, with their status", async () => {
+  it("are cleaned before anyone sees them, with their status", async () => {
     const error = await streamed(() => jsonResponse(body, 401));
     expectSafe(error);
     expect(error).toMatchObject({ name: "ApiError", status: 401 });
@@ -450,7 +453,8 @@ describe("errors that repeat the key", () => {
   });
 
   it("leaves a placeholder key and a stop alone", () => {
-    expect(safeErrorText("a key", { apiKey: "key" })).toBe("a key");
+    const plain = new Error("a key");
+    expect(safeError(plain, { apiKey: "key" })).toBe(plain);
     const stop = new DOMException("stopped", "AbortError");
     expect(safeError(stop, api)).toBe(stop);
   });

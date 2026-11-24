@@ -379,6 +379,52 @@ describe("new chat reuse", () => {
     expect(state.chats).toHaveLength(2);
   });
 
+  it("makes a new chat rather than reuse one deleted in another tab", async () => {
+    await seed("gone", 1, "New chat");
+    await seed("open", 2, "New chat");
+    setCurrentChat(state, state.chats.find(({ id }) => id === "open") ?? null, []);
+    await store.deleteChat("gone");
+    await store.deleteChat("open");
+    setSettings(state, { ...state.settings, defaultLookingModelId: "eyes" });
+    const show = vi.fn();
+    initSidebar(els, state, { ...deps, status: { ...deps.status, show } });
+    els.sidebar.newChatButton.click();
+    await vi.waitFor(() => expect(spies.onOpen).toHaveBeenCalledWith("chat-1"));
+    expect((await store.listChats()).map(({ id }) => id)).toEqual(["chat-1"]);
+    expect(spies.onFocusComposer).not.toHaveBeenCalled();
+    expect(show).not.toHaveBeenCalled();
+  });
+
+  it("does not take the open chat for empty once another tab has written in it", async () => {
+    await seed("open", 1, "New chat");
+    const open = state.chats[0] ?? null;
+    setCurrentChat(state, open, []);
+    const hello = { id: "m", createdAt: 1, role: "user" as const, text: "hi", images: [] };
+    await store.putMessage("open", hello);
+    setSettings(state, { ...state.settings, defaultLookingModelId: "eyes" });
+    initSidebar(els, state, deps);
+    els.sidebar.newChatButton.click();
+    await vi.waitFor(() => expect(spies.onOpen).toHaveBeenCalledWith("chat-1"));
+    expect((await store.getChat("open"))?.settings).toEqual(open?.settings);
+    expect(state.currentChat?.settings).toEqual(open?.settings);
+  });
+
+  it("keeps what another tab gave an empty chat it reuses", async () => {
+    await seed("a", 1, "New chat");
+    setCurrentChat(state, state.chats[0] ?? null, []);
+    const here = await store.getChat("a");
+    if (!here) throw new Error("No chat");
+    await store.putChat({ ...here, title: "Named there" });
+    setSettings(state, { ...state.settings, defaultLookingModelId: "eyes" });
+    initSidebar(els, state, deps);
+    els.sidebar.newChatButton.click();
+    await vi.waitFor(() => expect(spies.onFocusComposer).toHaveBeenCalled());
+    expect(await store.getChat("a")).toMatchObject({
+      title: "Named there",
+      settings: { lookingModelId: "eyes" },
+    });
+  });
+
   it("opens settings from the sidebar", () => {
     initSidebar(els, state, deps);
     els.sidebar.openSettingsButton.click();

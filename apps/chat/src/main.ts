@@ -192,6 +192,7 @@ function actionsDeps(
     toast,
     images: imagesOf(app),
     streamChat,
+    confirm,
     toolContext: () => toolContext(state, store),
     conversation: {
       reset: (messages) => app().conversation.reset(messages),
