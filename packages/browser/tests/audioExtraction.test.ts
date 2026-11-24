@@ -1,11 +1,13 @@
 import { Vid2GridError, type DecodedAudio } from "@vid2grid/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { decodeAudioForTranscription, decodeAudioRange } from "../src/capture/audioExtraction";
+import { decodeAudioRange, openSpeechAudio } from "../src/capture/audioExtraction";
+import type { Mp4Audio } from "../src/capture/mp4AudioDecoder";
 
-const { decodeMp4AudioRange } = vi.hoisted(() => ({
+const { decodeMp4AudioRange, openMp4Audio } = vi.hoisted(() => ({
   decodeMp4AudioRange: vi.fn<() => Promise<DecodedAudio | null>>(),
+  openMp4Audio: vi.fn<() => Promise<Mp4Audio | null>>(),
 }));
-vi.mock("../src/capture/mp4AudioDecoder", () => ({ decodeMp4AudioRange }));
+vi.mock("../src/capture/mp4AudioDecoder", () => ({ decodeMp4AudioRange, openMp4Audio }));
 
 // jsdom's File has no arrayBuffer().
 const file = { arrayBuffer: () => Promise.resolve(new ArrayBuffer(3)) } as unknown as File;
@@ -34,18 +36,20 @@ function fakeBuffer(channels: Float32Array[], sampleRate: number) {
 beforeEach(() => {
   decodeMp4AudioRange.mockReset();
   decodeMp4AudioRange.mockResolvedValue(null);
+  openMp4Audio.mockReset();
+  openMp4Audio.mockResolvedValue(null);
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("decodeAudioForTranscription", () => {
+describe("openSpeechAudio on a file decoded whole", () => {
   it("keeps the decoder's error as the cause of the no-audio message", async () => {
     const decodeFailure = new DOMException("Unable to decode audio data", "EncodingError");
     const { close } = stubAudioContext(() => Promise.reject(decodeFailure));
 
-    const failure = await decodeAudioForTranscription(file, 0, 1).catch((err: unknown) => err);
+    const failure = await openSpeechAudio(file, 0, 1).catch((err: unknown) => err);
 
     expect(failure).toBeInstanceOf(Vid2GridError);
     expect((failure as Vid2GridError).code).toBe("no_audio");
@@ -59,9 +63,138 @@ describe("decodeAudioForTranscription", () => {
     const right = Float32Array.from([0, 0, 0, 0]);
     stubAudioContext(() => Promise.resolve(fakeBuffer([left, right], 4)));
 
-    const samples = await decodeAudioForTranscription(file, 0.25, 0.75);
+    const audio = await openSpeechAudio(file, 0.25, 0.75);
 
-    expect(Array.from(samples)).toEqual([0.5, 0.5]);
+    expect(audio.sampleCount).toBe(2);
+    expect(Array.from(await audio.read(0, 2))).toEqual([0.5, 0.5]);
+    expect(Array.from(await audio.read(1, 2))).toEqual([0.5]);
+  });
+
+  it.each([
+    ["a codec AudioDecoder refuses", new Vid2GridError("undecodable_audio", "Cannot decode.")],
+    ["a movie mp4box chokes on", new TypeError("Cannot read properties of undefined")],
+  ])("is where %s ends up", async (_what, failure) => {
+    openMp4Audio.mockRejectedValue(failure);
+    stubAudioContext(() => Promise.resolve(fakeBuffer([Float32Array.from([1, 2])], 16000)));
+
+    expect((await openSpeechAudio(file, 0, 1)).sampleCount).toBe(2);
+  });
+
+  it("stops waiting for the decode once aborted", async () => {
+    const controller = new AbortController();
+    const reason = new Error("stopped");
+    stubAudioContext(() => {
+      controller.abort(reason);
+      return new Promise(() => undefined);
+    });
+
+    await expect(openSpeechAudio(file, 0, 1, controller.signal)).rejects.toBe(reason);
+  });
+});
+
+describe("openSpeechAudio on an MP4", () => {
+  function mp4Audio(endSeconds: number, decoded: Float32Array) {
+    const decodeRange = vi.fn<Mp4Audio["decodeRange"]>(() =>
+      Promise.resolve({ samples: decoded, sampleRate: 16000 }),
+    );
+    openMp4Audio.mockResolvedValue({ endSeconds, decodeRange });
+    return decodeRange;
+  }
+
+  it("counts the samples from the range's start to the track's end, decoding nothing", async () => {
+    const decodeRange = mp4Audio(90, new Float32Array(0));
+
+    expect((await openSpeechAudio(file, 30, 60)).sampleCount).toBe(30 * 16000);
+    expect((await openSpeechAudio(file, 30, 1000)).sampleCount).toBe(60 * 16000);
+    expect((await openSpeechAudio(file, 95, 1000)).sampleCount).toBe(0);
+    expect(decodeRange).not.toHaveBeenCalled();
+  });
+
+  it("decodes just what is read, with the signal", async () => {
+    const decodeRange = mp4Audio(90, new Float32Array(16000).fill(1));
+    const { signal } = new AbortController();
+    const audio = await openSpeechAudio(file, 30, 60);
+
+    await audio.read(16000, 32000, signal);
+
+    const [start, end, rate, passed] = decodeRange.mock.calls[0] ?? [];
+    expect([start, end, rate]).toEqual([31, 32, 16000]);
+    expect(passed).toBe(signal);
+  });
+
+  it("pads what the track does not reach, so every read has the length asked for", async () => {
+    mp4Audio(90, Float32Array.from([1, 1]));
+    const audio = await openSpeechAudio(file, 0, 60);
+
+    expect(Array.from(await audio.read(0, 4))).toEqual([1, 1, 0, 0]);
+  });
+
+  const undecodable = new Vid2GridError("undecodable_audio", "Cannot decode.");
+  const speechOf = (seconds: number, value: number) =>
+    fakeBuffer([new Float32Array(seconds * 16000).fill(value)], 16000);
+
+  it("decodes the whole file when the first read cannot be decoded", async () => {
+    const decodeRange = mp4Audio(2, new Float32Array(0));
+    decodeRange.mockRejectedValue(undecodable);
+    const decodeAudioData = vi.fn(() => Promise.resolve(speechOf(1, 0.5)));
+    stubAudioContext(decodeAudioData);
+    const audio = await openSpeechAudio(file, 0, 2);
+
+    expect(Array.from(await audio.read(0, 2))).toEqual([0.5, 0.5]);
+    expect(Array.from(await audio.read(15999, 16001))).toEqual([0.5, 0]);
+    expect(decodeRange).toHaveBeenCalledTimes(1);
+    expect(decodeAudioData).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a later stretch that cannot be decoded silent", async () => {
+    const decodeRange = mp4Audio(90, new Float32Array(2).fill(1));
+    const { close } = stubAudioContext(() => Promise.reject(new Error("unused")));
+    const audio = await openSpeechAudio(file, 0, 90);
+    await audio.read(0, 2);
+    decodeRange.mockRejectedValueOnce(undecodable);
+
+    expect(Array.from(await audio.read(2, 4))).toEqual([0, 0]);
+    expect(Array.from(await audio.read(4, 6))).toEqual([1, 1]);
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it("passes on a later read of the file that fails", async () => {
+    const decodeRange = mp4Audio(90, new Float32Array(2).fill(1));
+    const audio = await openSpeechAudio(file, 0, 90);
+    await audio.read(0, 2);
+    const unreadable = new DOMException("gone", "NotReadableError");
+    decodeRange.mockRejectedValue(unreadable);
+
+    await expect(audio.read(2, 4)).rejects.toBe(unreadable);
+  });
+
+  it("does not decode anything else for a read that was aborted", async () => {
+    const reason = new Error("stopped");
+    const controller = new AbortController();
+    const decodeRange = mp4Audio(90, new Float32Array(0));
+    decodeRange.mockImplementation(() => {
+      controller.abort(reason);
+      return Promise.reject(reason);
+    });
+    const { close } = stubAudioContext(() => Promise.reject(new Error("unused")));
+    const audio = await openSpeechAudio(file, 0, 90);
+
+    await expect(audio.read(0, 2, controller.signal)).rejects.toBe(reason);
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it("does not decode anything else for an open that was aborted", async () => {
+    const reason = new Error("stopped");
+    openMp4Audio.mockRejectedValue(reason);
+
+    await expect(openSpeechAudio(file, 0, 1, AbortSignal.abort(reason))).rejects.toBe(reason);
+  });
+
+  it("passes on the error for a video with no audio track", async () => {
+    const noAudio = new Vid2GridError("no_audio", "No audio.");
+    openMp4Audio.mockRejectedValue(noAudio);
+
+    await expect(openSpeechAudio(file, 0, 1)).rejects.toBe(noAudio);
   });
 });
 

@@ -256,11 +256,13 @@ JavaScript host by running the same draw ops on a canvas
 [`pipeline/ports.ts`](../packages/core/src/pipeline/ports.ts) as a stream: the
 capture port yields frames in plan order, each sheet starts encoding as soon as
 its cells are captured, and up to the encoder's `concurrency` sheets encode at
-once, so memory stays at the sheets in flight whatever the video's length.
-Step 1's rule is
-core's too: `createFrameMatcher` decides which planned frames each decoded frame
-fills, and `isKeyframePlan` decides when a capture may decode keyframes alone.
-The capture port receives the `VideoInfo` the plan was built from for that
+once, so memory stays at the sheets in flight whatever the video's length. The
+browser's WebCodecs capture adds its own bounds: it reads the file in ranges and
+skips what no planned frame needs. The Node capture seeks past long gaps between
+planned frames. Neither changes the frames picked or their order. Step 1's rule
+is core's too: `createFrameMatcher` decides which planned frames each decoded
+frame fills, and `isKeyframePlan` decides when a capture may decode keyframes
+alone. The capture port receives the `VideoInfo` the plan was built from for that
 decision.
 
 **One documented deviation.** The browser's `<video>` fallback (used when

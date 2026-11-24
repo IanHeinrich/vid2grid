@@ -180,3 +180,46 @@ describe("extractFrames", () => {
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:stub");
   });
 });
+
+describe("extractFrames abort", () => {
+  const reason = new Error("stopped");
+
+  it("stops waiting for a seek that never lands, releasing the video", async () => {
+    const video = new FakeVideo(null);
+    vi.spyOn(video, "currentTime", "set").mockImplementation(() => {});
+    stubDocument(video);
+    const controller = new AbortController();
+    const pulled = extractFrames(file, planWithFramesAt(1), 0, controller.signal).next();
+    await settle();
+
+    controller.abort(reason);
+
+    await expect(pulled).rejects.toBe(reason);
+    expect(bitmaps).toEqual([]);
+    expect(video.released).toBe(true);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:stub");
+  });
+
+  it("seeks no further once aborted between frames", async () => {
+    const video = new FakeVideo(null);
+    stubDocument(video);
+    const controller = new AbortController();
+    const frames = extractFrames(file, planWithFramesAt(1, 2, 3), 0, controller.signal);
+
+    await frames.next();
+    controller.abort(reason);
+
+    await expect(frames.next()).rejects.toBe(reason);
+    expect(video.seeks).toEqual([1]);
+    expect(video.released).toBe(true);
+  });
+
+  it("loads nothing when already aborted", async () => {
+    const createVideo = vi.spyOn(document, "createElement");
+
+    await expect(
+      extractFrames(file, planWithFramesAt(1), 0, AbortSignal.abort(reason)).next(),
+    ).rejects.toBe(reason);
+    expect(createVideo).not.toHaveBeenCalledWith("video");
+  });
+});

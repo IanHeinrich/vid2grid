@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Vid2GridError } from "../src/errors";
 import {
   generateCollages,
@@ -975,5 +975,205 @@ describe("streamCollages closing the capture", () => {
     expect(ledger.returns).toBe(0);
     expect(ledger.released).toEqual([]);
     expect(ledger.handed).toEqual(ledger.pulled);
+  });
+});
+
+const STOPPED = new Error("stopped");
+
+function abortOnCall(controller: AbortController, call: number): () => void {
+  let calls = 0;
+  return () => {
+    if (++calls === call) controller.abort(STOPPED);
+  };
+}
+
+describe("streamCollages when its signal aborts", () => {
+  const run = (
+    ports: FakePorts,
+    controller: AbortController,
+    options: Partial<Parameters<typeof streamCollages<string, string, string>>[3]> = {},
+  ) =>
+    streamCollages("video", baseRequest({ endSeconds: 2 }), ports, {
+      videoInfo: VIDEO_INFO,
+      onSheet: () => undefined,
+      ...options,
+      signal: controller.signal,
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+  it("does nothing for a signal that has already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort(STOPPED);
+    const onCapture = vi.fn();
+    const onProbe = vi.fn();
+
+    const error = await streamCollages("video", baseRequest(), fakePorts({ onCapture, onProbe }), {
+      onSheet: () => undefined,
+      signal: controller.signal,
+    }).catch((reason: unknown) => reason);
+
+    expect(error).toBe(STOPPED);
+    expect(onProbe).not.toHaveBeenCalled();
+    expect(onCapture).not.toHaveBeenCalled();
+  });
+
+  it("plans and captures nothing when it aborts during the probe", async () => {
+    const controller = new AbortController();
+    const onCapture = vi.fn();
+    const onWarning = vi.fn();
+    const ports = fakePorts({ onCapture, onProbe: () => controller.abort(STOPPED) });
+
+    const error = await streamCollages("video", baseRequest({ keyframeSampling: true }), ports, {
+      onSheet: () => undefined,
+      onWarning,
+      signal: controller.signal,
+    }).catch((reason: unknown) => reason);
+
+    expect(error).toBe(STOPPED);
+    expect(onCapture).not.toHaveBeenCalled();
+    expect(onWarning).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["because of it", true, STOPPED.message],
+    ["on its own", false, "probe failed"],
+  ])("surfaces the right error when the probe rejects %s", async (_why, aborts, message) => {
+    const controller = new AbortController();
+    const ports = fakePorts({
+      onProbe: () => {
+        if (aborts) controller.abort(STOPPED);
+        throw new Error("probe failed");
+      },
+    });
+
+    await expect(
+      streamCollages("video", baseRequest(), ports, {
+        onSheet: () => undefined,
+        signal: controller.signal,
+      }),
+    ).rejects.toThrowError(message);
+  });
+
+  it("hands its signal to every port that takes one", async () => {
+    const { signal } = new AbortController();
+    const ports = fakePorts();
+    const capture = vi.spyOn(ports.frames, "capture");
+    const encode = vi.spyOn(ports.sheets, "encode");
+    const transcribe = vi.fn<TranscriptPort<string>["transcribe"]>(() => Promise.resolve([]));
+    ports.transcript = { transcribe };
+
+    await generateCollages("video", baseRequest({ transcript: { scope: "combined" } }), ports, {
+      videoInfo: VIDEO_INFO,
+      signal,
+    });
+
+    expect(capture.mock.calls[0]?.[3]).toBe(signal);
+    expect(encode.mock.calls[0]?.[2]).toBe(signal);
+    expect(transcribe.mock.calls[0]?.[4]).toBe(signal);
+  });
+
+  it("releases what it pulled, closes the capture and reports nothing more", async () => {
+    const controller = new AbortController();
+    const { ports, ledger } = trackedPorts({}, new Error("unused"));
+    const progress: Progress[] = [];
+    let seenAtAbort = 0;
+    const stopAfterNine = abortOnCall(controller, 9);
+
+    const error = await run(ports, controller, {
+      onProgress: (update) => {
+        progress.push(update);
+        if (update.phase === "extracting") stopAfterNine();
+        seenAtAbort ||= controller.signal.aborted ? progress.length : 0;
+      },
+    });
+
+    expect(error).toBe(STOPPED);
+    expect(ledger.pulled).toHaveLength(9);
+    expect(ledger.released).toEqual(["frame-8"]);
+    expect(progress).toHaveLength(seenAtAbort);
+    expectCleanedUp(ledger, ledger.unsettled);
+  });
+
+  it("releases the frame a pull was bringing when it aborted", async () => {
+    const controller = new AbortController();
+    const { ports, ledger } = trackedPorts({}, new Error("unused"));
+    const capture = ports.frames.capture.bind(ports.frames);
+    ports.frames.capture = (source, plan, info) => {
+      const frames = capture(source, plan, info)[Symbol.asyncIterator]();
+      const abort = abortOnCall(controller, 3);
+      const next = frames.next.bind(frames);
+      frames.next = () => next().finally(abort);
+      return { [Symbol.asyncIterator]: () => frames };
+    };
+
+    expect(await run(ports, controller)).toBe(STOPPED);
+    expect(ledger.released).toEqual(["frame-0", "frame-1", "frame-2"]);
+    expectCleanedUp(ledger, ledger.unsettled);
+  });
+
+  it("delivers no sheet that finishes encoding after it", async () => {
+    const controller = new AbortController();
+    const { ports, ledger } = trackedPorts({}, new Error("unused"));
+    const delivered: string[] = [];
+
+    const error = await run(ports, controller, {
+      onSheet: (sheet) => {
+        delivered.push(sheet.name);
+        controller.abort(STOPPED);
+      },
+    });
+
+    expect(error).toBe(STOPPED);
+    expect(delivered).toEqual(["grid_0001.jpg"]);
+    expectCleanedUp(ledger, ledger.unsettled);
+  });
+
+  it("rejects with the signal's reason rather than how a port failed because of it", async () => {
+    const controller = new AbortController();
+    const ports = fakePorts({
+      onPull: (pullIndex) => {
+        if (pullIndex !== 2) return;
+        controller.abort(STOPPED);
+        throw new Error("decoder closed");
+      },
+    });
+
+    expect(await run(ports, controller)).toBe(STOPPED);
+  });
+
+  it("gives a reason of its own when the signal has none", async () => {
+    const signal = {
+      aborted: true,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    };
+
+    await expect(
+      generateCollages("video", baseRequest(), fakePorts(), { signal }),
+    ).rejects.toThrowError("Collage generation was aborted.");
+  });
+
+  it.each([
+    ["rejects", () => Promise.reject(new Error("worker stopped"))],
+    ["finishes anyway", () => Promise.resolve([])],
+  ])("is not a transcription warning when the transcriber %s", async (_how, settle) => {
+    const controller = new AbortController();
+    const onWarning = vi.fn();
+    const transcribe = () => {
+      controller.abort(STOPPED);
+      return settle();
+    };
+
+    const error = await generateCollages(
+      "video",
+      baseRequest({ transcript: { scope: "combined" } }),
+      fakePorts({ transcribe }),
+      { videoInfo: VIDEO_INFO, onWarning, signal: controller.signal },
+    ).catch((reason: unknown) => reason);
+
+    expect(error).toBe(STOPPED);
+    expect(onWarning).not.toHaveBeenCalled();
   });
 });

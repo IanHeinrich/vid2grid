@@ -208,7 +208,7 @@ async function studyRange(
     values,
     `${call}(${roundForLabel(range.startSeconds)}, ${roundForLabel(range.endSeconds)})`,
   );
-  // A render cannot be cancelled, so a stop that came during it takes effect here.
+  // Cached sheets, and storing rendered ones, take no notice of a stop.
   signal.throwIfAborted();
   const parts = await sheetParts(ctx, refs);
   const caption = `Frames from ${formatSpan(range.startSeconds, range.endSeconds)} of the video.`;

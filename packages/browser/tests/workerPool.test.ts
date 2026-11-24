@@ -206,3 +206,42 @@ describe("WorkerPool termination", () => {
     for (const worker of started) expect(worker.terminate).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("WorkerPool abort", () => {
+  const reason = new Error("stopped");
+
+  it("drops a queued task and leaves the ones around it", async () => {
+    const { pool, workers } = createPool(1);
+    const controller = new AbortController();
+    const first = pool.run("a");
+    const dropped = pool.run("b", [], controller.signal);
+    const last = pool.run("c");
+
+    controller.abort(reason);
+
+    await expect(dropped).rejects.toBe(reason);
+    workers[0]?.reply("done a");
+    expect(await first).toBe("done a");
+    workers[0]?.reply("done c");
+    expect(await last).toBe("done c");
+    expect(dispatched(workers).map((r) => r.message)).toEqual(["a", "c"]);
+  });
+
+  it("lets a task a worker already has run on", async () => {
+    const { pool, workers } = createPool(1);
+    const controller = new AbortController();
+    const running = pool.run("a", [], controller.signal);
+
+    controller.abort(reason);
+    workers[0]?.reply("done a");
+
+    expect(await running).toBe("done a");
+  });
+
+  it("queues nothing for a signal that has already aborted", async () => {
+    const { pool, workers } = createPool(1);
+
+    await expect(pool.run("a", [], AbortSignal.abort(reason))).rejects.toBe(reason);
+    expect(dispatched(workers)).toEqual([]);
+  });
+});

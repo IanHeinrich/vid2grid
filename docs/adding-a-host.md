@@ -32,7 +32,9 @@ without touching media, and proves it does them the same way as the others.
    all at once: a JavaScript host's `capture` is an async iterable that
    yields them in plan order and decodes no further ahead than the pipeline
    pulls, and its optional `release` frees an image the pipeline pulled but
-   will never encode.
+   will never encode. Its optional last argument, `signal`, asks it to stop:
+   once the signal aborts, free the decoder and let the pending pull reject. A
+   host that ignores it is still stopped, after the pull it is on.
 3. **Run draw ops.** For each sheet, run `sheetDrawOps(plan, sheetIndex)` on a
    `plan.canvas`-sized surface, in order: a background `fillRect`, then per
    cell an `image` op and its `text` ops. Skip both for a cell with no captured
@@ -47,7 +49,9 @@ Transcription is optional. A host that offers it fills the
 `TranscriptPort` in
 [`pipeline/ports.ts`](../packages/core/src/pipeline/ports.ts) and writes the
 cues inside each sheet's `transcript` window; one that does not just leaves
-`transcript` out of the request. Core's
+`transcript` out of the request. Its `transcribe` also gets the run's `signal`.
+Decode long audio in pieces rather than whole, overlapping them enough that a
+word on a join is heard complete in one of them. Core's
 [`transcript/`](../packages/core/src/transcript/) does the rest:
 `cuesFromSegments` turns a recogniser's segments into cues on the video's
 timeline, `transcriptFiles(plan, renderedSheetCount, endSeconds, cues)` gives
@@ -117,7 +121,8 @@ therefore holds at most about `concurrency + 1` sheets of frames. When the
 capture ends early, the sheet it was part way through is encoded with its
 missing cells empty. On any error they stop pulling, close the capture with
 its iterator's `return()`, `release` every frame no encode took, let the
-encodes in flight settle and rethrow the first error.
+encodes in flight settle and rethrow the first error. An aborted `signal` in the
+options ends a run the same way, with the signal's reason as the error.
 
 ## Proving conformance
 

@@ -1,14 +1,5 @@
-// Decodes only the audio a range needs: the top-level boxes are walked header by header to
-// find the moov, and only the sample bytes in range are read, so the mdat is never loaded whole.
-import {
-  createFile,
-  MP4BoxBuffer,
-  type Descriptor,
-  type ISOFile,
-  type Movie,
-  type Sample,
-  type Track,
-} from "mp4box";
+// Decodes only the audio a range needs, reading its sample bytes rather than the whole mdat.
+import type { Descriptor, ISOFile, Movie, Track } from "mp4box";
 import {
   MICROSECONDS_PER_SECOND,
   secondsToMicroseconds,
@@ -16,32 +7,30 @@ import {
   type DecodedAudio,
 } from "@vid2grid/core";
 import { resampleLinear } from "../audio/resample";
-import { abortError } from "../shared/workerRequest";
+import { throwIfAborted } from "./abort";
 import { noAudioTrackError, undecodableAudioError } from "./audioErrors";
 import {
-  BOX_HEADER_BYTES,
+  AUDIO_PREROLL_SECONDS,
   byteRuns,
-  LARGE_BOX_HEADER_BYTES,
   presentationOffsetSeconds,
-  readBoxHeader,
   sampleEndSeconds,
   sampleSeconds,
   samplesForRange,
   trimToRange,
   type ByteRun,
   type SampleSpan,
+  type StoredSample,
 } from "./audioRange";
+import { MAX_READ_BYTES, readBytes } from "./fileBytes";
 import { looksLikeIsoBmff } from "./isoBmff";
+import { readMovie } from "./mp4Movie";
 
-const FILE_TYPE_BOX = "ftyp";
-const MOVIE_BOX = "moov";
-// Bounds each read, so a long range never pulls a large slice of the file at once.
-const MAX_READ_BYTES = 4 * 1024 * 1024;
 const MAX_DECODE_QUEUE_SIZE = 64;
 // Room for a decoder that emits a little more than the samples' stated durations.
 const DECODER_SLACK_SECONDS = 1;
 const DECODER_CONFIG_DESCRIPTOR_TAG = 4;
 const DECODER_SPECIFIC_INFO_TAG = 5;
+const SOUND_HANDLER = "soun";
 const AAC_CODEC_PREFIX = "mp4a.40";
 const MP3_IN_MP4_CODECS = new Set(["mp4a.6b", "mp4a.69"]);
 
@@ -50,73 +39,15 @@ interface EsdsEntry {
   wave?: { esds?: { esd?: Descriptor } };
 }
 
-interface ParsedMovie {
-  isoFile: ISOFile;
-  movie: Movie;
+interface SecondsRange {
+  startSeconds: number;
+  endSeconds: number;
 }
 
 interface DecodedSpan {
   samples: Float32Array;
   sampleRate: number;
   startSeconds: number;
-}
-
-function throwIfAborted(signal: AbortSignalLike | undefined): void {
-  if (signal?.aborted) throw abortError(signal);
-}
-
-async function readBytes(
-  file: File,
-  offset: number,
-  length: number,
-  signal: AbortSignalLike | undefined,
-): Promise<ArrayBuffer> {
-  throwIfAborted(signal);
-  const bytes = await file.slice(offset, offset + length).arrayBuffer();
-  throwIfAborted(signal);
-  return bytes;
-}
-
-async function findTopLevelBox(
-  file: File,
-  type: string,
-  signal: AbortSignalLike | undefined,
-): Promise<{ offset: number; size: number } | null> {
-  let offset = 0;
-  while (offset + BOX_HEADER_BYTES <= file.size) {
-    const view = new DataView(await readBytes(file, offset, LARGE_BOX_HEADER_BYTES, signal));
-    const header = readBoxHeader(view, file.size - offset);
-    if (!header) return null;
-    if (header.type === type) return { offset, size: header.size };
-    offset += header.size;
-  }
-  return null;
-}
-
-// ftyp plus moov is enough for mp4box to build the sample table, whose offsets are absolute.
-// getInfo reads the brand from ftyp, so the moov alone is not.
-async function readMovie(
-  file: File,
-  signal: AbortSignalLike | undefined,
-): Promise<ParsedMovie | null> {
-  const typeBox = await findTopLevelBox(file, FILE_TYPE_BOX, signal);
-  const movieBox = await findTopLevelBox(file, MOVIE_BOX, signal);
-  if (!typeBox || !movieBox) return null;
-  const typeBytes = await readBytes(file, typeBox.offset, typeBox.size, signal);
-  const movieBytes = await readBytes(file, movieBox.offset, movieBox.size, signal);
-  const bytes = new Uint8Array(typeBytes.byteLength + movieBytes.byteLength);
-  bytes.set(new Uint8Array(typeBytes));
-  bytes.set(new Uint8Array(movieBytes), typeBytes.byteLength);
-  const isoFile = createFile();
-  let parseFailed = false;
-  isoFile.onError = () => {
-    parseFailed = true;
-  };
-  isoFile.appendBuffer(MP4BoxBuffer.fromArrayBuffer(bytes.buffer, 0));
-  isoFile.flush();
-  if (parseFailed) return null;
-  const movie = isoFile.getInfo();
-  return movie.isFragmented ? null : { isoFile, movie };
 }
 
 function audioSpecificConfig(isoFile: ISOFile, track: Track): Uint8Array | undefined {
@@ -143,7 +74,8 @@ export function audioDecoderConfig(isoFile: ISOFile, track: Track): AudioDecoder
   return { codec: track.codec, sampleRate, numberOfChannels };
 }
 
-function createMonoAccumulator(startSeconds: number, spanSeconds: number) {
+function createMonoAccumulator({ startSeconds, endSeconds }: SecondsRange) {
+  const spanSeconds = Math.max(0, endSeconds - startSeconds);
   let mono: Float32Array | null = null;
   let sampleRate = 0;
   return {
@@ -170,7 +102,7 @@ function createMonoAccumulator(startSeconds: number, spanSeconds: number) {
 
 function decodeRun(
   decoder: AudioDecoder,
-  samples: readonly Sample[],
+  samples: readonly StoredSample[],
   run: ByteRun,
   bytes: Uint8Array,
   offsetSeconds: number,
@@ -196,23 +128,26 @@ function isDecoderOpen(decoder: AudioDecoder): boolean {
   return decoder.state === "configured";
 }
 
+// A sample can claim far more time than the range asked for, which bounds the buffer instead.
+function clampToRange(samples: SecondsRange, range: SecondsRange): SecondsRange {
+  return {
+    startSeconds: Math.max(samples.startSeconds, range.startSeconds - AUDIO_PREROLL_SECONDS),
+    endSeconds: Math.min(samples.endSeconds, range.endSeconds),
+  };
+}
+
 async function decodeSpan(
   file: File,
-  samples: readonly Sample[],
+  samples: readonly StoredSample[],
   span: SampleSpan,
+  bounds: SecondsRange,
   offsetSeconds: number,
   config: AudioDecoderConfig,
   signal: AbortSignalLike | undefined,
 ): Promise<DecodedSpan> {
-  const first = samples[span.first];
-  const last = samples[span.end - 1];
-  if (!first || !last) throw undecodableAudioError(config.codec);
-  const startSeconds = sampleSeconds(first, offsetSeconds);
-  const accumulator = createMonoAccumulator(
-    startSeconds,
-    sampleEndSeconds(last, offsetSeconds) - startSeconds,
-  );
+  const accumulator = createMonoAccumulator(bounds);
   let failure: unknown;
+  let reading = false;
   let wake = (): void => {};
   const decoder = new AudioDecoder({
     output: (data) => {
@@ -240,14 +175,16 @@ async function decodeSpan(
   try {
     decoder.configure(config);
     for (const run of byteRuns(samples, span, MAX_READ_BYTES)) {
+      reading = true;
       const bytes = new Uint8Array(await readBytes(file, run.offset, run.length, signal));
+      reading = false;
       if (failure !== undefined) break;
       decodeRun(decoder, samples, run, bytes, offsetSeconds);
       await roomInQueue();
     }
     if (failure === undefined) await decoder.flush();
   } catch (err) {
-    if (signal?.aborted) throw err;
+    if (signal?.aborted || reading) throw err;
     failure ??= err;
   } finally {
     if (decoder.state !== "closed") decoder.close();
@@ -256,6 +193,14 @@ async function decodeSpan(
   const decoded = accumulator.result();
   if (failure !== undefined || !decoded) throw undecodableAudioError(config.codec, failure);
   return decoded;
+}
+
+// mp4box files a sample entry it does not know, such as PCM or ALAC in a MOV, with no media type.
+function missingAudioError({ moov }: ISOFile, movie: Movie): Error {
+  const sound = moov?.traks.find((trak) => trak.mdia.hdlr.handler === SOUND_HANDLER);
+  if (!sound) return noAudioTrackError();
+  const track = movie.tracks.find(({ id }) => id === sound.tkhd.track_id);
+  return undecodableAudioError(track?.codec ?? "unknown");
 }
 
 async function supportedConfig(isoFile: ISOFile, track: Track): Promise<AudioDecoderConfig> {
@@ -270,7 +215,79 @@ async function supportedConfig(isoFile: ISOFile, track: Track): Promise<AudioDec
   throw undecodableAudioError(track.codec);
 }
 
+export type Resample = (samples: Float32Array, fromRate: number, toRate: number) => Float32Array;
+
+export interface Mp4Audio {
+  // Where the track ends on the video's timeline.
+  readonly endSeconds: number;
+  decodeRange(
+    startSeconds: number,
+    endSeconds: number,
+    sampleRate: number,
+    signal?: AbortSignalLike,
+    resample?: Resample,
+  ): Promise<DecodedAudio>;
+}
+
 /** `null` means this path declines the file and the caller should decode it whole. */
+export async function openMp4Audio(file: File, signal?: AbortSignalLike): Promise<Mp4Audio | null> {
+  if (typeof AudioDecoder === "undefined" || !looksLikeIsoBmff(file)) return null;
+  const parsed = await readMovie(file, signal);
+  if (!parsed || parsed.movie.isFragmented) return null;
+  const track = parsed.movie.audioTracks[0];
+  if (!track) throw missingAudioError(parsed.isoFile, parsed.movie);
+  const config = await supportedConfig(parsed.isoFile, track);
+  throwIfAborted(signal);
+
+  // Copied so that the parsed movie, video sample table included, can be collected.
+  const samples: StoredSample[] = parsed.isoFile
+    .getTrackSamplesInfo(track.id)
+    .map(({ cts, duration, timescale, offset, size }) => ({
+      cts,
+      duration,
+      timescale,
+      offset,
+      size,
+    }));
+  const offsetSeconds = presentationOffsetSeconds(
+    track.edits,
+    track.movie_timescale,
+    track.timescale,
+  );
+  const lastSample = samples.at(-1);
+
+  return {
+    endSeconds: lastSample ? sampleEndSeconds(lastSample, offsetSeconds) : 0,
+    async decodeRange(startSeconds, endSeconds, sampleRate, signal, resample = resampleLinear) {
+      const span = samplesForRange(samples, offsetSeconds, startSeconds, endSeconds);
+      const first = span && samples[span.first];
+      const last = span && samples[span.end - 1];
+      if (!first || !last) return { samples: new Float32Array(0), sampleRate };
+
+      const spanSeconds = {
+        startSeconds: sampleSeconds(first, offsetSeconds),
+        endSeconds: sampleEndSeconds(last, offsetSeconds),
+      };
+      const decoded = await decodeSpan(
+        file,
+        samples,
+        span,
+        clampToRange(spanSeconds, { startSeconds, endSeconds }),
+        offsetSeconds,
+        config,
+        signal,
+      );
+      const resampled = resample(decoded.samples, decoded.sampleRate, sampleRate);
+      const audioEnd = Math.min(endSeconds, sampleEndSeconds(last, offsetSeconds));
+      return {
+        samples: trimToRange(resampled, sampleRate, decoded.startSeconds, startSeconds, audioEnd),
+        sampleRate,
+      };
+    },
+  };
+}
+
+/** `null` as for openMp4Audio. */
 export async function decodeMp4AudioRange(
   file: File,
   startSeconds: number,
@@ -278,29 +295,6 @@ export async function decodeMp4AudioRange(
   sampleRate: number,
   signal?: AbortSignalLike,
 ): Promise<DecodedAudio | null> {
-  if (typeof AudioDecoder === "undefined" || !looksLikeIsoBmff(file)) return null;
-  const parsed = await readMovie(file, signal);
-  if (!parsed) return null;
-  const track = parsed.movie.audioTracks[0];
-  if (!track) throw noAudioTrackError();
-  const config = await supportedConfig(parsed.isoFile, track);
-  throwIfAborted(signal);
-
-  const samples = parsed.isoFile.getTrackSamplesInfo(track.id);
-  const offsetSeconds = presentationOffsetSeconds(
-    track.edits,
-    track.movie_timescale,
-    track.timescale,
-  );
-  const span = samplesForRange(samples, offsetSeconds, startSeconds, endSeconds);
-  const last = span && samples[span.end - 1];
-  if (!span || !last) return { samples: new Float32Array(0), sampleRate };
-
-  const decoded = await decodeSpan(file, samples, span, offsetSeconds, config, signal);
-  const resampled = resampleLinear(decoded.samples, decoded.sampleRate, sampleRate);
-  const audioEnd = Math.min(endSeconds, sampleEndSeconds(last, offsetSeconds));
-  return {
-    samples: trimToRange(resampled, sampleRate, decoded.startSeconds, startSeconds, audioEnd),
-    sampleRate,
-  };
+  const audio = await openMp4Audio(file, signal);
+  return audio ? audio.decodeRange(startSeconds, endSeconds, sampleRate, signal) : null;
 }

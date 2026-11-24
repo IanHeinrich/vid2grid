@@ -17,6 +17,8 @@ export interface SheetContext {
   overviewResolution?: (sheets: number) => number;
   render?: typeof renderSheets;
   capture?: typeof captureFrame;
+  // Stops a render or capture when the reply it is for is stopped.
+  signal?: AbortSignal;
 }
 
 export async function renderOverview(
@@ -57,7 +59,7 @@ export async function sheetRefs(
   const cached = await storedSheets(ctx.store, key);
   if (cached !== undefined) return cached.map((ref) => stamped(ref, ctx.video.fileKey));
   const render = ctx.render ?? renderSheets;
-  const sheets = await render(ctx.file, info, values, onProgress);
+  const sheets = await render(ctx.file, info, values, onProgress, ctx.signal);
   if (sheets.length === 0) throw new Error("No frame was found there; try an earlier time.");
   const { outputResolution } = values;
   const refs = await Promise.all(

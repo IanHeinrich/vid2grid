@@ -38,6 +38,7 @@ export async function renderSheets(
   info: VideoInfo,
   values: PlanOptionInput,
   onProgress?: (done: number, total: number) => void,
+  signal?: AbortSignal,
 ): Promise<RenderedSheet[]> {
   const frameTimes = await readFrameTimes(file).catch(() => undefined);
   const inside = endingAtFrame(values, info, frameTimes?.at(-1));
@@ -47,6 +48,7 @@ export async function renderSheets(
   );
   const { plan, sheets } = await generateCollages(file, request, createBrowserPorts(), {
     videoInfo: info,
+    ...(signal && { signal }),
     ...(onProgress && {
       onProgress: (progress) => {
         if (progress.phase === "extracting") onProgress(progress.done, progress.total);

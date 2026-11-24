@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RenderPlan } from "@vid2grid/core";
+import type { AbortSignalLike, RenderPlan } from "@vid2grid/core";
 import { extractFramesAuto } from "../src/capture/frameExtraction";
 
 type Frames = AsyncGenerator<ImageBitmap, void, undefined>;
@@ -7,8 +7,10 @@ type Frames = AsyncGenerator<ImageBitmap, void, undefined>;
 // Both extractors are the modules under the router, not the router: what is under test
 // is which one it settles on, and where.
 const { extractFrames, extractFramesWebCodecs } = vi.hoisted(() => ({
-  extractFrames: vi.fn<(file: File, plan: RenderPlan, fromFrame?: number) => Frames>(),
-  extractFramesWebCodecs: vi.fn<() => Promise<Frames | null>>(),
+  extractFrames:
+    vi.fn<(file: File, plan: RenderPlan, fromFrame?: number, signal?: AbortSignalLike) => Frames>(),
+  extractFramesWebCodecs:
+    vi.fn<(file: File, plan: RenderPlan, signal?: AbortSignalLike) => Promise<Frames | null>>(),
 }));
 vi.mock("../src/capture/extractor", () => ({ extractFrames }));
 vi.mock("../src/capture/webcodecsExtractor", () => ({ extractFramesWebCodecs }));
@@ -56,14 +58,14 @@ describe("extractFramesAuto", () => {
     extractFramesWebCodecs.mockResolvedValue(null);
 
     expect(await collect(extractFramesAuto(mp4, PLAN))).toEqual([image("seek")]);
-    expect(extractFrames).toHaveBeenCalledWith(mp4, PLAN, 0);
+    expect(extractFrames).toHaveBeenCalledWith(mp4, PLAN, 0, undefined);
   });
 
   it("falls back to the seek extractor when WebCodecs throws", async () => {
     extractFramesWebCodecs.mockRejectedValue(new Error("undecodable"));
 
     expect(await collect(extractFramesAuto(mp4, PLAN))).toEqual([image("seek")]);
-    expect(extractFrames).toHaveBeenCalledWith(mp4, PLAN, 0);
+    expect(extractFrames).toHaveBeenCalledWith(mp4, PLAN, 0, undefined);
   });
 
   it("resumes the seek extractor at the first frame WebCodecs failed to yield", async () => {
@@ -73,7 +75,7 @@ describe("extractFramesAuto", () => {
     expect(await collect(extractFramesAuto(mp4, PLAN))).toEqual(
       ["wc0", "wc1", "seek2", "seek3"].map(image),
     );
-    expect(extractFrames).toHaveBeenCalledWith(mp4, PLAN, 2);
+    expect(extractFrames).toHaveBeenCalledWith(mp4, PLAN, 2, undefined);
   });
 
   it("skips WebCodecs entirely for a container it cannot demux", async () => {
@@ -104,5 +106,39 @@ describe("extractFramesAuto", () => {
     await expect(
       collect(extractFramesAuto(videoFile("clip.webm", "video/webm"), PLAN)),
     ).rejects.toBe(seekFailure);
+  });
+});
+
+describe("extractFramesAuto abort", () => {
+  it("hands its signal to both extractors", async () => {
+    const { signal } = new AbortController();
+    extractFramesWebCodecs.mockResolvedValue(null);
+
+    await collect(extractFramesAuto(mp4, PLAN, signal));
+
+    expect(extractFramesWebCodecs.mock.calls[0]?.[2]).toBe(signal);
+    expect(extractFrames.mock.calls[0]?.[3]).toBe(signal);
+  });
+
+  it("does not fall back to seeking for an aborted WebCodecs pass", async () => {
+    const reason = new Error("stopped");
+    extractFramesWebCodecs.mockRejectedValue(new Error("decoder closed"));
+
+    await expect(collect(extractFramesAuto(mp4, PLAN, AbortSignal.abort(reason)))).rejects.toBe(
+      reason,
+    );
+    expect(extractFrames).not.toHaveBeenCalled();
+  });
+
+  it("rejects with the reason alone when the fallback is the pass aborted", async () => {
+    const reason = new Error("stopped");
+    const controller = new AbortController();
+    extractFramesWebCodecs.mockRejectedValue(new Error("undecodable"));
+    extractFrames.mockImplementation(() => {
+      controller.abort(reason);
+      return framesOf([], reason);
+    });
+
+    await expect(collect(extractFramesAuto(mp4, PLAN, controller.signal))).rejects.toBe(reason);
   });
 });

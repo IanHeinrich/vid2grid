@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Sample } from "mp4box";
 import type { PlannedCrop } from "@vid2grid/core";
 import { decodeFrames, MAX_BUFFERED_FRAMES } from "../src/capture/webcodecsExtractor";
+import { sourceFile } from "./sourceFile";
 
 // jsdom has no WebCodecs, so this decoder emits each chunk back as a frame on the next
 // microtask: enough to watch how far ahead of the consumer the pass decodes.
@@ -45,13 +45,13 @@ const TIMESCALE = 10;
 const samples = Array.from({ length: FRAME_COUNT }, (_, i) => ({
   is_sync: true,
   cts: i,
-  dts: i,
   timescale: TIMESCALE,
   duration: 1,
-  data: new Uint8Array([0]),
-})) as unknown as Sample[];
+  offset: i,
+  size: 1,
+}));
 const wanted = Array.from({ length: FRAME_COUNT }, (_, i) => i / TIMESCALE);
-const indices = Array.from({ length: FRAME_COUNT }, (_, i) => i);
+const { file } = sourceFile(new Uint8Array(FRAME_COUNT));
 
 let bitmaps: { close: ReturnType<typeof vi.fn> }[];
 
@@ -63,8 +63,18 @@ function decoder(): FakeDecoder {
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 function decodeAll(crop?: PlannedCrop) {
-  const cell = { width: 8, height: 8 };
-  return decodeFrames({ codec: "avc1" }, samples, indices, wanted, cell, 0, crop);
+  return decodeFrames(
+    { codec: "avc1" },
+    {
+      file,
+      samples,
+      keyframeIndices: null,
+      wanted,
+      cell: { width: 8, height: 8 },
+      rotation: 0,
+      crop,
+    },
+  );
 }
 
 beforeEach(() => {

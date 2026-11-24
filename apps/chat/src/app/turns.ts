@@ -327,16 +327,18 @@ interface TurnToolsInput {
   heard: TurnAudio;
   // Grows as the turn saves messages.
   messages: readonly ChatMessage[];
+  signals: TurnSignals;
 }
 
 function turnTools(ctx: TurnsContext, input: TurnToolsInput): TurnTools {
-  const { chat, model, resolution, toolCtx, heard, messages } = input;
+  const { chat, model, resolution, toolCtx, heard, messages, signals } = input;
   const { tools, guidance } = conversationTools(model, messages, {
     videoLoaded: toolCtx !== undefined,
     listen: heard.on && heard.coverage.canListen,
   });
   if (tools.length === 0) return { tools, toolGuidance: guidance, runTool: undefined };
   const { maxImages } = model;
+  const signal = AbortSignal.any([signals.signal, signals.answerNow]);
   const runTool = createToolRunner({
     store: ctx.deps.store,
     resolution,
@@ -345,7 +347,7 @@ function turnTools(ctx: TurnsContext, input: TurnToolsInput): TurnTools {
     knownImages: () => messages.flatMap(imagesOf),
     videoOfImage: (id) =>
       videoForImage(messages, id, toolCtx?.video ?? chat.video, chat.removedVideos),
-    ...(toolCtx ? { sheets: { ...toolCtx, resolution, maxImages } } : {}),
+    ...(toolCtx ? { sheets: { ...toolCtx, resolution, maxImages, signal } } : {}),
     ...(heard.on && heard.listen ? { audio: heard.listen } : {}),
   });
   return { tools, toolGuidance: guidance, runTool };
@@ -397,9 +399,10 @@ async function runChatTurn(
   ctx: TurnsContext,
   touched: Chat,
   { thoroughness, audio }: TurnFlags,
-  { signal, answerNow }: TurnSignals,
+  signals: TurnSignals,
   compareWith?: ModelInfo,
 ): Promise<void> {
+  const { signal, answerNow } = signals;
   const { state, deps } = ctx;
   const ended = () => signal.aborted || state.currentChat?.id !== touched.id;
   const model = compareWith ?? currentModel(state);
@@ -432,7 +435,7 @@ async function runChatTurn(
     messages: [...state.messages],
     model,
     api,
-    ...turnTools(ctx, { chat, model, resolution, toolCtx, heard, messages: known }),
+    ...turnTools(ctx, { chat, model, resolution, toolCtx, heard, messages: known, signals }),
     toolsOptional: !videoLoaded,
     streamChat: deps.streamChat,
     store: deps.store,
@@ -451,7 +454,7 @@ async function runChatTurn(
     onEvent: (event) => onTurnEvent(ctx, chat, event, heard.progress),
   };
   const turn = compareWith ? compareTurn(ctx, turnDeps, compareWith) : runTurn(turnDeps);
-  // A render in progress cannot be cancelled, so Stop releases the composer without waiting for it.
+  // Stop releases the composer without waiting for a render it cancelled to settle.
   const outcome = await orWhenAborted(turn, signal, STOPPED);
   heard.progress.clear();
   if (state.currentChat?.id === chat.id) showOutcome(ctx, outcome);

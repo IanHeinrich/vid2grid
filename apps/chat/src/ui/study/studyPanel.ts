@@ -433,6 +433,7 @@ function passDeps(ctx: StudyContext, running: RunningStudy, { toolCtx, chat }: R
       ...toolCtx,
       resolution: resolveSheetResolution(chat.settings.sheetResolution, model).px,
       maxImages: model.maxImages,
+      signal: controller.signal,
     },
     model,
     timeline,

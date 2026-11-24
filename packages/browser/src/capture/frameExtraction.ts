@@ -1,18 +1,20 @@
-import type { RenderPlan } from "@vid2grid/core";
+import type { AbortSignalLike, RenderPlan } from "@vid2grid/core";
 import { errorMessage } from "../shared/errors";
+import { throwIfAborted } from "./abort";
 import { extractFrames } from "./extractor";
 import { supportsWebCodecs } from "./isoBmff";
 
 export async function* extractFramesAuto(
   file: File,
   plan: RenderPlan,
+  signal?: AbortSignalLike,
 ): AsyncGenerator<ImageBitmap, void, undefined> {
   let yielded = 0;
   let webCodecsFailure: { reason: unknown } | null = null;
   if (supportsWebCodecs(file)) {
     try {
       const { extractFramesWebCodecs } = await import("./webcodecsExtractor");
-      const images = await extractFramesWebCodecs(file, plan);
+      const images = await extractFramesWebCodecs(file, plan, signal);
       if (images) {
         for await (const image of images) {
           yielded++;
@@ -21,10 +23,11 @@ export async function* extractFramesAuto(
         return;
       }
     } catch (err) {
+      throwIfAborted(signal);
       webCodecsFailure = { reason: err };
     }
   }
-  yield* fallBackToSeeking(file, plan, yielded, webCodecsFailure);
+  yield* fallBackToSeeking(file, plan, yielded, webCodecsFailure, signal);
 }
 
 async function* fallBackToSeeking(
@@ -32,10 +35,12 @@ async function* fallBackToSeeking(
   plan: RenderPlan,
   fromFrame: number,
   webCodecsFailure: { reason: unknown } | null,
+  signal: AbortSignalLike | undefined,
 ): AsyncGenerator<ImageBitmap, void, undefined> {
   try {
-    yield* extractFrames(file, plan, fromFrame);
+    yield* extractFrames(file, plan, fromFrame, signal);
   } catch (seekFailure) {
+    throwIfAborted(signal);
     if (!webCodecsFailure) throw seekFailure;
     throw new AggregateError(
       [webCodecsFailure.reason, seekFailure],

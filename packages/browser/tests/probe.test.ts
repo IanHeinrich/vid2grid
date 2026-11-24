@@ -7,7 +7,7 @@ const { readKeyframeTimestamps, readFrameTimestamps } = vi.hoisted(() => ({
   readKeyframeTimestamps: vi.fn<(file: File) => Promise<number[] | null>>(),
   readFrameTimestamps: vi.fn<(file: File) => Promise<number[] | null>>(),
 }));
-vi.mock("../src/capture/webcodecsExtractor", () => ({
+vi.mock("../src/capture/videoDemuxer", () => ({
   readKeyframeTimestamps,
   readFrameTimestamps,
 }));

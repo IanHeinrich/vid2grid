@@ -1,4 +1,9 @@
-import { paintSheetFromPlan, type RenderPlan, type SheetRenderJob } from "@vid2grid/core";
+import {
+  paintSheetFromPlan,
+  type AbortSignalLike,
+  type RenderPlan,
+  type SheetRenderJob,
+} from "@vid2grid/core";
 import { create2dCanvas } from "../shared/canvas";
 import { closeImages } from "../shared/images";
 import { canvasToJpegBlob } from "./canvasJpeg";
@@ -56,15 +61,17 @@ function releasePool(): void {
 export function renderSheetToBlob(
   plan: RenderPlan,
   job: SheetRenderJob<ImageBitmap>,
+  signal?: AbortSignalLike,
 ): Promise<Blob> {
   const pool = supportsWorkerRendering() ? acquirePool() : null;
-  return pool ? renderOnWorker(pool, plan, job) : renderOnMainThread(plan, job);
+  return pool ? renderOnWorker(pool, plan, job, signal) : renderOnMainThread(plan, job);
 }
 
 async function renderOnWorker(
   pool: RenderPool,
   plan: RenderPlan,
   job: SheetRenderJob<ImageBitmap>,
+  signal: AbortSignalLike | undefined,
 ): Promise<Blob> {
   try {
     // paintSheetFromPlan reads none of the frame or sheet lists, and they would otherwise
@@ -74,6 +81,7 @@ async function renderOnWorker(
     const response = await pool.run(
       { plan: sheetPlan, sheet: job.sheet, images: job.images },
       presentImages(job.images),
+      signal,
     );
     if (response.error || !response.blob) {
       throw new Error(response.error ?? "Render worker returned no image");

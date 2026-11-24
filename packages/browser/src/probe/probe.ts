@@ -23,13 +23,13 @@ export async function probeVideo(file: File): Promise<VideoInfo> {
 
 export async function readKeyframeTimes(file: File): Promise<number[] | undefined> {
   if (!supportsWebCodecs(file)) return undefined;
-  const { readKeyframeTimestamps } = await import("../capture/webcodecsExtractor");
+  const { readKeyframeTimestamps } = await import("../capture/videoDemuxer");
   return (await readKeyframeTimestamps(file)) ?? undefined;
 }
 
 export async function readFrameTimes(file: File): Promise<number[] | undefined> {
   if (!supportsWebCodecs(file)) return undefined;
-  const { readFrameTimestamps } = await import("../capture/webcodecsExtractor");
+  const { readFrameTimestamps } = await import("../capture/videoDemuxer");
   return (await readFrameTimestamps(file)) ?? undefined;
 }
 
@@ -40,7 +40,6 @@ export async function countKeyframesInRange(
   startTime: number,
   endTime: number,
 ): Promise<number | null> {
-  const { countKeyframesInRange: countInDemuxedRange } =
-    await import("../capture/webcodecsExtractor");
+  const { countKeyframesInRange: countInDemuxedRange } = await import("../capture/videoDemuxer");
   return countInDemuxedRange(file, startTime, endTime);
 }

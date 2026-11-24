@@ -20,11 +20,12 @@ export async function captureFrame(
   info: VideoInfo,
   seconds: number,
   frames: FrameCapturePort<File, ImageBitmap> = createBrowserPorts().frames,
+  signal?: AbortSignal,
 ): Promise<ImageBitmap | undefined> {
   const plan = framePlan(info, seconds);
   let first: ImageBitmap | undefined;
   try {
-    for await (const image of frames.capture(file, plan, info)) {
+    for await (const image of frames.capture(file, plan, info, signal)) {
       if (first === undefined) first = image;
       else image.close();
     }

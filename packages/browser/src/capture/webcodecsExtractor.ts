@@ -1,221 +1,51 @@
-// One continuous decode pass, unlike extractor.ts. Entry points return `null` for an input
-// this path declines (the caller falls back); demux or decode failures throw.
-import {
-  createFile,
-  MP4BoxBuffer,
-  DataStream,
-  Endianness,
-  type Entry,
-  type ISOFile,
-  type Movie,
-  type Sample,
-  type Track,
-  type VisualSampleEntry,
-} from "mp4box";
+// Decodes in as few passes as the plan allows, unlike extractor.ts. Entry points return `null` for
+// an input this path declines (the caller falls back); demux or decode failures throw.
 import {
   createFrameMatcher,
-  isKeyframePlan,
-  keyframesInRange,
   MICROSECONDS_PER_SECOND,
-  roundToMicroseconds,
-  rotationFromMatrix,
   secondsToMicroseconds,
-  type PlannedFrame,
+  type AbortSignalLike,
+  type PlannedCrop,
   type RenderPlan,
 } from "@vid2grid/core";
 import { createFrameCanvas } from "../shared/canvas";
-import { supportsWebCodecs } from "./isoBmff";
+import { abortError } from "../shared/workerRequest";
+import { throwIfAborted, untilAborted } from "./abort";
+import { createSpanPlanner } from "./decodeSpans";
+import { readSamples } from "./sampleReader";
+import { demuxCached } from "./videoDemuxer";
+import {
+  sampleTimeMicroseconds,
+  selectKeyframeSampleIndices,
+  type VideoSample,
+} from "./videoSamples";
 
-// Generous upper bound on B-frame reorder depth: without the padding, composition-order
-// reordering could cut off a wanted frame at the end of the range.
-const REORDER_PADDING_SAMPLES = 16;
 // Bounds memory on long clips rather than queuing the whole video at once.
-const MAX_DECODE_QUEUE_SIZE = 30;
+const MAX_QUEUED_CHUNKS = 30;
+const MAX_QUEUED_BYTES = 8 * 1024 * 1024;
 // Captured frames waiting for the consumer; feeding the decoder pauses at this many.
 export const MAX_BUFFERED_FRAMES = 8;
-
-interface DemuxResult {
-  videoTrack: Track;
-  description: Uint8Array;
-  samples: Sample[];
-  rotation: number;
-}
-
-function sampleTimeSeconds(sample: Sample): number {
-  return sample.cts / sample.timescale;
-}
-
-interface PresentationStart {
-  mediaTime: number;
-  emptySeconds: number;
-}
-
-// Browsers apply the edit list, so currentTime 0 is the first edit's media time after any empty
-// edits, not cts 0. B-frame encodes typically start the media two frames in.
-function presentationStart(edits: Entry[] | undefined, movieTimescale: number): PresentationStart {
-  let emptySeconds = 0;
-  for (const edit of edits ?? []) {
-    if (edit.media_time >= 0) return { mediaTime: edit.media_time, emptySeconds };
-    emptySeconds += edit.segment_duration / movieTimescale;
-  }
-  return { mediaTime: 0, emptySeconds: 0 };
-}
-
-// Every time below is on this clock, so it matches the planned times and the seek-based path.
-export function onPresentationClock(
-  samples: readonly Sample[],
-  track: Pick<Track, "edits" | "movie_timescale">,
-): Sample[] {
-  const { mediaTime, emptySeconds } = presentationStart(track.edits, track.movie_timescale);
-  return samples.map((sample) => {
-    const shift = Math.round(emptySeconds * sample.timescale) - mediaTime;
-    return { ...sample, cts: sample.cts + shift, dts: sample.dts + shift };
-  });
-}
-
-// Demuxing is independent of the collage settings, so regenerating with new settings reuses it.
-// Keyed by File identity so a re-picked file re-parses and old entries are collectable.
-const demuxCache = new WeakMap<File, Promise<DemuxResult | null>>();
-
-function demuxCached(file: File): Promise<DemuxResult | null> {
-  let cached = demuxCache.get(file);
-  if (!cached) {
-    cached = demux(file).catch((err: unknown) => {
-      // A failed parse must not poison the entry: a retry should get a fresh attempt.
-      demuxCache.delete(file);
-      throw err;
-    });
-    demuxCache.set(file, cached);
-  }
-  return cached;
-}
-
-function getCodecDescription(isoFile: ISOFile, trackId: number): Uint8Array | undefined {
-  const trak = isoFile.getTrackById(trackId);
-  const entries = trak.mdia.minf.stbl.stsd.entries as VisualSampleEntry[];
-  for (const entry of entries) {
-    const box = entry.avcC ?? entry.hvcC ?? entry.vpcC ?? entry.av1C;
-    if (!box) continue;
-    const stream = new DataStream(undefined, 0, Endianness.BIG_ENDIAN);
-    (box.write as (stream: DataStream) => void)(stream);
-    // VideoDecoder wants the configuration payload alone, past the 8-byte box header.
-    return new Uint8Array(stream.buffer, 8);
-  }
-  return undefined;
-}
-
-async function demux(file: File): Promise<DemuxResult | null> {
-  const buffer = await file.arrayBuffer();
-  const isoFile = createFile();
-
-  return new Promise<DemuxResult | null>((resolve, reject) => {
-    const samples: Sample[] = [];
-
-    isoFile.onError = (_module, message) => reject(new Error(message));
-
-    isoFile.onReady = (movie: Movie) => {
-      const videoTrack = movie.videoTracks[0];
-      if (!videoTrack) {
-        resolve(null);
-        return;
-      }
-      const description = getCodecDescription(isoFile, videoTrack.id);
-      if (!description) {
-        resolve(null);
-        return;
-      }
-
-      isoFile.onSamples = (_id, _user, newSamples) => {
-        samples.push(...newSamples);
-        if (samples.length >= videoTrack.nb_samples) {
-          resolve({
-            videoTrack,
-            description,
-            samples: onPresentationClock(samples, videoTrack),
-            rotation: rotationFromMatrix(videoTrack.matrix),
-          });
-        }
-      };
-      isoFile.setExtractionOptions(videoTrack.id, undefined, { nbSamples: videoTrack.nb_samples });
-      isoFile.start();
-    };
-
-    const mp4Buffer = MP4BoxBuffer.fromArrayBuffer(buffer, 0);
-    isoFile.appendBuffer(mp4Buffer);
-    isoFile.flush();
-  });
-}
-
-// Samples before the presentation starts decode but are never shown, so they are left out.
-export function frameTimestampsFromSamples(samples: readonly Sample[]): number[] {
-  return samples
-    .map((sample) => roundToMicroseconds(sampleTimeSeconds(sample)))
-    .filter((time) => time >= 0)
-    .sort((a, b) => a - b);
-}
-
-/** Every sync sample's time from the presentation start on, ascending, rounded the way the
- * planner rounds. */
-export function keyframeTimestampsFromSamples(samples: Sample[]): number[] {
-  return frameTimestampsFromSamples(samples.filter((sample) => sample.is_sync));
-}
-
-export async function readKeyframeTimestamps(file: File): Promise<number[] | null> {
-  if (!supportsWebCodecs(file)) return null;
-  const demuxed = await demuxCached(file);
-  if (!demuxed) return null;
-  return keyframeTimestampsFromSamples(demuxed.samples);
-}
-
-export async function readFrameTimestamps(file: File): Promise<number[] | null> {
-  if (!supportsWebCodecs(file)) return null;
-  const demuxed = await demuxCached(file);
-  if (!demuxed) return null;
-  return frameTimestampsFromSamples(demuxed.samples);
-}
-
-export async function countKeyframesInRange(
-  file: File,
-  startTime: number,
-  endTime: number,
-): Promise<number | null> {
-  const timestamps = await readKeyframeTimestamps(file);
-  if (!timestamps) return null;
-  return keyframesInRange(timestamps, startTime, endTime).length;
-}
-
-/** `null` means the plan is not keyframe-sampled and needs a full decode pass. */
-export function selectKeyframeSampleIndices(
-  samples: Sample[],
-  frames: PlannedFrame[],
-): number[] | null {
-  if (frames.length === 0 || !isKeyframePlan({ frames }, keyframeTimestampsFromSamples(samples))) {
-    return null;
-  }
-  const indexByTime = new Map<number, number>();
-  samples.forEach((sample, index) => {
-    if (!sample.is_sync) return;
-    const time = roundToMicroseconds(sampleTimeSeconds(sample));
-    if (!indexByTime.has(time)) indexByTime.set(time, index);
-  });
-  return frames.flatMap((frame) => {
-    const index = indexByTime.get(roundToMicroseconds(frame.timestampSeconds));
-    return index === undefined ? [] : [index];
-  });
-}
+// How much further to decode when a planned frame never came out of the decoder.
+const FIRST_EXTENSION_SAMPLES = 16;
+// Refused in a row, after which the track is taken to mark no true key frames from there on.
+const MAX_REFUSED_SYNCS = 8;
 
 // A wrapper because TS otherwise carries stale "state !== closed" narrowing across an `await`.
 function isDecoderClosed(decoder: VideoDecoder): boolean {
   return decoder.state === "closed";
 }
 
-function toEncodedVideoChunk(sample: Sample): EncodedVideoChunk | null {
-  if (!sample.data) return null;
+// How a decoder turns down a chunk after a configure or flush that cannot start a decode.
+function isNotAKeyframe(err: unknown): boolean {
+  return err instanceof DOMException && err.name === "DataError";
+}
+
+function toEncodedVideoChunk(sample: VideoSample, data: Uint8Array): EncodedVideoChunk {
   return new EncodedVideoChunk({
     type: sample.is_sync ? "key" : "delta",
-    timestamp: secondsToMicroseconds(sampleTimeSeconds(sample)),
+    timestamp: sampleTimeMicroseconds(sample),
     duration: secondsToMicroseconds(sample.duration / sample.timescale),
-    data: sample.data,
+    data,
   });
 }
 
@@ -244,6 +74,8 @@ export function drawRotated(
 }
 
 export interface FrameCollector {
+  // How many planned frames have been captured so far, in plan order.
+  filledCount(): number;
   consume(frame: VideoFrame): void;
   // True once there is room for more decoded frames, false when no more are wanted.
   awaitRoom(): Promise<boolean>;
@@ -252,6 +84,13 @@ export interface FrameCollector {
   end(): void;
   fail(reason: unknown): void;
   discard(): Promise<void>;
+}
+
+// One decoded frame and how many consecutive planned times it fills, so a long still stretch
+// holds one image rather than one per time.
+interface Capture {
+  image: Promise<ImageBitmap>;
+  remaining: number;
 }
 
 function createChangeSignal() {
@@ -271,10 +110,23 @@ function captureCanvas(captureFrame: () => Promise<ImageBitmap>): Promise<ImageB
   return capture;
 }
 
-async function closeWhenSettled(captures: Promise<ImageBitmap>[]): Promise<void> {
-  for (const capture of await Promise.allSettled(captures)) {
-    if (capture.status === "fulfilled") capture.value.close();
+function takeFirst(captures: Capture[]): Promise<ImageBitmap> | undefined {
+  const [first] = captures;
+  if (first && first.remaining > 1) {
+    first.remaining--;
+    return first.image.then((image) => createImageBitmap(image));
   }
+  return captures.shift()?.image;
+}
+
+async function closeWhenSettled(captures: Capture[]): Promise<void> {
+  for (const image of await Promise.allSettled(captures.map((capture) => capture.image))) {
+    if (image.status === "fulfilled") image.value.close();
+  }
+}
+
+function rethrow(reason: unknown): never {
+  throw reason;
 }
 
 // First frame at or after each wanted timestamp, as in the seek-based path (not nearest-frame).
@@ -287,25 +139,26 @@ export function createFrameCollector(
   rotation: number,
   capture = () => createImageBitmap(canvas),
 ): FrameCollector {
-  const captures: Promise<ImageBitmap>[] = [];
+  const captures: Capture[] = [];
   const matcher = createFrameMatcher(wanted);
   const { changed, nextChange } = createChangeSignal();
-  let ended = false;
+  let filledCount = 0;
   let discarded = false;
-  let failure: { reason: unknown } | null = null;
+  let finish: (() => undefined) | null = null;
 
   return {
+    filledCount: () => filledCount,
     consume(frame) {
-      if (discarded) return;
+      if (discarded || finish) return;
       const filled = matcher.fill(frame.timestamp / MICROSECONDS_PER_SECOND).length;
-      for (let i = 0; i < filled; i++) {
-        drawRotated(ctx, frame, cellW, cellH, rotation);
-        captures.push(captureCanvas(capture));
-      }
+      if (filled === 0) return;
+      drawRotated(ctx, frame, cellW, cellH, rotation);
+      captures.push({ image: captureCanvas(capture), remaining: filled });
+      filledCount += filled;
       changed();
     },
     async awaitRoom() {
-      while (!discarded && !failure && !matcher.done) {
+      while (!discarded && !finish && !matcher.done) {
         if (captures.length < MAX_BUFFERED_FRAMES) return true;
         await nextChange();
       }
@@ -313,23 +166,22 @@ export function createFrameCollector(
     },
     async take() {
       for (;;) {
-        const capture = captures.shift();
-        if (capture) {
+        const image = takeFirst(captures);
+        if (image) {
           changed();
-          return capture;
+          return image;
         }
-        if (matcher.done) return undefined;
-        if (failure) throw failure.reason;
-        if (ended) return undefined;
+        if (filledCount === wanted.length) return undefined;
+        if (finish) return finish();
         await nextChange();
       }
     },
     end() {
-      ended = true;
+      finish ??= () => undefined;
       changed();
     },
     fail(reason) {
-      failure ??= { reason };
+      finish ??= () => rethrow(reason);
       changed();
     },
     async discard() {
@@ -340,58 +192,114 @@ export function createFrameCollector(
   };
 }
 
-async function feedSamples(
-  decoder: VideoDecoder,
-  samples: Sample[],
+interface ChunkFeeder {
+  // False when no more frames are wanted.
+  feed(indices: Iterable<number>): Promise<boolean>;
+}
+
+function* samplesAt(
+  samples: readonly VideoSample[],
   indices: Iterable<number>,
-  collector: FrameCollector,
-): Promise<void> {
+): Generator<VideoSample, void, undefined> {
   for (const index of indices) {
-    if (!(await collector.awaitRoom()) || isDecoderClosed(decoder)) return;
     const sample = samples[index];
-    const chunk = sample && toEncodedVideoChunk(sample);
-    if (!chunk) continue;
-    if (decoder.decodeQueueSize > MAX_DECODE_QUEUE_SIZE) {
+    if (sample) yield sample;
+  }
+}
+
+function createChunkFeeder(
+  decoder: VideoDecoder,
+  file: File,
+  samples: readonly VideoSample[],
+  collector: FrameCollector,
+  signal: AbortSignalLike | undefined,
+): ChunkFeeder {
+  const fedSizes: number[] = [];
+
+  const isQueueFull = (): boolean => {
+    fedSizes.splice(0, fedSizes.length - decoder.decodeQueueSize);
+    const queuedBytes = fedSizes.reduce((total, size) => total + size, 0);
+    return fedSizes.length > MAX_QUEUED_CHUNKS || queuedBytes > MAX_QUEUED_BYTES;
+  };
+
+  const roomInQueue = async (): Promise<void> => {
+    while (!isDecoderClosed(decoder) && isQueueFull()) {
       await new Promise<void>((resolve) =>
         decoder.addEventListener("dequeue", () => resolve(), { once: true }),
       );
     }
-    if (isDecoderClosed(decoder)) return;
-    decoder.decode(chunk);
-  }
-  if (!isDecoderClosed(decoder)) await decoder.flush();
+  };
+
+  return {
+    async feed(indices) {
+      for await (const { sample, data } of readSamples(file, samplesAt(samples, indices), signal)) {
+        if (!(await collector.awaitRoom())) return false;
+        await roomInQueue();
+        if (isDecoderClosed(decoder)) return false;
+        decoder.decode(toEncodedVideoChunk(sample, data));
+        fedSizes.push(data.byteLength);
+      }
+      if (isDecoderClosed(decoder)) return false;
+      await decoder.flush();
+      return true;
+    },
+  };
 }
 
 function* range(startIndex: number, endIndex: number): Generator<number> {
   for (let i = startIndex; i <= endIndex; i++) yield i;
 }
 
-function findDecodeStartIndex(samples: Sample[], startTime: number): number {
-  let index = 0;
-  for (const [i, sample] of samples.entries()) {
-    if (sample.is_sync && sampleTimeSeconds(sample) <= startTime) index = i;
+// Each span starts on a sync sample after a flush, as the decoder needs, and ends at the last
+// planned frame before the next jump.
+async function feedSpans(
+  feeder: ChunkFeeder,
+  samples: readonly VideoSample[],
+  wanted: readonly number[],
+  collector: FrameCollector,
+): Promise<void> {
+  const planner = createSpanPlanner(samples, wanted);
+  const finalIndex = samples.length - 1;
+  let extension = 0;
+  let refusedSyncs = 0;
+  for (;;) {
+    const filledBefore = collector.filledCount();
+    const span = planner.next(filledBefore, extension);
+    if (!span) return;
+    try {
+      if (!(await feeder.feed(range(span.first, span.last)))) return;
+    } catch (err) {
+      if (!isNotAKeyframe(err) || span.first === 0) throw err;
+      planner.rejectSync(span.first);
+      if (++refusedSyncs > MAX_REFUSED_SYNCS) planner.stopTryingSyncs();
+      continue;
+    }
+    planner.acceptSync(span.first);
+    refusedSyncs = 0;
+    if (collector.filledCount() > filledBefore) extension = 0;
+    else if (span.last === finalIndex) return;
+    else extension = Math.max(FIRST_EXTENSION_SAMPLES, extension * 2);
   }
-  return index;
 }
 
-function findDecodeEndIndex(samples: Sample[], endTime: number): number {
-  for (const [i, sample] of samples.entries()) {
-    if (sample.dts / sample.timescale > endTime) {
-      return Math.min(samples.length - 1, i + REORDER_PADDING_SAMPLES);
-    }
-  }
-  return samples.length - 1;
+export interface DecodeRequest {
+  file: File;
+  samples: readonly VideoSample[];
+  // Set when the plan is keyframe-sampled: sync samples decode independently, so it never has to
+  // decode the P/B frames in between.
+  keyframeIndices: readonly number[] | null;
+  wanted: number[];
+  cell: { width: number; height: number };
+  rotation: number;
+  crop?: PlannedCrop | undefined;
+  signal?: AbortSignalLike | undefined;
 }
 
 export async function* decodeFrames(
   decoderConfig: VideoDecoderConfig,
-  samples: Sample[],
-  indices: Iterable<number>,
-  wanted: number[],
-  cell: { width: number; height: number },
-  rotation: number,
-  crop?: RenderPlan["crop"],
+  { file, samples, keyframeIndices, wanted, cell, rotation, crop, signal }: DecodeRequest,
 ): AsyncGenerator<ImageBitmap, void, undefined> {
+  throwIfAborted(signal);
   const { canvas, ctx, capture } = createFrameCanvas(cell, crop);
   const { width, height } = canvas;
   const collector = createFrameCollector(wanted, canvas, ctx, width, height, rotation, capture);
@@ -399,23 +307,35 @@ export async function* decodeFrames(
     output: (frame) => {
       try {
         collector.consume(frame);
+      } catch (err) {
+        collector.fail(err);
       } finally {
         frame.close();
       }
     },
     error: (error) => collector.fail(error),
   });
+  const stop = (): void => {
+    if (signal) collector.fail(abortError(signal));
+  };
 
   try {
+    signal?.addEventListener("abort", stop);
     decoder.configure(decoderConfig);
-    void feedSamples(decoder, samples, indices, collector).then(
+    const feeder = createChunkFeeder(decoder, file, samples, collector, signal);
+    const feeding = keyframeIndices
+      ? feeder.feed(keyframeIndices)
+      : feedSpans(feeder, samples, wanted, collector);
+    void feeding.then(
       () => collector.end(),
       (err: unknown) => collector.fail(err),
     );
     for (let image = await collector.take(); image; image = await collector.take()) {
       yield image;
+      throwIfAborted(signal);
     }
   } finally {
+    signal?.removeEventListener("abort", stop);
     if (!isDecoderClosed(decoder)) decoder.close();
     await collector.discard();
   }
@@ -426,13 +346,13 @@ async function* noFrames(): AsyncGenerator<ImageBitmap, void, undefined> {}
 export async function extractFramesWebCodecs(
   file: File,
   plan: RenderPlan,
+  signal?: AbortSignalLike,
 ): Promise<AsyncGenerator<ImageBitmap, void, undefined> | null> {
   if (typeof VideoDecoder === "undefined") return null;
-  const firstFrame = plan.frames[0];
-  const lastFrame = plan.frames.at(-1);
-  if (!firstFrame || !lastFrame) return noFrames();
+  if (plan.frames.length === 0) return noFrames();
 
-  const demuxed = await demuxCached(file);
+  // Shared with other readers of the file, so an abort only stops waiting for it.
+  const demuxed = await untilAborted(demuxCached(file), signal);
   if (!demuxed) return null;
   const { videoTrack, description, samples, rotation } = demuxed;
 
@@ -449,16 +369,14 @@ export async function extractFramesWebCodecs(
   const support = await VideoDecoder.isConfigSupported(decoderConfig);
   if (!support.supported) return null;
 
-  const wanted = plan.frames.map((frame) => frame.timestampSeconds);
-
-  // Sync samples decode independently, so a keyframe-sampled plan never has to decode
-  // the P/B frames in between.
-  const keyframeIndices = selectKeyframeSampleIndices(samples, plan.frames);
-  const indices =
-    keyframeIndices ??
-    range(
-      findDecodeStartIndex(samples, firstFrame.timestampSeconds),
-      findDecodeEndIndex(samples, lastFrame.timestampSeconds),
-    );
-  return decodeFrames(decoderConfig, samples, indices, wanted, plan.cell, rotation, plan.crop);
+  return decodeFrames(decoderConfig, {
+    file,
+    samples,
+    keyframeIndices: selectKeyframeSampleIndices(samples, plan.frames),
+    wanted: plan.frames.map((frame) => frame.timestampSeconds),
+    cell: plan.cell,
+    rotation,
+    crop: plan.crop,
+    signal,
+  });
 }

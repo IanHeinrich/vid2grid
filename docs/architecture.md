@@ -81,6 +81,16 @@ those ports and call core's `generateCollages` or `streamCollages`, which drive
 the whole sequence. The browser and Python executors can also transcribe the
 audio; the Node one cannot.
 
+`generateCollages` and `streamCollages` take an optional `signal`, an
+`AbortSignal` or anything shaped like core's `AbortSignalLike`, and hand it to
+the capture, encode and transcribe ports. Once it aborts, the run stops at the
+next frame or sheet, closes the capture, releases the images it holds, reports
+no more progress and rejects with the signal's own reason. The browser's capture
+stops its reads and closes its decoder at once, and the Node one kills its
+ffmpeg or ffprobe process. The website has no cancel button; the chat app's Stop
+and Answer now cancel the render they interrupt, and Ctrl+C cancels the Node
+command line's.
+
 Audio analysis follows the same split, outside the RenderPlan contract. Core's
 `analyseAudio` (in `packages/core/src/audio/`) is DOM-free: it cuts the audio
 into windows, merges the scores, measures loudness and repetition, and builds
@@ -93,18 +103,37 @@ window. `packages/browser/src/audio/` supplies the ports as
 `createBrowserAudioPorts`, with a zero-shot sound classifier worker that
 averages a label's wordings into one text embedding, and the Whisper worker for
 speech. For analysis Whisper hears five second pieces without timestamps, one
-cue per piece, skipping near-silent ones; the website's transcript keeps the
-timestamped decode. A cue that is a single tag such as `(laughter)` is listed
-as a sound rather than speech.
+cue per piece, skipping near-silent ones. A cue that is a single tag such as
+`(laughter)` is listed as a sound rather than speech.
 `packages/browser/src/capture/mp4AudioDecoder.ts` decodes just the requested
-range of an MP4 or MOV, and other formats fall back to decoding the whole
-file. A Node or Python host can reuse the orchestration by supplying the same
-three ports. A track the browser cannot decode raises `undecodable_audio`.
+range of an unfragmented MP4 or MOV, and other files fall back to decoding the
+whole file. The website's transcript keeps Whisper's timestamps, and from an
+unfragmented MP4 or MOV it holds one 30 second window of decoded audio at a
+time, unless the browser cannot decode the track that way. The windows step
+20 seconds, as transformers.js cuts long audio itself, and the tokens of all of
+them are joined by the library's own code, which matches what neighbours heard
+twice, so no word at a join is lost or doubled. A Node or Python host can reuse
+the orchestration by supplying the same three ports. A track the browser cannot
+decode raises `undecodable_audio`.
 
 The browser probe's `readFrameTimes` returns every frame's presentation time,
 for callers that need to step between real frames rather than guess from the
 frame rate. The WebCodecs demuxer corrects every sample for the edit list, so
 frame times, keyframe times and captured frames share one clock.
+
+The WebCodecs path never loads a file whole, so a file's size does not decide
+whether it can be used. `videoDemuxer.ts` in `packages/browser/src/capture/`
+finds the moov, and any moofs, by their box headers and keeps each sample's
+time, offset and size. `sampleReader.ts` reads sample bytes in runs of at most
+4 MB as the decoder needs them. `decodeSpans.ts` decides which samples those
+are: it decodes straight through short gaps between planned frames, and over a
+gap holding a whole GOP it flushes and starts again at the last sync sample
+shown at or before the next planned frame. Formats mp4box cannot demux keep the
+`<video>` seek path.
+
+The Node capture skips long gaps too. `segments.ts` in `apps/node-library/src/`
+splits a plan where seeking skips at least five seconds of video, and each
+segment is decoded by its own ffmpeg process, one at a time.
 
 `apps/python-library` cannot import TypeScript, so it runs core's own code
 instead of porting it. `npm run bundle` builds

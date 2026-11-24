@@ -8,7 +8,8 @@ interface FakeBitmap {
 let bitmaps: FakeBitmap[];
 let pendingBitmaps: ((bitmap: FakeBitmap) => void)[];
 
-const ctx = { drawImage: vi.fn() } as unknown as CanvasRenderingContext2D;
+const drawImage = vi.fn();
+const ctx = { drawImage } as unknown as CanvasRenderingContext2D;
 const canvas = {} as HTMLCanvasElement;
 const frameAt = (seconds: number) => ({ timestamp: seconds * 1e6 }) as unknown as VideoFrame;
 
@@ -62,6 +63,22 @@ describe("createFrameCollector hand-over", () => {
 
     expect(await collector.take()).toBe(bitmaps[0]);
     await expect(collector.take()).rejects.toBe(failure);
+  });
+
+  it("captures a frame that fills many timestamps once, and hands over a bitmap for each", async () => {
+    const wanted = Array.from({ length: 100 }, (_, i) => i);
+    const collector = collectorFor(wanted);
+
+    collector.consume(frameAt(0));
+    collector.consume(frameAt(99));
+    expect(bitmaps).toHaveLength(2);
+
+    const taken = new Set<ImageBitmap>();
+    for (let image = await collector.take(); image; image = await collector.take()) {
+      taken.add(image);
+    }
+    expect(taken.size).toBe(wanted.length);
+    expect(collector.filledCount()).toBe(wanted.length);
   });
 
   it("asks for no more input while the buffer is full, and none once complete", async () => {
@@ -135,5 +152,37 @@ describe("createFrameCollector failures", () => {
 
     expect(await collector.take()).toBe(bitmaps[0]);
     await expect(collector.take()).rejects.toThrowError("capture failed");
+  });
+});
+
+describe("createFrameCollector after it has finished", () => {
+  it.each([
+    ["failed", (collector: ReturnType<typeof collectorFor>) => collector.fail(new Error("failed"))],
+    ["ended", (collector: ReturnType<typeof collectorFor>) => collector.end()],
+  ])("takes no frame in once it has %s", async (_how, finish) => {
+    const collector = collectorFor([0, 1, 2]);
+    collector.consume(frameAt(0));
+
+    finish(collector);
+    collector.consume(frameAt(1));
+
+    expect(bitmaps).toHaveLength(1);
+    expect(collector.filledCount()).toBe(1);
+    expect(await collector.take()).toBe(bitmaps[0]);
+  });
+
+  it("does not let a frame after a failed draw stand in for the one that failed", async () => {
+    const failure = new Error("draw failed");
+    const collector = collectorFor([0, 1]);
+    drawImage.mockImplementationOnce(() => {
+      throw failure;
+    });
+    expect(() => collector.consume(frameAt(0))).toThrow(failure);
+
+    collector.fail(failure);
+    collector.consume(frameAt(1));
+
+    await expect(collector.take()).rejects.toBe(failure);
+    expect(bitmaps).toEqual([]);
   });
 });
