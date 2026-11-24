@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { currentPending, pendingFor, pendingVideo, setRunning, updateChat } from "../src/state";
+import {
+  currentPending,
+  pendingFor,
+  pendingVideo,
+  removeChat,
+  removePendingVideo,
+  setRunning,
+  updateChat,
+} from "../src/state";
 import type { ImageRef } from "../src/types";
 import {
   attachAndSend,
@@ -48,6 +56,28 @@ describe("attaching over a pending video", () => {
     expect(spies.onOverview).toHaveBeenCalledTimes(1);
     expect(els.video.chipMeta.textContent).toBe("1:00");
   });
+});
+
+describe("an overview that finishes after its video has gone", () => {
+  async function finishAfter(gone: () => void): Promise<void> {
+    const rendered = deferred<ImageRef[]>();
+    const videos = panel({ renderOverview: () => rendered.promise });
+    await videos.attach(video("one.mp4", 1));
+    gone();
+    spies.images.release.mockClear();
+    rendered.resolve([{ id: "s", pinned: false, source: { kind: "upload", name: "s" } }]);
+    const { fileKey } = attachmentFor(video("one.mp4", 1));
+    await vi.waitFor(() => expect(spies.images.release).toHaveBeenCalledTimes(1));
+    const [dropped] = spies.images.release.mock.calls[0] ?? [];
+    expect(dropped).toMatchObject({ refs: [{ id: "s" }], videoKeys: [fileKey] });
+    expect(spies.onOverview).not.toHaveBeenCalled();
+  }
+
+  it("lets its sheets go when the pending video was removed", () =>
+    finishAfter(() => removePendingVideo(state, "chat")));
+
+  it("lets its sheets go when the chat was deleted", () =>
+    finishAfter(() => removeChat(state, "chat")));
 });
 
 describe("dropping the same video into a new chat, when something is in the way", () => {

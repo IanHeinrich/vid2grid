@@ -1,5 +1,6 @@
-import { switchReply } from "../chat/alternates";
+import { switchReply, type SwitchedReply } from "../chat/alternates";
 import { currentModel } from "../chat/models";
+import { videoKeysOf } from "../chat/store";
 import { storyForBranch } from "../chat/story";
 import { imagesOf } from "../imageRefs";
 import { extractTimedClaims, verifyClaims } from "../chat/verify";
@@ -27,6 +28,7 @@ import type {
 import { createToolRunner, type ToolContext } from "../video/tools";
 import type { StatusLine } from "../ui/shared/status";
 import type { Toast, ToastHandle } from "../ui/shared/toast";
+import type { HeldImages, ImageCleanup } from "./imageCleanup";
 import { offerUndo } from "./undo";
 import { modelCallDeps } from "./modelCallDeps";
 import { conversationTools } from "./toolContext";
@@ -47,6 +49,7 @@ export interface MessageActionsDeps {
   status: StatusLine;
   conversation: { reset(messages: readonly ChatMessage[]): void };
   toast: Toast;
+  images: Pick<ImageCleanup, "hold">;
   streamChat: StreamChat;
   toolContext(): ToolContext | undefined;
   onOpen(chatId: string): void;
@@ -114,13 +117,27 @@ async function branch(ctx: MessageActionsContext, message: ChatMessage): Promise
   const story = storyForBranch(chat.storySoFar, copied);
   if (story) copy.storySoFar = story;
   else delete copy.storySoFar;
-  await deps.store.putChat(copy);
-  for (const entry of copied) await deps.store.putMessage(copy.id, entry);
-  const handle = await deps.store.getVideoHandle(chat.id);
-  if (handle) await deps.store.putVideoHandle(copy.id, handle);
+  const held = deps.images.hold({ messages: copied, videoKeys: videoKeysOf(copy, copied) });
+  try {
+    await saveBranch(deps.store, chat.id, copy, copied);
+  } finally {
+    held.letGo();
+  }
   replaceChat(state, copy);
   deps.onChatsChanged();
   deps.onOpen(copy.id);
+}
+
+async function saveBranch(
+  store: ChatStore,
+  fromId: string,
+  copy: Chat,
+  messages: readonly ChatMessage[],
+): Promise<void> {
+  await store.putChat(copy);
+  for (const message of messages) await store.putMessage(copy.id, message);
+  const handle = await store.getVideoHandle(fromId);
+  if (handle) await store.putVideoHandle(copy.id, handle);
 }
 
 async function remove(ctx: MessageActionsContext, message: ChatMessage): Promise<void> {
@@ -130,11 +147,18 @@ async function remove(ctx: MessageActionsContext, message: ChatMessage): Promise
   const group = messageGroup(state.messages, message);
   if (group.length === 0) return;
   const ids = group.map((entry) => entry.id);
-  await deps.store.deleteMessages(chat.id, ids);
+  // Held before anything is deleted, so the images are never without a use while Undo is open.
+  const held = deps.images.hold({ messages: group });
+  try {
+    await deps.store.deleteMessages(chat.id, ids);
+  } catch (error) {
+    held.letGo();
+    throw error;
+  }
   removeMessages(state, ids);
   deps.conversation.reset(state.messages);
   deps.onMessagesChanged?.();
-  showUndo(ctx, chat.id, group);
+  showUndo(ctx, chat.id, group, held);
 }
 
 function invalidateUndo(ctx: MessageActionsContext): void {
@@ -142,12 +166,21 @@ function invalidateUndo(ctx: MessageActionsContext): void {
   ctx.pendingUndo = null;
 }
 
-function showUndo(ctx: MessageActionsContext, chatId: string, messages: ChatMessage[]): void {
+function showUndo(
+  ctx: MessageActionsContext,
+  chatId: string,
+  messages: ChatMessage[],
+  held: HeldImages,
+): void {
   const { state } = ctx;
   ctx.pendingUndo = offerUndo(ctx.deps.toast, "Message deleted", {
-    undo: () => undo(ctx, chatId, messages),
+    undo: () => undo(ctx, chatId, messages).then(() => held.letGo()),
     stillValid: () => !state.running && state.currentChat?.id === chatId,
-    failed: (error) => ctx.deps.status.show(`Could not undo: ${errorText(error)}`, "error"),
+    expired: () => held.final(),
+    failed: (error) => {
+      ctx.deps.status.show(`Could not undo: ${errorText(error)}`, "error");
+      held.final();
+    },
   });
 }
 
@@ -186,15 +219,29 @@ async function switchTo(
   invalidateUndo(ctx);
   const switched = switchReply(state.messages, user.id, index, chat.settings.modelId);
   if (!switched) return;
-  // Saved first: until it is, the shown reply exists only in the messages about to be removed.
-  await deps.store.putMessage(chat.id, switched.user);
-  if (switched.removeIds.length > 0) await deps.store.deleteMessages(chat.id, switched.removeIds);
-  for (const message of switched.restore) await deps.store.putMessage(chat.id, message);
+  // Between the saves, the reply switched to is in no saved message.
+  const held = deps.images.hold({ messages: switched.restore });
+  try {
+    await saveSwitch(deps.store, chat.id, switched);
+  } finally {
+    held.letGo();
+  }
   if (state.currentChat?.id !== chat.id) return;
   removeMessages(state, switched.removeIds);
   upsertMessage(state, switched.user);
   restoreMessages(state, switched.restore);
   deps.conversation.reset(state.messages);
+}
+
+async function saveSwitch(
+  store: ChatStore,
+  chatId: string,
+  { user, removeIds, restore }: SwitchedReply,
+): Promise<void> {
+  // Saved first: until it is, the shown reply exists only in the messages about to be removed.
+  await store.putMessage(chatId, user);
+  if (removeIds.length > 0) await store.deleteMessages(chatId, removeIds);
+  for (const message of restore) await store.putMessage(chatId, message);
 }
 
 async function renderFrames(runTool: RunTool, times: number[]): Promise<ImageRef[]> {

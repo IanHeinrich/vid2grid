@@ -10,6 +10,7 @@ import {
 } from "../src/state";
 import type { VideoAttachment } from "../src/types";
 import { fileKey } from "../src/video/render";
+import { upload } from "./support/factories";
 import {
   attachAndSend,
   attachmentFor,
@@ -44,6 +45,20 @@ function handleFor(file: File | Error, permission: PermissionState = "granted") 
 }
 
 describe("attaching", () => {
+  it("lets go of the video and overview that another dropped video replaces", async () => {
+    const videos = panel();
+    await videos.attach(video("beach.mp4"));
+    const { fileKey: replaced } = attachmentFor(video("beach.mp4"));
+    addPending(state, "chat", { kind: "overview", refs: [upload("sheet")] });
+    spies.images.release.mockClear();
+    await videos.attach(video("city.mp4"));
+    expect(spies.images.release).toHaveBeenCalledTimes(1);
+    expect(spies.images.release).toHaveBeenCalledWith({
+      refs: [upload("sheet")],
+      videoKeys: [replaced],
+    });
+  });
+
   it("holds the dropped video in the message, saving it and its handle to the chat on send", async () => {
     const probed = deferred<{ attachment: VideoAttachment; info: typeof INFO }>();
     const file = video("beach.mp4");

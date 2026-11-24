@@ -28,6 +28,13 @@ describe("offerUndo", () => {
     expect(undo).not.toHaveBeenCalled();
   });
 
+  it("expires when Undo is chosen too late to apply", () => {
+    const expired = vi.fn();
+    offerUndo(toast, "Note deleted", { undo: vi.fn(), stillValid: () => false, expired });
+    els.toast.action.click();
+    expect(expired).toHaveBeenCalledTimes(1);
+  });
+
   it("reports a failed undo, thrown or rejected", async () => {
     offerUndo(toast, "Note deleted", {
       undo: () => {

@@ -28,6 +28,7 @@ import { initToast } from "../src/ui/shared/toast";
 import type * as Tools from "../src/video/tools";
 import { createToolRunner, type ToolContext } from "../src/video/tools";
 import { conversationDeps } from "./support/conversationDeps";
+import { idleImages } from "./support/images";
 import { mountPage, stillToast } from "./support/page";
 import { replyWith } from "./support/streams";
 
@@ -112,6 +113,7 @@ function setup(): MessageActions {
     status: { show: vi.fn(), clear: vi.fn() },
     conversation,
     toast: initToast(els, { set: (run) => timers.push(run), clear: vi.fn() }),
+    images: idleImages(),
     streamChat: (...args) => streamChat(...args),
     toolContext: () => toolContext(),
     onOpen,

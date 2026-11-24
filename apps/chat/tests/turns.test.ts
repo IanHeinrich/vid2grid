@@ -45,6 +45,7 @@ import {
 import { resolveSheetResolution } from "../src/video/resolution";
 import { conversationDeps } from "./support/conversationDeps";
 import { model } from "./support/factories";
+import { idleImages } from "./support/images";
 import { mountPage } from "./support/page";
 import { waitForAbort } from "./support/streams";
 
@@ -108,6 +109,7 @@ function turns(): Turns {
     toast,
     conversation,
     video: { renderSceneLog: vi.fn() },
+    images: idleImages(),
     streamChat,
     timeline: () => undefined,
     onChatChanged: vi.fn(),

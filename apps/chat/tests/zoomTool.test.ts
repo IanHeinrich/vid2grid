@@ -3,9 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 import { createMemoryStore } from "../src/chat/store";
 import type { ImageArea, ImageRef, VideoAttachment, ZoomTarget } from "../src/types";
 import type { PictureTools } from "../src/video/cropPicture";
-import { sheetCacheKey } from "../src/video/sheetCache";
+import { sheetCacheKey, zoomCacheKey } from "../src/video/sheetCache";
 import type { SheetContext } from "../src/video/sheets";
-import { runZoom, zoomCacheKey, type ZoomContext } from "../src/video/zoomTool";
+import { runZoom, type ZoomContext } from "../src/video/zoomTool";
 
 const INFO = { durationSeconds: 120, width: 1920, height: 1080 };
 const VIDEO: VideoAttachment = { name: "clip.mp4", fileKey: "clip.mp4|1|7", ...INFO };
@@ -530,6 +530,18 @@ describe("zoom caching", () => {
     await runZoom({ ...ctx, resolution: 768 }, { t: 62.5, ...AREA });
     await runZoom(ctx, { t: 62.5, ...AREA, left: 201 });
     expect(capture).toHaveBeenCalledTimes(3);
+  });
+
+  it("crops again when the cached picture is no longer stored", async () => {
+    const { ctx, store, crop } = setup();
+    const first = await runZoom(ctx, { t: 62.5, ...AREA });
+    const stored = store.getImage.bind(store);
+    store.getImage = (id) => (id === first.images[0]?.id ? Promise.resolve(undefined) : stored(id));
+    const again = await runZoom(ctx, { t: 62.5, ...AREA });
+    expect(crop).toHaveBeenCalledTimes(2);
+    expect(again.images[0]?.id).not.toBe(first.images[0]?.id);
+    expect((await runZoom(ctx, { t: 62.5, ...AREA })).images).toEqual(again.images);
+    expect(crop).toHaveBeenCalledTimes(2);
   });
 
   it("shares a picture between a sheet's frame and the same moment", async () => {

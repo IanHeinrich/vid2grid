@@ -2,6 +2,7 @@ import type { VideoInfo } from "@vid2grid/core";
 import {
   isRunningIn,
   pendingFor,
+  pendingHolder,
   pendingVideo,
   removePendingVideo,
   setLoadedVideo,
@@ -159,8 +160,9 @@ export async function attach(
 }
 
 function dropPending(ctx: VideoPanelContext, chatId: string): void {
-  removePendingVideo(ctx.state, chatId);
+  const dropped = removePendingVideo(ctx.state, chatId);
   ctx.pendingFiles.delete(chatId);
+  void ctx.deps.images.release(pendingHolder(dropped));
 }
 
 // Removed pending videos are let go; the chat's own video was never touched.

@@ -20,6 +20,7 @@ import {
 } from "../../src/ui/video/videoPanel";
 import { fileKey, type RenderedSheet } from "../../src/video/render";
 import type { ToolContext } from "../../src/video/tools";
+import { idleImages } from "./images";
 import { mountPage } from "./page";
 
 export const INFO = { durationSeconds: 60, width: 640, height: 360 };
@@ -37,6 +38,7 @@ export function attachmentFor(file: File): VideoAttachment {
 function makeSpies() {
   return {
     status: { show: vi.fn(), clear: vi.fn() },
+    images: idleImages(),
     onChatChanged: vi.fn(),
     onVideoChanged: vi.fn(),
     onOverview: vi.fn(),

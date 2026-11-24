@@ -736,10 +736,23 @@ describe("renderOverview", () => {
       framesPerGrid: 20,
       outputResolution: 1568,
     });
+    store.images.set(cached.id, new Blob(["kept"]));
     await store.putSheets(key, [cached]);
     expect(await renderOverview(ctx)).toEqual([
       { ...cached, source: { ...cached.source, fileKey: video.fileKey } },
     ]);
     expect(render).not.toHaveBeenCalled();
+  });
+
+  it("renders again when a cached sheet's image is no longer stored", async () => {
+    const { ctx, store, render } = setup();
+    const first = await renderOverview(ctx);
+    expect(await renderOverview(ctx)).toEqual(first);
+    expect(render).toHaveBeenCalledTimes(1);
+    store.images.delete(first[0]?.id ?? "");
+    const again = await renderOverview(ctx);
+    expect(render).toHaveBeenCalledTimes(2);
+    expect(store.images.has(again[0]?.id ?? "")).toBe(true);
+    expect([...store.sheets.values()]).toEqual([again]);
   });
 });

@@ -53,7 +53,8 @@
   color: var(--danger);
 }
 
-.stored-videos h4 {
+.stored-videos h4,
+.unused-images h4 {
   margin: 0;
   font-size: 0.9rem;
 }

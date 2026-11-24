@@ -1,4 +1,5 @@
 import { isAbortError, orWhenAborted } from "../../abort";
+import type { ImageCleanup } from "../../app/imageCleanup";
 import { sendBlocker } from "../../app/sendBlocker";
 import type { Turns } from "../../app/turns";
 import { downscaleUpload, type ScaledImage } from "../../attachments/images";
@@ -19,6 +20,7 @@ import {
   overviewFor,
   pendingFor,
   pendingImages,
+  pendingHolder,
   pendingVideo,
   removePending,
   removePendingVideo,
@@ -100,6 +102,7 @@ export interface ComposerDeps {
     "overviewRendering" | "whenOverviewReady" | "view" | "pendingView" | "commit"
   >;
   turns: Pick<Turns, "run" | "stop" | "answerNow">;
+  images: Pick<ImageCleanup, "release">;
   // A timestamp check runs beside the turn, so Stop ends it too.
   stopChecks(): void;
   onFiles(files: PickedFile[]): void;
@@ -512,11 +515,12 @@ function pendingItem(
 function removeButton(
   ctx: ComposerContext,
   what: string,
-  remove: (chatId: string) => void,
+  remove: (chatId: string) => readonly PendingAttachment[],
 ): HTMLButtonElement {
   return iconButton("pending-remove", `Remove ${what}`, "×", () => {
-    remove(ctx.state.currentChat?.id ?? "");
+    const dropped = remove(ctx.state.currentChat?.id ?? "");
     pendingChanged(ctx);
+    void ctx.deps.images.release(pendingHolder(dropped));
   });
 }
 

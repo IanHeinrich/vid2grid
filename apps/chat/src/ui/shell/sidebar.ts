@@ -3,9 +3,11 @@ import { chatToMarkdown } from "../../chat/exportChat";
 import { defaultModelId } from "../../chat/models";
 import { videoKeysOf } from "../../chat/store";
 import type { AppElements } from "../../dom";
+import type { ImageHolder } from "../../imageIds";
 import {
   currentPending,
   pendingFor,
+  pendingHolder,
   removeChat,
   replaceChat,
   updateChat,
@@ -19,6 +21,7 @@ import { downloadBlob, safeFilename } from "../shared/download";
 import { icon } from "../shared/icons";
 import { attachMenu } from "../shared/menu";
 import type { StatusLine } from "../shared/status";
+import type { HeldImages, ImageCleanup } from "../../app/imageCleanup";
 import { offerUndo } from "../../app/undo";
 import type { Toast } from "../shared/toast";
 
@@ -35,6 +38,7 @@ export interface SidebarDeps {
   store: ChatStore;
   status: StatusLine;
   toast: Toast;
+  images: Pick<ImageCleanup, "hold" | "release">;
   onOpen(chatId: string): void;
   onDeletingCurrent(): void;
   onCurrentDeleted(): void;
@@ -53,6 +57,8 @@ interface DeletedChat {
   messages: ChatMessage[];
   handle: FileSystemFileHandle | undefined;
   wasCurrent: boolean;
+  // Dropped with the chat and not brought back with it.
+  pending: ImageHolder;
 }
 
 interface SidebarContext {
@@ -490,18 +496,23 @@ async function deleteChat(ctx: SidebarContext, chatId: string): Promise<void> {
   if (!chat) return;
   const wasCurrent = state.currentChat?.id === chat.id;
   if (wasCurrent) deps.onDeletingCurrent();
+  const pending = pendingHolder(pendingFor(state, chat.id));
   // Removed from the state first, so a stopping turn sees the chat is gone and stops writing.
   removeChat(state, chat.id);
   renderList(ctx);
   let deleted: DeletedChat;
+  let held: HeldImages | undefined;
   try {
     const [messages, handle] = await Promise.all([
       deps.store.listMessages(chat.id),
       deps.store.getVideoHandle(chat.id),
     ]);
-    deleted = { chat, messages, handle, wasCurrent };
+    deleted = { chat, messages, handle, wasCurrent, pending };
+    // Held before anything is deleted, so the images are never without a use while Undo is open.
+    held = deps.images.hold({ messages, videoKeys: videoKeysOf(chat, messages) });
     await deps.store.deleteChat(chat.id);
   } catch (error) {
+    held?.letGo();
     replaceChat(state, chat);
     renderList(ctx);
     if (wasCurrent) deps.onOpen(chat.id);
@@ -509,13 +520,27 @@ async function deleteChat(ctx: SidebarContext, chatId: string): Promise<void> {
   }
   deps.onDeleted(chat);
   if (wasCurrent) deps.onCurrentDeleted();
-  const videoKeys = videoKeysOf(chat, deleted.messages);
+  offerChatUndo(ctx, deleted, held);
+}
+
+function offerChatUndo(ctx: SidebarContext, deleted: DeletedChat, held: HeldImages): void {
+  const { deps } = ctx;
+  const { chat, messages, pending } = deleted;
+  const final = () => {
+    deps.onDeleteFinal(videoKeysOf(chat, messages));
+    held.final();
+    void deps.images.release(pending);
+  };
   offerUndo(deps.toast, `Deleted "${chat.title}"`, {
-    undo: () => restoreChat(ctx, deleted),
-    expired: () => deps.onDeleteFinal(videoKeys),
+    undo: async () => {
+      await restoreChat(ctx, deleted);
+      held.letGo();
+      void deps.images.release(pending);
+    },
+    expired: final,
     failed: (error) => {
       deps.toast.show(`Could not restore the chat: ${errorText(error)}`);
-      deps.onDeleteFinal(videoKeys);
+      final();
     },
   });
 }
