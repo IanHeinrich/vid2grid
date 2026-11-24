@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { initMessageActions, type MessageActions } from "../src/app/messageActions";
+import { createImageCleanup } from "../src/app/imageCleanup";
 import { CLEANUP_LOCK, joinTabs, type Tabs } from "../src/app/tabs";
 import { initTurns, type Turns } from "../src/app/turns";
 import { blankChat } from "../src/chat/chats";
 import { BACKUP_FORMAT, BACKUP_VERSION, importBackup } from "../src/chat/exportChat";
+import { createMemoryStore } from "../src/chat/store";
 import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import {
@@ -24,7 +26,15 @@ import { initToast, type Toast } from "../src/ui/shared/toast";
 import { initSidebar } from "../src/ui/shell/sidebar";
 import { sheetCacheKey, zoomCacheKey } from "../src/video/sheetCache";
 import { assistant, sheet, tool, user } from "./support/factories";
-import { cleanupFor, isStored, saveImage, stores, uploadRef, zoomRef } from "./support/images";
+import {
+  aloneTabs,
+  cleanupFor,
+  isStored,
+  saveImage,
+  stores,
+  uploadRef,
+  zoomRef,
+} from "./support/images";
 import { settled, sharedLocks } from "./support/locks";
 import { mountPage } from "./support/page";
 import { replyWith } from "./support/streams";
@@ -164,6 +174,30 @@ async function openState(open: () => Promise<ChatStore>): Promise<void> {
   timers = [];
   toast = initToast(els, { set: (run) => timers.push(run), clear: vi.fn() });
 }
+
+describe("videos in holds", () => {
+  beforeEach(() => openState(() => Promise.resolve(createMemoryStore())));
+
+  it("says whether any hold names a video, and when one stops needing it", async () => {
+    const freed = vi.fn();
+    images = createImageCleanup(state, { store, tabs: aloneTabs, onVideosFreed: freed });
+    const [first, second] = [
+      images.hold({ videoKeys: ["v"] }),
+      images.hold({ videoKeys: ["v", "w"] }),
+    ];
+    images.hold({ messages: [] }).letGo();
+    expect(images.holdsVideo("v")).toBe(true);
+    first.final();
+    expect(images.holdsVideo("v")).toBe(true);
+    expect(freed.mock.calls).toEqual([[["v"]]]);
+    second.letGo();
+    second.letGo();
+    expect(images.holdsVideo("v")).toBe(false);
+    expect(freed.mock.calls).toEqual([[["v"]], [["v", "w"]]]);
+    await images.release({ videoKeys: ["pending"] });
+    expect(freed).toHaveBeenLastCalledWith(["pending"]);
+  });
+});
 
 describe.each(stores)("%s: deleting a chat", (_name, open) => {
   beforeEach(() => openState(open));

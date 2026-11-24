@@ -16,6 +16,7 @@ import type {
   VideoTimeline,
 } from "../types";
 import { imageIdsIn, type ImageHolder } from "../imageIds";
+import { namedVideo } from "./messageVideo";
 import { sceneLogLines } from "./prompts";
 
 export const BACKUP_FORMAT = "vid2grid-chat-backup";
@@ -203,14 +204,13 @@ export async function exportBackup(store: ChatStore, options: ExportOptions = {}
   return new Blob([JSON.stringify(backup)], { type: "application/json" });
 }
 
-// A chat that swapped videos still names its earlier ones on the user messages that attached them.
+// A chat that swapped or removed videos still names them on the user messages that attached them.
 function videoFileKeys(chats: readonly BackupChat[]): Set<string> {
   return new Set(
     chats.flatMap(({ chat, messages }) => [
       ...(chat.video ? [chat.video.fileKey] : []),
-      ...messages.flatMap((message) =>
-        message.role === "user" && message.video ? [message.video.fileKey] : [],
-      ),
+      ...(chat.removedVideos ?? []).map(({ video }) => video.fileKey),
+      ...messages.flatMap((message) => namedVideo(message)?.fileKey ?? []),
     ]),
   );
 }

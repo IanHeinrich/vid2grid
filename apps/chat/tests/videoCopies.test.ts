@@ -3,7 +3,7 @@ import { blankChat } from "../src/chat/chats";
 import { createMemoryStore } from "../src/chat/store";
 import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
-import { createAppState, setPendingVideo, type AppState } from "../src/state";
+import { clearPending, createAppState, setPendingVideo, type AppState } from "../src/state";
 import type { ChatStore } from "../src/types";
 import { formatBytes, initVideoCopies, type VideoStorage } from "../src/ui/video/videoCopies";
 import { mountPage } from "./support/page";
@@ -13,6 +13,7 @@ let state: AppState;
 let store: ChatStore;
 let storage: ReturnType<typeof fakeStorage>;
 let confirm: ReturnType<typeof vi.fn>;
+let held: Set<string>;
 
 function fakeStorage() {
   let finish: () => void = () => undefined;
@@ -34,7 +35,7 @@ function fakeStorage() {
       },
     ),
     load: vi.fn((): Promise<File | undefined> => Promise.resolve(undefined)),
-    remove: vi.fn(() => Promise.resolve()),
+    remove: vi.fn<VideoStorage["remove"]>(() => Promise.resolve()),
     list: vi.fn(() =>
       Promise.resolve([
         { fileKey: "k1", name: "beach.mp4", sizeBytes: 3 * 1024 ** 3, storedAt: 1 },
@@ -55,6 +56,7 @@ function copies() {
     store,
     status,
     confirm,
+    isHeld: (fileKey) => held.has(fileKey),
     onProgress: vi.fn(),
     storage: storage.fake,
   });
@@ -72,6 +74,7 @@ beforeEach(() => {
   store = createMemoryStore();
   storage = fakeStorage();
   confirm = vi.fn(() => true);
+  held = new Set();
   status = { show: vi.fn(), clear: vi.fn() };
 });
 
@@ -210,6 +213,46 @@ describe("releasing", () => {
   it("keeps a copy whose video is waiting to be sent in some chat", async () => {
     const video = { name: "beach.mp4", fileKey: "k1", durationSeconds: 1, width: 1, height: 1 };
     setPendingVideo(state, "other", video);
+    await copies().release("k1");
+    expect(storage.fake.remove).not.toHaveBeenCalled();
+  });
+
+  it("waits for an open Undo, then for an unsent message, before it deletes", async () => {
+    const video = { name: "beach.mp4", fileKey: "k1", durationSeconds: 1, width: 1, height: 1 };
+    const kept = copies();
+    held.add("k1");
+    await kept.release("k1");
+    setPendingVideo(state, "chat", video);
+    held.clear();
+    await kept.releaseWaiting(["k1"]);
+    expect(storage.fake.remove).not.toHaveBeenCalled();
+    clearPending(state, "chat");
+    await kept.releaseWaiting(["k1"]);
+    expect(storage.fake.remove.mock.calls).toEqual([["k1"]]);
+  });
+
+  it("deletes nothing on its own account, only what was released and left waiting", async () => {
+    const kept = copies();
+    await kept.releaseWaiting(["k1"]);
+    expect(storage.fake.remove).not.toHaveBeenCalled();
+  });
+
+  it("keeps a copy that a waiting release finds in use by then", async () => {
+    const video = { name: "beach.mp4", fileKey: "k1", durationSeconds: 1, width: 1, height: 1 };
+    const kept = copies();
+    held.add("k1");
+    await kept.release("k1");
+    await store.putChat({ ...blankChat("m", "chat", 1), video });
+    held.clear();
+    await kept.releaseWaiting(["k1"]);
+    expect(storage.fake.remove).not.toHaveBeenCalled();
+  });
+
+  it("sees an Undo that opened while the chats were read", async () => {
+    vi.spyOn(store, "listVideoKeysByChat").mockImplementation(() => {
+      held.add("k1");
+      return Promise.resolve(new Map<string, string[]>());
+    });
     await copies().release("k1");
     expect(storage.fake.remove).not.toHaveBeenCalled();
   });

@@ -169,14 +169,14 @@ Under **This chat**:
   keeping the newest four turns word for word. You can edit it, summarize now,
   or clear it. If a summary fails, the turn just goes out longer.
 - **Scene log.** The model's notes about the current video. The log starts over
-  when a new video is attached. Edit or delete any note, add your own (it
-  starts at the player's current time), or Condense to have the model merge
-  duplicates. The condensed log is shown as a preview first, and you accept or
-  discard it. The tab shows an approximate token cost.
+  when a new video is attached or the video is removed. Edit or delete any
+  note, add your own (it starts at the player's current time), or Condense to
+  have the model merge duplicates. The condensed log is shown as a preview
+  first, and you accept or discard it. The tab shows an approximate token cost.
 
-Under **Videos**, a picker lists every video the chat has had, newest first,
-with the attached one marked current. It starts on the current video, and each
-heading names the video shown.
+Under **Videos**, a picker lists every video the chat has had and that was not
+removed, newest first, with the attached one marked current. It starts on the
+current video, and each heading names the video shown.
 
 - **Timeline.** The entries made by a study (see Deep analysis). Edit or delete
   entries. It also lists the audio analysed so far, with how much of the video
@@ -224,6 +224,16 @@ and seeking the player work on the current video.
 - The video chip in the header opens the player. If the file is not loaded, for
   example after a restart, it offers to reattach it, from a stored copy or the
   remembered file where the browser allows it.
+- **Remove from chat**, in the menu next to Study video and under each video in
+  the conversation, takes a video out of the chat after it was sent. The player
+  closes, the model no longer gets the video's tools or facts, and the scene
+  log is cleared. The messages stay, with the sheets the model saw, and the
+  video shows as "video.mp4, removed from this chat". In a chat that has had
+  several videos only the chosen one goes, and removing the current one leaves
+  the chat without a current video. The toast's Undo puts everything back. The
+  timeline, people and audio saved for the video are kept, so attaching the
+  same file again brings them back. It has to wait while a reply or a study
+  runs in the chat.
 - The player floats over the chat. Drag its title bar to move it, drag the
   corner handle or use the arrow keys to resize it, and Dock it above the
   conversation. Controls: frame step back and forward, speed from 0.25 to 2
@@ -288,7 +298,9 @@ and seeking the player work on the current video.
 - With "Keep a copy of attached videos in this browser" on, the video is saved
   in the browser's private file storage so it opens again after a restart. It
   asks first above a size you set (4 GB by default). Settings lists the
-  stored copies with usage and quota, and each can be removed.
+  stored copies with usage and quota, and each can be removed. Removing a video
+  from a chat, or deleting the chat, deletes the copy once Undo has gone, unless
+  another chat or message still has the video.
 - Images are kept while anything uses them: a message, a reply you can swipe back
   to, a picture waiting to be sent or a cached sheet of a video some chat still
   has. Once a deletion can no longer be undone, the images only it used are

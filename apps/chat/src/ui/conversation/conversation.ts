@@ -19,7 +19,7 @@ import { closeCompare, stopChecks } from "./replyControls";
 import { togglePinFromLightbox } from "./thumbnails";
 import { createTurn, renderActivity, renderAnswer, renderTurn, streamingStep } from "./turnView";
 import { currentDraft, editLast, renderUser, reopenEditor, reopenUnsaved } from "./userMessage";
-import { aspectOf, renderVideoSlot } from "./videoSlot";
+import { aspectOf, renderRemove, renderVideoSlot } from "./videoSlot";
 
 export type { ConversationDeps } from "./context";
 
@@ -29,6 +29,8 @@ const THINKING = "Thinking…";
 export interface Conversation {
   reset(messages: readonly ChatMessage[]): void;
   show(message: ChatMessage): void;
+  // All are shown before focus moves, so it never lands on one about to be replaced.
+  showAll(messages: readonly ChatMessage[]): void;
   apply(event: TurnEvent): void;
   showError(text: string): void;
   endTurn(): void;
@@ -94,10 +96,8 @@ export function initConversation(
   listen(ctx);
   return {
     reset: (messages) => reset(ctx, messages),
-    show: (message) => {
-      showMessage(ctx, message);
-      afterChange(ctx);
-    },
+    show: (message) => showAll(ctx, [message]),
+    showAll: (messages) => showAll(ctx, messages),
     apply: (event) => applyEvent(ctx, event),
     showError: (text) => showError(ctx, text),
     endTurn: () => endTurn(ctx),
@@ -180,6 +180,7 @@ function setRunning(ctx: ConversationContext, running: boolean): void {
     ".message-action:not(.copy-action):not([data-locked]), .editor-save",
   );
   for (const button of buttons) button.disabled = running;
+  ctx.videoSlots.forEach((slot) => renderRemove(ctx, slot));
 }
 
 function endTurn(ctx: ConversationContext): void {
@@ -305,6 +306,11 @@ function renderCoverage(ctx: ConversationContext): void {
   const duration = ctx.deps.videoView().video?.durationSeconds;
   ctx.videoSlots.forEach((slot) => slot.coverage?.update(messages, duration));
   ctx.deps.onMessagesChanged();
+}
+
+function showAll(ctx: ConversationContext, messages: readonly ChatMessage[]): void {
+  messages.forEach((message) => showMessage(ctx, message));
+  afterChange(ctx);
 }
 
 function showMessage(ctx: ConversationContext, message: ChatMessage): void {

@@ -171,6 +171,21 @@ describe("seeking and zooming in the lightbox", () => {
     vi.useRealTimers();
   });
 
+  it.each([
+    ["no video", { video: undefined, url: null }],
+    ["a later video", { video: { ...beach, fileKey: "dunes-key" }, url: "blob:dunes" }],
+  ])("seeks a removed video that no message names, not %s", (_what, view) => {
+    vi.useFakeTimers();
+    setView(view);
+    spies.removedVideos.mockReturnValue([{ video: beach, throughCreatedAt: 9 }]);
+    const image = openSheet();
+    clickAt(image, 750, 600);
+    vi.runAllTimers();
+    expect(spies.onSeek).toHaveBeenCalledWith(39, beach);
+    expect(spies.onCue).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
   it("asks about the clicked frame and closes", () => {
     const image = openSheet();
     clickAt(image, 750, 600);

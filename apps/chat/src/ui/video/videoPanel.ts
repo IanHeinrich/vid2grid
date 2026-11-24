@@ -3,7 +3,15 @@ import { shownVideo, type AppState } from "../../state";
 import { errorText } from "../../text";
 import type { VideoAttachment } from "../../types";
 import { dropStaleAudio } from "./audioPrep";
-import { attach, commit, dropStalePending, requestReattach, restore } from "./attachment";
+import {
+  attach,
+  commit,
+  detach,
+  dropStalePending,
+  putBack,
+  requestReattach,
+  restore,
+} from "./attachment";
 import { renderChip } from "./chip";
 import {
   committedLoaded,
@@ -12,6 +20,7 @@ import {
   isMissing,
   pendingUrlOf,
   showingPending,
+  type LoadedFile,
   type VideoPanelContext,
   type VideoPanelDeps,
   type VideoView,
@@ -28,7 +37,7 @@ import {
   syncPendingUrl,
 } from "./playback";
 
-export type { VideoPanelDeps, VideoView } from "./context";
+export type { LoadedFile, VideoPanelDeps, VideoView } from "./context";
 
 export interface VideoPanel {
   restore(): Promise<void>;
@@ -37,6 +46,10 @@ export interface VideoPanel {
   // Makes the sent video the chat's own, saving it before anything in memory changes.
   commit(chatId: string, video: VideoAttachment): Promise<void>;
   reattach(): Promise<void>;
+  // Stops playing and preparing videos the chat no longer names, and lets go of its own file.
+  detach(chatId: string, keys: ReadonlySet<string>): LoadedFile | undefined;
+  // Opens the chat's own video again after detach.
+  putBack(chatId: string, loaded: LoadedFile | undefined): Promise<void>;
   // A video other than the chat's current one plays from a kept copy, leaving the chat as it is.
   seek(seconds: number, video?: VideoAttachment): void;
   // Moves the player to a moment without playing, for when something covers it.
@@ -95,21 +108,27 @@ export function initVideoPanel(
     attach: (file, handle) => attach(ctx, file, handle),
     commit: (chatId, video) => commit(ctx, chatId, video),
     reattach: () => requestReattach(ctx),
+    detach: (chatId, keys) => detach(ctx, chatId, keys),
+    putBack: (chatId, loaded) => putBack(ctx, chatId, loaded),
     seek: (seconds, video) => seekMoment(ctx, seconds, video),
     cue: (seconds) => openAtTimestamp(ctx, seconds, false),
     openPlayer: (seconds) => openPlayer(ctx, seconds),
     attachedPlaybackTime: () =>
       playing.older || showingPending(ctx) ? undefined : els.miniPlayer.video.currentTime,
-    view: () => ({
-      video: state.currentChat?.video,
-      url: committedLoaded(ctx) ? ctx.objectUrl : null,
-    }),
+    view: () => committedView(ctx),
     pendingView: () => pendingView(ctx),
     render: () => render(ctx),
     renderCoverage: () =>
       ctx.coverage.update(state.messages, state.currentChat?.video?.durationSeconds),
     overviewRendering: () => currentRender(ctx) !== undefined,
     whenOverviewReady: () => currentRender(ctx)?.done ?? Promise.resolve(),
+  };
+}
+
+function committedView(ctx: VideoPanelContext): VideoView {
+  return {
+    video: ctx.state.currentChat?.video,
+    url: committedLoaded(ctx) ? ctx.objectUrl : null,
   };
 }
 

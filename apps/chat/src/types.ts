@@ -81,6 +81,12 @@ export interface VideoAttachment {
   height: number;
 }
 
+// Stays what the messages up to then are about where none of them names a video.
+export interface RemovedVideo {
+  video: VideoAttachment;
+  throughCreatedAt: number;
+}
+
 export interface SceneNote {
   timeSeconds: number;
   text: string;
@@ -93,6 +99,8 @@ export interface Chat {
   updatedAt: number;
   settings: ChatSettings;
   video?: VideoAttachment;
+  // The chat's own videos that were removed, oldest first.
+  removedVideos?: RemovedVideo[];
   sceneLog: SceneNote[];
   storySoFar?: StorySoFar;
   // Absent means the chat is in no folder.
@@ -260,6 +268,8 @@ export interface UserMessage extends MessageBase {
   images: ImageRef[];
   // Where the video was attached, so the conversation shows it inline at that point.
   video?: VideoAttachment;
+  // The video attached here before it was removed from the chat: shown by name, and not in use.
+  removedVideo?: VideoAttachment;
   // Sent by "Keep going": shown as a small marker rather than a message bubble.
   continuation?: true;
   // How hard this message's reply investigates; absent means normal.

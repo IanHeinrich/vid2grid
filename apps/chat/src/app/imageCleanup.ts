@@ -18,6 +18,8 @@ export type SweepResult = { deleted: UnusedImages } | { refused: SweepRefusal };
 export interface ImageCleanup {
   // Keeps what an undo, or work between two saves, could still bring back.
   hold(holder: ImageHolder): HeldImages;
+  // Whether something held could bring back a use of the video.
+  holdsVideo(fileKey: string): boolean;
   // Skipped while a reply runs or another tab is open, whose unsaved images cannot be seen here.
   release(dropped: ImageHolder): Promise<void>;
   countUnused(): Promise<UnusedImages>;
@@ -31,6 +33,8 @@ export interface ImageCleanup {
 export interface ImageCleanupDeps {
   store: ImageRelease;
   tabs: Tabs;
+  // A hold or an unsent message no longer needs these videos, though something else may.
+  onVideosFreed?(videoKeys: readonly string[]): void;
 }
 
 interface CleanupContext {
@@ -43,6 +47,7 @@ export function createImageCleanup(state: AppState, deps: ImageCleanupDeps): Ima
   const ctx: CleanupContext = { state, deps, held: new Set() };
   return {
     hold: (holder) => hold(ctx, holder),
+    holdsVideo: (fileKey) => [...ctx.held].some((held) => held.videoKeys?.includes(fileKey)),
     release: (dropped) => release(ctx, dropped),
     countUnused: () => deps.store.countUnusedImages(() => unsavedUse(ctx)),
     countToDelete: () => countToDelete(ctx),
@@ -58,11 +63,17 @@ function hold(ctx: CleanupContext, holder: ImageHolder): HeldImages {
   const entry = { ...holder };
   ctx.held.add(entry);
   return {
-    letGo: () => ctx.held.delete(entry),
+    letGo: () => {
+      if (ctx.held.delete(entry)) videosFreed(ctx, entry);
+    },
     final: () => {
       if (ctx.held.delete(entry)) void release(ctx, entry);
     },
   };
+}
+
+function videosFreed({ deps }: CleanupContext, { videoKeys = [] }: ImageHolder): void {
+  if (videoKeys.length > 0) deps.onVideosFreed?.(videoKeys);
 }
 
 function unsavedUse({ state, held }: CleanupContext): ImageUse {
@@ -77,6 +88,7 @@ function unsavedUse({ state, held }: CleanupContext): ImageUse {
 
 async function release(ctx: CleanupContext, holder: ImageHolder): Promise<void> {
   const { store, tabs } = ctx.deps;
+  videosFreed(ctx, holder);
   const running = () => ctx.state.runningChats.size > 0;
   try {
     const dropped = imageUse(holder);

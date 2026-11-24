@@ -4,6 +4,7 @@ import type {
   ChatMessage,
   ImageStore,
   ModelInfo,
+  RemovedVideo,
   ToolCall,
   UserMessage,
   VideoAttachment,
@@ -34,6 +35,10 @@ export interface ConversationDeps {
   videoView(): VideoView;
   onPopOut(seconds: number): void;
   onReattach(): void;
+  onRemoveVideo(video: VideoAttachment): void;
+  // Why a video cannot be removed now, or undefined.
+  removeBlocker(): string | undefined;
+  removedVideos(): readonly RemovedVideo[];
   showThinking(): boolean;
   onPrefill(text: string): void;
   focusComposer(): void;
@@ -58,6 +63,7 @@ export interface VideoSlot {
   el: HTMLElement;
   video: VideoAttachment;
   shown: string;
+  remove: HTMLButtonElement;
   coverage: CoverageStrip | undefined;
 }
 
@@ -193,7 +199,8 @@ export function videoAbout(
   ctx: ConversationContext,
   messageId: string | undefined,
 ): VideoAttachment | undefined {
-  return videoForMessage(ctx.messages.values(), messageId, ctx.deps.videoView().video);
+  const current = ctx.deps.videoView().video;
+  return videoForMessage(ctx.messages.values(), messageId, current, ctx.deps.removedVideos());
 }
 
 export function seekHandler(

@@ -72,6 +72,11 @@
   background: var(--bg-raised);
 }
 
+.study-menu-item[aria-disabled="true"] {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
 .video-chip:hover {
   border-color: var(--accent);
 }
@@ -273,7 +278,8 @@
   overflow-wrap: anywhere;
 }
 
-.inline-video.is-replaced .inline-video-caption {
+.inline-video.is-replaced .inline-video-caption,
+.inline-video.is-removed .inline-video-caption {
   font-style: italic;
 }
 
@@ -281,7 +287,13 @@
   align-self: flex-start;
 }
 
-.pop-out {
+.remove-video:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pop-out,
+.remove-video {
   flex-shrink: 0;
   padding: 0 0.5rem;
   border: 1px solid var(--border);

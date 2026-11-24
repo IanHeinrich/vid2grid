@@ -10,17 +10,22 @@ import {
   els,
   expectedPlan,
   flaggedStudy,
+  focusComposer,
   hangingStudy,
   hangingZoom,
   menuToggle,
+  onRemoveVideo,
   offerFor,
   openPlayer,
   planFor,
   reloadPage,
+  removeBlocker,
+  removeItem,
   resetStudy,
   restartItem,
   setInput,
   setup,
+  shownItems,
   STUDY_MODEL_ID,
   startStudy,
   state,
@@ -93,7 +98,7 @@ describe("the study control", () => {
   it("labels itself Study video, Restudy or Resume from the stored timeline", async () => {
     setup();
     expect(els.study.button.textContent).toBe("Study video");
-    expect(menuToggle()?.hidden).toBe(true);
+    expect(shownItems()).toEqual(["Remove from chat"]);
     await store.putTimeline({ ...timeline([]), fileKey: "done-key" });
     const doneChat = { ...blankChat("m", "done", 2), video: { ...VIDEO, fileKey: "done-key" } };
     replaceChat(state, doneChat);
@@ -160,6 +165,64 @@ describe("the study menu and Escape", () => {
     menuToggle()?.dispatchEvent(escape);
     expect(escape.defaultPrevented).toBe(true);
     expect(restartItem()?.closest<HTMLElement>(".study-menu")?.hidden).toBe(true);
+  });
+});
+
+describe("removing the video from the study menu", () => {
+  it("hands over the chat's video, naming it on the item", () => {
+    setup();
+    menuToggle()?.click();
+    expect(removeItem()?.title).toContain(VIDEO.name);
+    expect(removeItem()?.getAttribute("aria-disabled")).toBe("false");
+    removeItem()?.click();
+    expect(onRemoveVideo).toHaveBeenCalledWith(VIDEO);
+  });
+
+  it("shows the reason it cannot be used, as of when the menu opens", () => {
+    setup();
+    removeBlocker.mockReturnValue("Stop or wait for the reply.");
+    menuToggle()?.click();
+    expect(removeItem()?.getAttribute("aria-disabled")).toBe("true");
+    expect(removeItem()?.title).toBe("Stop or wait for the reply.");
+  });
+
+  it("says in which chat a study runs", () => {
+    const study = setup();
+    hangingStudy();
+    study.open();
+    startStudy();
+    expect(study.isRunningIn("chat")).toBe(true);
+    expect(study.isRunningIn("other")).toBe(false);
+  });
+
+  it("moves focus to the composer when the menu it was in goes", () => {
+    const study = setup();
+    onRemoveVideo.mockImplementation(() => {
+      replaceChat(state, blankChat("m", "chat", 1));
+      study.render();
+    });
+    menuToggle()?.click();
+    removeItem()?.click();
+    expect(focusComposer).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves focus on the menu's button when nothing was removed", () => {
+    const study = setup();
+    menuToggle()?.click();
+    removeItem()?.click();
+    study.render();
+    expect(document.activeElement).toBe(menuToggle());
+    expect(focusComposer).not.toHaveBeenCalled();
+  });
+
+  it("hides the control once the chat has no video", () => {
+    const study = setup();
+    menuToggle()?.click();
+    const chat = blankChat("m", "chat", 1);
+    replaceChat(state, chat);
+    study.render();
+    expect(menuToggle()?.closest<HTMLElement>(".study-control")?.hidden).toBe(true);
+    expect(menuToggle()?.getAttribute("aria-expanded")).toBe("false");
   });
 });
 

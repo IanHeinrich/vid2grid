@@ -53,6 +53,9 @@ export let confirm: ReturnType<typeof vi.fn>;
 export let openPlayer: ReturnType<typeof vi.fn>;
 export let seekVideo: ReturnType<typeof vi.fn>;
 export let openTimeline: ReturnType<typeof vi.fn>;
+export let removeBlocker: ReturnType<typeof vi.fn<() => string | undefined>>;
+export let onRemoveVideo: ReturnType<typeof vi.fn>;
+export let focusComposer: ReturnType<typeof vi.fn>;
 export let status: { show: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn> };
 export let analyseAudio: ReturnType<typeof vi.fn<AnalyseAudio>>;
 
@@ -74,6 +77,9 @@ export function resetStudy(): void {
   openPlayer = vi.fn();
   seekVideo = vi.fn();
   openTimeline = vi.fn();
+  removeBlocker = vi.fn((): string | undefined => undefined);
+  onRemoveVideo = vi.fn();
+  focusComposer = vi.fn();
   status = { show: vi.fn(), clear: vi.fn() };
   analyseAudio = vi.fn<AnalyseAudio>((_file, request) =>
     Promise.resolve({
@@ -106,6 +112,9 @@ export function setup(shownVideo?: () => ChatVideo | undefined): Study {
     openPlayer,
     seekVideo,
     openTimeline,
+    removeBlocker,
+    onRemoveVideo,
+    focusComposer,
     currentTime: () => 75.4,
     onChanged: vi.fn(),
     analyseAudio,
@@ -178,6 +187,11 @@ export function startStudy(): void {
 }
 
 export const menuToggle = () => document.querySelector<HTMLButtonElement>(".study-menu-button");
+export const removeItem = () => document.querySelector<HTMLButtonElement>(".study-remove");
+export const shownItems = () =>
+  [...document.querySelectorAll<HTMLButtonElement>(".study-menu-item")]
+    .filter((item) => !item.hidden)
+    .map((item) => item.textContent.trim());
 export const restartItem = () => document.querySelector<HTMLButtonElement>(".study-restart");
 
 export function setInput(input: HTMLInputElement | HTMLSelectElement, value: string): void {

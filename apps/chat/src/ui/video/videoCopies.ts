@@ -44,7 +44,10 @@ export interface VideoCopies {
   approve(file: File, fileKey: string): void;
   save(file: File, fileKey: string): void;
   load(fileKey: string): Promise<File | undefined>;
+  // Deletes the copy where nothing uses it. One an Undo or an unsent message may need waits.
   release(fileKey: string): Promise<void>;
+  // Asks again for those of the videos whose copies were left waiting.
+  releaseWaiting(videoKeys: readonly string[]): Promise<void>;
   status(fileKey: string | undefined): string;
   renderList(): Promise<void>;
 }
@@ -53,6 +56,8 @@ export interface VideoCopiesDeps {
   store: ChatStore;
   status: StatusLine;
   confirm(message: string): boolean;
+  // Whether an open Undo could bring back a use of the video.
+  isHeld(fileKey: string): boolean;
   onProgress(): void;
   storage?: VideoStorage;
 }
@@ -72,6 +77,7 @@ interface CopiesContext {
   askedForPersistence: boolean;
   toldUnsupported: boolean;
   answers: Map<string, boolean>;
+  waiting: Set<string>;
 }
 
 export function formatBytes(bytes: number): string {
@@ -101,12 +107,14 @@ export function initVideoCopies(
     askedForPersistence: false,
     toldUnsupported: false,
     answers: new Map(),
+    waiting: new Set(),
   };
   return {
     approve: (file, fileKey) => approve(ctx, file, fileKey),
     save: (file, fileKey) => save(ctx, file, fileKey),
     load: (fileKey) => load(ctx, fileKey),
     release: (fileKey) => release(ctx, fileKey),
+    releaseWaiting: (videoKeys) => releaseWaiting(ctx, videoKeys),
     status: (fileKey) => {
       const percent = fileKey === undefined ? undefined : ctx.saving.get(fileKey);
       return percent === undefined ? "" : `Saving copy ${percent}%`;
@@ -183,12 +191,26 @@ async function load(ctx: CopiesContext, fileKey: string): Promise<File | undefin
 
 async function release(ctx: CopiesContext, fileKey: string): Promise<void> {
   if (!ctx.storage.supported()) return;
-  const pending = [...ctx.state.pending.values()].map(pendingVideo);
-  if (pending.some((video) => video?.fileKey === fileKey)) return;
+  if (mustWait(ctx, fileKey)) return;
   const videoKeys = await ctx.deps.store.listVideoKeysByChat();
   if ([...videoKeys.values()].some((keys) => keys.includes(fileKey))) return;
+  // A hold begins before its video is taken out of the store, so one the list missed shows here.
+  if (mustWait(ctx, fileKey)) return;
   await stopWriting(ctx, fileKey);
   await ctx.storage.remove(fileKey);
+}
+
+function mustWait(ctx: CopiesContext, fileKey: string): boolean {
+  const pending = [...ctx.state.pending.values()].map(pendingVideo);
+  const waits = pending.some((video) => video?.fileKey === fileKey) || ctx.deps.isHeld(fileKey);
+  if (waits) ctx.waiting.add(fileKey);
+  else ctx.waiting.delete(fileKey);
+  return waits;
+}
+
+async function releaseWaiting(ctx: CopiesContext, videoKeys: readonly string[]): Promise<void> {
+  const waiting = [...new Set(videoKeys)].filter((fileKey) => ctx.waiting.has(fileKey));
+  await Promise.all(waiting.map((fileKey) => release(ctx, fileKey)));
 }
 
 async function stopWriting(ctx: CopiesContext, fileKey: string): Promise<void> {

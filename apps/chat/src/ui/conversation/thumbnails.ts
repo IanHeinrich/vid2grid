@@ -3,10 +3,13 @@ import { imageCaption } from "./captions";
 import type { ConversationContext, Entry } from "./context";
 import type { LightboxItem } from "./lightbox";
 
+// Built on the newest copy: a message under its editor is not rendered again when it changes.
 export function togglePin(ctx: ConversationContext, message: UserMessage, index: number): void {
+  const latest = ctx.messages.get(message.id);
+  const base = latest?.role === "user" ? latest : message;
   const updated: UserMessage = {
-    ...message,
-    images: message.images.map((ref, i) => (i === index ? { ...ref, pinned: !ref.pinned } : ref)),
+    ...base,
+    images: base.images.map((ref, i) => (i === index ? { ...ref, pinned: !ref.pinned } : ref)),
   };
   ctx.deps.onMessageChanged(updated);
   ctx.showMessage(updated);

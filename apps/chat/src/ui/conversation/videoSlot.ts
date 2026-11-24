@@ -1,7 +1,7 @@
 import type { VideoAttachment } from "../../types";
 import { smallButton } from "../shared/buttons";
 import { createCoverageStrip } from "../video/coverageStrip";
-import { videoSummary } from "../video/overviewText";
+import { removeVideoTitle, videoSummary } from "../video/overviewText";
 import type { ConversationContext, VideoSlot } from "./context";
 
 export function aspectOf(video: VideoAttachment | undefined): number | undefined {
@@ -17,12 +17,36 @@ export function videoSlotFor(
     el: document.createElement("div"),
     video,
     shown: "",
+    remove: smallButton("remove-video", "Remove from chat", () => {
+      ctx.pendingFocus = { kind: "message", id: messageId };
+      ctx.deps.onRemoveVideo(video);
+    }),
     coverage: undefined,
   };
   slot.el.className = "inline-video";
   ctx.videoSlots.set(messageId, slot);
   renderVideoSlot(ctx, slot);
   return slot.el;
+}
+
+export function removedVideoLine(video: VideoAttachment): HTMLElement {
+  const el = document.createElement("div");
+  el.className = "inline-video is-removed";
+  el.append(videoCaption(`${video.name}, removed from this chat`));
+  return el;
+}
+
+export function renderRemove(ctx: ConversationContext, { remove, video }: VideoSlot): void {
+  const reason = ctx.deps.removeBlocker();
+  remove.disabled = reason !== undefined;
+  remove.title = reason ?? removeVideoTitle(video);
+}
+
+function slotBar(...parts: HTMLElement[]): HTMLElement {
+  const bar = document.createElement("div");
+  bar.className = "inline-video-bar";
+  bar.append(...parts);
+  return bar;
 }
 
 function videoCaption(text: string): HTMLElement {
@@ -34,6 +58,7 @@ function videoCaption(text: string): HTMLElement {
 
 // Rebuilt only when what it shows changes, so a refresh does not stop an inline video mid-play.
 export function renderVideoSlot(ctx: ConversationContext, slot: VideoSlot): void {
+  renderRemove(ctx, slot);
   const view = ctx.deps.videoView();
   const replaced = view.video?.fileKey !== slot.video.fileKey;
   const shown = replaced ? "replaced" : (view.url ?? "missing");
@@ -43,12 +68,12 @@ export function renderVideoSlot(ctx: ConversationContext, slot: VideoSlot): void
   slot.coverage = undefined;
   const summary = videoSummary(slot.video);
   if (replaced) {
-    slot.el.replaceChildren(videoCaption(`${summary} (replaced)`));
+    slot.el.replaceChildren(slotBar(videoCaption(`${summary} (replaced)`), slot.remove));
     return;
   }
   if (view.url === null) {
     const reattach = smallButton("button primary", "Reattach video", () => ctx.deps.onReattach());
-    slot.el.replaceChildren(videoCaption(summary), reattach);
+    slot.el.replaceChildren(videoCaption(summary), slotBar(reattach, slot.remove));
     return;
   }
   const player = document.createElement("video");
@@ -61,9 +86,7 @@ export function renderVideoSlot(ctx: ConversationContext, slot: VideoSlot): void
     player.pause();
     ctx.deps.onPopOut(player.currentTime);
   });
-  const bar = document.createElement("div");
-  bar.className = "inline-video-bar";
-  bar.append(videoCaption(summary), popOut);
+  const bar = slotBar(videoCaption(summary), popOut, slot.remove);
   const coverage = createCoverageStrip({
     onSeek: (seconds) => {
       player.currentTime = seconds;

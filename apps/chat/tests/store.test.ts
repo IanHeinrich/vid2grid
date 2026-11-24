@@ -220,6 +220,16 @@ describe.each(stores)("%s chat store video keys", (_name, open) => {
     expect((await store.listVideoKeysByChat()).size).toBe(0);
   });
 
+  it("leaves out a video removed from its chat", async () => {
+    const store = await open();
+    await store.putChat(chat("a", 1));
+    await store.putMessage("a", videoMessage("a-1", 1, "older"));
+    const removed = { ...userMessage("a-2", 2), removedVideo: video("removed") };
+    await store.putMessage("a", removed);
+    expect(await store.listVideoKeysByChat()).toEqual(new Map([["a", ["older"]]]));
+    expect((await store.listMessages("a"))[1]).toEqual(removed);
+  });
+
   it("forgets the videos of a deleted chat", async () => {
     const store = await open();
     await store.putChat({ ...chat("a", 1), video: video("latest") });

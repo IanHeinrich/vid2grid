@@ -5,6 +5,7 @@ import type {
   AssistantMessage,
   ChatMessage,
   ChatStore,
+  RemovedVideo,
   UserMessage,
   VideoAttachment,
 } from "../../src/types";
@@ -53,6 +54,9 @@ function makeSpies() {
     onCopy: vi.fn(),
     onPopOut: vi.fn(),
     onReattach: vi.fn(),
+    onRemoveVideo: vi.fn(),
+    removeBlocker: vi.fn((): string | undefined => undefined),
+    removedVideos: vi.fn((): readonly RemovedVideo[] => []),
     onPrefill: vi.fn(),
     focusComposer: vi.fn(),
     onSwitchReply: vi.fn(),

@@ -533,8 +533,8 @@ function offerChatUndo(
   const { deps } = ctx;
   const { chat, messages } = deleted;
   const final = () => {
-    deps.onDeleteFinal(videoKeysOf(chat, messages));
     held.final();
+    deps.onDeleteFinal(videoKeysOf(chat, messages));
     heldDraft.final();
     releaseLateDraft(ctx, chat.id);
   };

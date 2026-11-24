@@ -443,6 +443,36 @@ describe("backups with casts and earlier videos", () => {
     expect(await target.getTimeline("unrelated")).toBeUndefined();
   });
 
+  it("round-trips a removed video no message names and what is known about it", async () => {
+    const source = createMemoryStore();
+    const removedVideos = [{ video: earlierVideo, throughCreatedAt: 1 }];
+    const bare: Chat = { ...chat("c1"), removedVideos };
+    delete bare.video;
+    await source.putChat(bare);
+    await source.putTimeline({ ...timeline, fileKey: earlierVideo.fileKey });
+    const target = createMemoryStore();
+    const counts = await importBackup(target, await asFile(await exportBackup(source)));
+    expect(counts).toMatchObject({ timelines: 1 });
+    expect((await target.getChat("c1"))?.removedVideos).toEqual(removedVideos);
+  });
+
+  it("round-trips a removed video's message and what is known about it", async () => {
+    const source = await storeWithTwoVideos();
+    const removed: ChatMessage = {
+      id: "u0",
+      createdAt: 0,
+      role: "user",
+      text: "First clip.",
+      images: [],
+      removedVideo: earlierVideo,
+    };
+    await source.putMessage("c1", removed);
+    const target = createMemoryStore();
+    const counts = await importBackup(target, await asFile(await exportBackup(source)));
+    expect(counts).toMatchObject({ timelines: 2, casts: 2 });
+    expect(await target.listMessages("c1")).toEqual([removed]);
+  });
+
   it("keeps a cast already in the store", async () => {
     const blob = await asFile(await exportBackup(await storeWithTwoVideos()));
     const target = createMemoryStore();

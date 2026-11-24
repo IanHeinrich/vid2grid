@@ -19,6 +19,7 @@ import { icon, type IconName } from "../shared/icons";
 import { attachMenu } from "../shared/menu";
 import { createModelPicker } from "../modelPicker/modelPicker";
 import { storedPickerSettings } from "../modelPicker/pickerModel";
+import { removeVideoTitle } from "../video/overviewText";
 import { modelCallDeps } from "../../app/modelCallDeps";
 import {
   changed,
@@ -52,6 +53,7 @@ export interface Study {
   pause(): void;
   timeline(): VideoTimeline | undefined;
   status(): string;
+  isRunningIn(chatId: string): boolean;
   render(): void;
 }
 
@@ -71,11 +73,9 @@ export function initStudy(
     els: els.study,
     menu,
     menuHandle: attachMenu({
-      control: menu.control,
-      button: menu.toggle,
-      list: menu.menu,
-      items: ".study-menu-item",
+      ...menuParts(menu),
       onPick: (item) => pickMenuItem(ctx, item),
+      onToggle: () => renderRemove(ctx),
     }),
     state,
     deps,
@@ -116,6 +116,7 @@ export function initStudy(
     pause: () => ctx.running?.controller.abort(),
     timeline: () => usableTimeline(ctx),
     status: () => statusText(ctx),
+    isRunningIn: (chatId) => ctx.running?.chatId === chatId,
     render: () => render(ctx),
   };
 }
@@ -129,7 +130,12 @@ function studyMenu(button: HTMLButtonElement): StudyMenu {
     menu: part(control, ".study-menu", HTMLElement),
     restart: part(control, ".study-restart", HTMLButtonElement),
     zoom: part(control, ".study-zoom", HTMLButtonElement),
+    remove: part(control, ".study-remove", HTMLButtonElement),
   };
+}
+
+function menuParts({ control, toggle, menu }: StudyMenu) {
+  return { control, button: toggle, list: menu, items: ".study-menu-item" };
 }
 
 function listen(ctx: StudyContext): void {
@@ -183,6 +189,20 @@ function pickMenuItem(ctx: StudyContext, item: HTMLElement): void {
   if (item === ctx.menu.restart) openDialog(ctx, true);
   else if (item === ctx.menu.zoom) reportStudyFailure(ctx, startZoom(ctx));
   else if (item === ctx.els.clearButton) clearTimeline(ctx);
+  else if (item === ctx.menu.remove) removeVideo(ctx);
+}
+
+function removeVideo(ctx: StudyContext): void {
+  const video = ctx.state.currentChat?.video;
+  if (video) ctx.deps.onRemoveVideo(video);
+}
+
+// Not disabled outright, so the arrow keys still reach it and a pick says why it cannot be used.
+function renderRemove(ctx: StudyContext): void {
+  const { remove } = ctx.menu;
+  const reason = ctx.deps.removeBlocker();
+  remove.setAttribute("aria-disabled", String(reason !== undefined));
+  remove.title = reason ?? removeVideoTitle(ctx.state.currentChat?.video);
 }
 
 function reportStudyFailure(ctx: StudyContext, work: Promise<void>): void {
@@ -487,6 +507,16 @@ function ensureLoaded(ctx: StudyContext, key: string): void {
     });
 }
 
+// Removing the video from this menu hides it, and focus would fall to the page.
+function hideControl(ctx: StudyContext, hidden: boolean): void {
+  const { control } = ctx.menu;
+  const focused = control.contains(document.activeElement);
+  control.hidden = hidden;
+  if (!hidden) return;
+  ctx.menuHandle.close();
+  if (focused) ctx.deps.focusComposer();
+}
+
 function render(ctx: StudyContext): void {
   stopOrphanedStudy(ctx);
   const key = videoKey(ctx);
@@ -494,19 +524,17 @@ function render(ctx: StudyContext): void {
   const shown = shownVideo(ctx);
   if (shown) ensureLoaded(ctx, shown.video.fileKey);
   const { button, clearButton } = ctx.els;
-  const { control, toggle, restart, zoom } = ctx.menu;
+  const { restart, zoom } = ctx.menu;
   const study = studyState(ctx);
   const entries = currentTimeline(ctx)?.entries.length ?? 0;
   const offer = zoomOffer(ctx);
-  control.hidden = key === undefined;
+  hideControl(ctx, key === undefined);
   button.replaceChildren(icon(BUTTON_ICONS[study]), headerLabel(BUTTON_LABELS[study]));
   button.disabled = study === "busy";
   button.title = buttonTitle(study);
   restart.hidden = study !== "paused";
   clearButton.hidden = entries === 0 || study === "running";
   showOffer(zoom, offer);
-  toggle.hidden = restart.hidden && clearButton.hidden && zoom.hidden;
-  if (toggle.hidden) ctx.menuHandle.close();
   renderProgress(ctx, offer);
   renderTimeline(ctx, offer);
   renderAudioList(ctx);

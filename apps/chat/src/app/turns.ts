@@ -334,7 +334,8 @@ function turnTools(ctx: TurnsContext, input: TurnToolsInput): TurnTools {
     maxImages,
     tools,
     knownImages: () => messages.flatMap(imagesOf),
-    videoOfImage: (id) => videoForImage(messages, id, toolCtx?.video ?? chat.video),
+    videoOfImage: (id) =>
+      videoForImage(messages, id, toolCtx?.video ?? chat.video, chat.removedVideos),
     ...(toolCtx ? { sheets: { ...toolCtx, resolution, maxImages } } : {}),
     ...(heard.on && heard.listen ? { audio: heard.listen } : {}),
   });
