@@ -1,6 +1,8 @@
 // The language-neutral contract between core, which decides everything here, and an executor,
 // which only decodes, scales, pastes, draws text and encodes. docs/render-plan.md is the spec.
-export const RENDER_PLAN_VERSION = 1;
+export const RENDER_PLAN_VERSION = 2;
+// A plan with no crop is still the first version, which any executor can render.
+export const UNCROPPED_PLAN_VERSION = 1;
 
 export interface PlannedFrame {
   frameIndex: number;
@@ -63,10 +65,22 @@ export interface RenderPlanStyle {
   textBaseline: "top";
 }
 
+// The part of each frame to render, in whole pixels of the picture as displayed, turned
+// upright and stretched to sourceWidth by sourceHeight.
+export interface PlannedCrop {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  sourceWidth: number;
+  sourceHeight: number;
+}
+
 export interface RenderPlan {
-  version: typeof RENDER_PLAN_VERSION;
+  version: typeof RENDER_PLAN_VERSION | typeof UNCROPPED_PLAN_VERSION;
   canvas: { width: number; height: number };
   cell: { width: number; height: number };
+  crop?: PlannedCrop;
   layout: PlannedGridLayout;
   style: RenderPlanStyle;
   jpegQuality: number;

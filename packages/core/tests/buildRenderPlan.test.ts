@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Vid2GridError } from "../src/errors";
 import { buildRenderPlan } from "../src/plan/buildRenderPlan";
+import { RENDER_PLAN_VERSION } from "../src/plan/renderPlan";
 import type { CollagePlanRequest } from "../src/plan/request";
 import type { VideoInfo } from "../src/probe/videoInfo";
 
@@ -119,6 +120,39 @@ describe("buildRenderPlan, explicit timestamps", () => {
       { startSeconds: 0, endSeconds: 1.5, fileName: "grid_0001.vtt" },
       { startSeconds: 1.5, endSeconds: 2.75, fileName: "grid_0002.vtt" },
     ]);
+  });
+});
+
+describe("buildRenderPlan, area", () => {
+  const area = { left: 250, top: 0, right: 500, bottom: 1000 };
+
+  it("carries the crop, with cells in its shape, as the newest version", () => {
+    const plan = buildRenderPlan(workedRequest({ area, framesPerGrid: 1 }), WORKED_INFO);
+    expect(plan.version).toBe(RENDER_PLAN_VERSION);
+    expect(plan.crop).toEqual({
+      x: 80,
+      y: 0,
+      width: 80,
+      height: 240,
+      sourceWidth: 320,
+      sourceHeight: 240,
+    });
+    expect(plan.cell).toEqual({ width: 165, height: 496 });
+  });
+
+  it("leaves a plan without an area with no crop and the first version", () => {
+    const plan = buildRenderPlan(workedRequest(), WORKED_INFO);
+    expect(plan).not.toHaveProperty("crop");
+    expect(plan.version).toBe(1);
+  });
+
+  it("rejects an area too thin to leave a cell any height", () => {
+    const sliver = { left: 0, top: 0, right: 1000, bottom: 0.1 };
+    expect(() =>
+      buildRenderPlan(workedRequest({ area: sliver }), { ...WORKED_INFO, width: 1920 }),
+    ).toThrowError(
+      new Vid2GridError("invalid_request", "area is too thin for a cell at output_resolution"),
+    );
   });
 });
 

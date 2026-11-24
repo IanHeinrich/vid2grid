@@ -60,6 +60,7 @@ Both take:
 | `maxKeyframes`     |                               | with keyframe sampling, thin the keyframes evenly to at most this many |
 | `frameCount`       |                               | exactly this many evenly spaced frames, in place of the fps            |
 | `timestampsSeconds` |                               | exact times in seconds to capture, in place of sampling by fps         |
+| `area`             |                               | left, top, right, bottom to show, in thousandths of the picture        |
 | `transcript`       | `none`                        | `none`, `per-sheet` or `combined`; only with the `transcribe` extra    |
 
 The options are core's option specs, the same ones every way of using

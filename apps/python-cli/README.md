@@ -69,6 +69,7 @@ vid2grid offers. A flag left off gets core's default.
 | `--max-keyframes`   |                      | with `--keyframes`, thin the keyframes evenly to at most this many  |
 | `--frame-count`     |                      | exactly this many evenly spaced frames, in place of the fps         |
 | `--times`           |                      | comma separated exact times in seconds to capture, in place of fps  |
+| `--area`            |                      | left, top, right, bottom to show, in thousandths of the picture     |
 | `--transcript`      | none                 | `none`, `per-sheet` or `combined`; only with the `transcribe` extra |
 
 ## Development

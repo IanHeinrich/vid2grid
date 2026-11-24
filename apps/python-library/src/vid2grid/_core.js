@@ -185,33 +185,8 @@
     }
     return timestamps;
   }
-  function requireTimestamp(timestamp) {
-    if (timestamp === void 0) {
-      throw new Vid2GridError("internal", "a sheet has no frame timestamps");
-    }
-    return timestamp;
-  }
-  function computeSheetWindows(sheets, startSeconds, endSeconds) {
-    const firstTimestamp = (index) => requireTimestamp(sheets[index]?.timestamps[0]);
-    const lastTimestamp = (index) => requireTimestamp(sheets[index]?.timestamps.at(-1));
-    return sheets.map((_, i) => ({
-      startSeconds: roundToMicroseconds(
-        i === 0 ? startSeconds : (lastTimestamp(i - 1) + firstTimestamp(i)) / 2
-      ),
-      endSeconds: roundToMicroseconds(
-        i === sheets.length - 1 ? endSeconds : (lastTimestamp(i) + firstTimestamp(i + 1)) / 2
-      ),
-      fileName: gridTranscriptFileName(i)
-    }));
-  }
-  const RENDER_PLAN_VERSION = 1;
-  function sourceAspect(info) {
-    if (!(info.width > 0) || !(info.height > 0)) {
-      throw new Vid2GridError("invalid_request", "sourceAspect must be positive");
-    }
-    return info.width / info.height;
-  }
   const TRANSCRIPT_SCOPES = ["per-sheet", "combined"];
+  const AREA_SCALE = 1e3;
   function samplingRangeProblem(range) {
     if (range.endSeconds <= range.startSeconds) return "end_time must be greater than start_time";
     if (range.targetFps <= 0) return "target_fps must be positive";
@@ -233,6 +208,8 @@
     }
     const timestampsProblem = explicitTimestampsProblem(request);
     if (timestampsProblem !== void 0) return timestampsProblem;
+    const pictureAreaProblem = request.area && areaProblem(request.area);
+    if (pictureAreaProblem !== void 0) return pictureAreaProblem;
     if (request.transcript !== void 0 && !TRANSCRIPT_SCOPES.includes(request.transcript.scope)) {
       return "transcript_scope must be per-sheet or combined";
     }
@@ -254,8 +231,60 @@
     }
     return void 0;
   }
+  function areaProblem({ left, top, right, bottom }) {
+    if (![left, top, right, bottom].every((side) => side >= 0 && side <= AREA_SCALE)) {
+      return `area's sides must be thousandths of the picture, 0 to ${AREA_SCALE}`;
+    }
+    if (left >= right) return "area's left must be less than its right";
+    if (top >= bottom) return "area's top must be less than its bottom";
+    return void 0;
+  }
   function isPositiveInteger(value) {
     return Number.isInteger(value) && value > 0;
+  }
+  function pixelSpan(from, to, pixels) {
+    const start = Math.min(Math.round(from * pixels / AREA_SCALE), pixels - 1);
+    const end = Math.round(to * pixels / AREA_SCALE);
+    return { start, length: Math.max(1, end - start) };
+  }
+  function plannedCrop(area, { width, height }) {
+    const across = pixelSpan(area.left, area.right, width);
+    const down = pixelSpan(area.top, area.bottom, height);
+    return {
+      x: across.start,
+      y: down.start,
+      width: across.length,
+      height: down.length,
+      sourceWidth: width,
+      sourceHeight: height
+    };
+  }
+  function requireTimestamp(timestamp) {
+    if (timestamp === void 0) {
+      throw new Vid2GridError("internal", "a sheet has no frame timestamps");
+    }
+    return timestamp;
+  }
+  function computeSheetWindows(sheets, startSeconds, endSeconds) {
+    const firstTimestamp = (index) => requireTimestamp(sheets[index]?.timestamps[0]);
+    const lastTimestamp = (index) => requireTimestamp(sheets[index]?.timestamps.at(-1));
+    return sheets.map((_, i) => ({
+      startSeconds: roundToMicroseconds(
+        i === 0 ? startSeconds : (lastTimestamp(i - 1) + firstTimestamp(i)) / 2
+      ),
+      endSeconds: roundToMicroseconds(
+        i === sheets.length - 1 ? endSeconds : (lastTimestamp(i) + firstTimestamp(i + 1)) / 2
+      ),
+      fileName: gridTranscriptFileName(i)
+    }));
+  }
+  const RENDER_PLAN_VERSION = 2;
+  const UNCROPPED_PLAN_VERSION = 1;
+  function sourceAspect(info) {
+    if (!(info.width > 0) || !(info.height > 0)) {
+      throw new Vid2GridError("invalid_request", "sourceAspect must be positive");
+    }
+    return info.width / info.height;
   }
   const WATERMARK_INSET_PX = 4;
   const STROKE_WIDTH_DIVISOR = 8;
@@ -272,11 +301,16 @@
     return buildRenderPlanUnvalidated(request, info);
   }
   function buildRenderPlanUnvalidated(request, info) {
+    const pictureAspect = sourceAspect(info);
+    const crop = request.area && plannedCrop(request.area, info);
     const layout = computeOptimalGrid(request.framesPerGrid, {
-      sourceAspect: sourceAspect(info),
+      sourceAspect: crop ? sourceAspect(crop) : pictureAspect,
       outputResolution: request.outputResolution,
       gutterPx: GUTTER_PX
     });
+    if (crop && Math.min(layout.cellW, layout.cellH) < 1) {
+      throw new Vid2GridError("invalid_request", "area is too thin for a cell at output_resolution");
+    }
     const frames = planFrameTimestamps(request, info);
     const timestampFormat = chooseTimestampFormat(
       frames[frames.length - 1]?.timestampSeconds,
@@ -296,9 +330,10 @@
     });
     if (request.transcript?.scope === "per-sheet") attachSheetWindows(sheets, request);
     return {
-      version: RENDER_PLAN_VERSION,
+      version: crop ? RENDER_PLAN_VERSION : UNCROPPED_PLAN_VERSION,
       canvas: { width: request.outputResolution, height: request.outputResolution },
       cell: { width: layout.cellW, height: layout.cellH },
+      ...crop && { crop },
       layout: {
         cols: layout.cols,
         rows: layout.rows,
@@ -510,6 +545,15 @@
       help: "exact times in seconds to capture, in place of sampling by fps"
     },
     {
+      name: "area",
+      flag: "area",
+      type: "numberList",
+      items: { min: 0, max: AREA_SCALE },
+      minItems: 4,
+      maxItems: 4,
+      help: "part of the picture to show: left, top, right, bottom in thousandths from its top left"
+    },
+    {
       name: "transcript",
       flag: "transcript",
       type: "enum",
@@ -527,7 +571,7 @@
   function requestFromOptions(values, info, capabilities = []) {
     const problem = optionInputProblem(values, optionSpecsFor(capabilities));
     if (problem !== void 0) throw new Vid2GridError("invalid_request", problem);
-    const { frameCount, maxKeyframes, timestampsSeconds } = values;
+    const { frameCount, maxKeyframes, timestampsSeconds, area } = values;
     const transcript = values.transcript ?? DEFAULTS.transcript;
     return {
       startSeconds: values.startSeconds ?? DEFAULTS.startSeconds,
@@ -540,6 +584,7 @@
       ...frameCount !== void 0 && { frameCount },
       ...maxKeyframes !== void 0 && { maxKeyframes },
       ...timestampsSeconds !== void 0 && { timestampsSeconds },
+      ...area !== void 0 && { area: pictureArea(area) },
       ...transcript !== "none" && { transcript: { scope: transcript } }
     };
   }
@@ -560,12 +605,21 @@
       case "integer":
         return Number.isInteger(value) ? void 0 : `${spec.name} must be an integer`;
       case "numberList":
-        return Array.isArray(value) && value.every(isFiniteNumber) ? void 0 : `${spec.name} must be a list of numbers`;
+        return numberListProblem(spec, value);
       case "boolean":
         return typeof value === "boolean" ? void 0 : `${spec.name} must be true or false`;
       case "enum":
         return spec.values.some((allowed) => allowed === value) ? void 0 : `${spec.name} must be one of ${spec.values.join(", ")}`;
     }
+  }
+  function numberListProblem({ name, minItems, maxItems }, value) {
+    if (!Array.isArray(value) || !value.every(isFiniteNumber)) {
+      return `${name} must be a list of numbers`;
+    }
+    return minItems !== void 0 && minItems === maxItems && value.length !== minItems ? `${name} must be a list of exactly ${minItems} numbers` : void 0;
+  }
+  function pictureArea([left = 0, top = 0, right = 0, bottom = 0]) {
+    return { left, top, right, bottom };
   }
   function isFiniteNumber(value) {
     return typeof value === "number" && Number.isFinite(value);

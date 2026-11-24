@@ -49,6 +49,7 @@ vid2grid offers, and core fills in the same defaults. `--help` prints them.
 | `--max-keyframes`   |                      | with `--keyframes`, thin the keyframes evenly to at most this many |
 | `--frame-count`     |                      | exactly this many evenly spaced frames, in place of the fps        |
 | `--times`           |                      | comma separated exact times in seconds to capture, in place of fps |
+| `--area`            |                      | left, top, right, bottom to show, in thousandths of the picture    |
 
 `--transcript` is not offered, because this host has no transcription.
 

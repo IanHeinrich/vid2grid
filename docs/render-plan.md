@@ -21,8 +21,13 @@ executor and proving it conforms.
 CollagePlanRequest + VideoInfo  ->  buildRenderPlan  ->  RenderPlan  ->  executor  ->  JPEG sheets (+ .vtt)
 ```
 
-`RENDER_PLAN_VERSION` is `1`; `plan.version` carries it so an executor can
-refuse a plan it does not understand.
+`RENDER_PLAN_VERSION` is `2`, the newest version core plans; `plan.version`
+carries the version a plan needs so an executor can refuse a plan it does not
+understand. A plan with a `crop` is version `2`, because an executor that
+ignored the crop would squash the whole picture into a cell shaped for part of
+it. Every other plan is version `1` (`UNCROPPED_PLAN_VERSION`), unchanged, so an
+executor that only knows version `1` still renders it. An executor that checks
+accepts any version up to the newest it knows, never just the one equal to it.
 
 ## The shape, with the worked example
 
@@ -152,6 +157,21 @@ even, so a host that matches decoded frame times against the plan in its own
 language must use this rule too, or it would disagree on exact
 half-microseconds.
 
+**Area.** With `area`, only part of the picture is rendered. Its `left`, `top`,
+`right` and `bottom` are thousandths of the picture as displayed, from its top
+left: each from `0` to `1000`, `left` less than `right` and `top` less than
+`bottom`, anything else being `invalid_request`. Core turns it into `plan.crop`,
+in whole pixels of a picture `sourceWidth` by `sourceHeight`, which are the
+`VideoInfo`'s `width` and `height`. Each side goes to its nearest pixel with
+JavaScript's `Math.round`, and a crop is always at least one pixel, inside the
+picture. Cells then take the crop's aspect ratio in place of the picture's. An
+area so thin that a cell would have no width or no height is `invalid_request`.
+A plan without an `area` has no `crop` field.
+
+```json
+"crop": { "x": 192, "y": 216, "width": 576, "height": 324, "sourceWidth": 1920, "sourceHeight": 1080 }
+```
+
 **Layout.** `computeOptimalGrid` searches every column count and picks the one
 that maximises a single cell's area inside the square canvas without distorting
 the source aspect ratio, with an 8px gutter around and between cells. Cells are
@@ -194,7 +214,12 @@ in the plan; hosts must not recompute them.
    180 or 270; `normalizeRotationClockwise` converts the counter-clockwise
    value ffmpeg reports) and scale it to exactly `plan.cell`.
    `VideoInfo.width` and `height` are display dimensions, so the cell is
-   display-oriented.
+   display-oriented. With a `plan.crop`, scale the turned frame to
+   `sourceWidth` by `sourceHeight` first (a no-op unless its pixels are not
+   square), cut out the crop's rectangle and scale that to `plan.cell`. A
+   subsampled pixel format must become RGB before the cut, or an odd edge lands
+   between its chroma samples. Scaling the cut must take nothing from outside
+   it, so the neighbouring pixels never show at a cell's edge.
 3. Per sheet, run core's `sheetDrawOps(plan, sheetIndex)` on a
    `plan.canvas`-sized surface, in order. It returns a `fillRect` with
    `style.background` over the whole canvas, then for each cell an `image` op

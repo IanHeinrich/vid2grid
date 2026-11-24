@@ -1,0 +1,134 @@
+{
+  "name": "area-at-explicit-timestamps",
+  "request": {
+    "startSeconds": 0,
+    "endSeconds": 92.4,
+    "targetFps": 1,
+    "timestampsSeconds": [
+      12,
+      47
+    ],
+    "area": {
+      "left": 100,
+      "top": 200,
+      "right": 400,
+      "bottom": 500
+    },
+    "framesPerGrid": 2,
+    "outputResolution": 1024,
+    "jpegQuality": 85
+  },
+  "info": {
+    "durationSeconds": 92.4,
+    "width": 1920,
+    "height": 1080
+  },
+  "plan": {
+    "version": 2,
+    "canvas": {
+      "width": 1024,
+      "height": 1024
+    },
+    "cell": {
+      "width": 888,
+      "height": 500
+    },
+    "crop": {
+      "x": 192,
+      "y": 216,
+      "width": 576,
+      "height": 324,
+      "sourceWidth": 1920,
+      "sourceHeight": 1080
+    },
+    "layout": {
+      "cols": 1,
+      "rows": 2,
+      "offsetX": 60,
+      "offsetY": 0
+    },
+    "style": {
+      "background": "black",
+      "textFill": "black",
+      "textStroke": "white",
+      "fontFamily": "sans-serif",
+      "textBaseline": "top"
+    },
+    "jpegQuality": 85,
+    "timestampFormat": {
+      "showHours": false,
+      "showMinutes": false,
+      "showMilliseconds": false
+    },
+    "frames": [
+      {
+        "frameIndex": 0,
+        "timestampSeconds": 12
+      },
+      {
+        "frameIndex": 1,
+        "timestampSeconds": 47
+      }
+    ],
+    "sheets": [
+      {
+        "sheetIndex": 0,
+        "fileName": "grid_0001.jpg",
+        "cells": [
+          {
+            "frameIndex": 0,
+            "timestampSeconds": 12,
+            "x": 68,
+            "y": 8,
+            "width": 888,
+            "height": 500,
+            "watermarks": [
+              {
+                "text": "12",
+                "anchor": "top-left",
+                "x": 72,
+                "y": 12,
+                "fontSizePx": 31,
+                "strokeWidthPx": 3
+              },
+              {
+                "text": "0",
+                "anchor": "top-right",
+                "x": 952,
+                "y": 12,
+                "fontSizePx": 31,
+                "strokeWidthPx": 3
+              }
+            ]
+          },
+          {
+            "frameIndex": 1,
+            "timestampSeconds": 47,
+            "x": 68,
+            "y": 516,
+            "width": 888,
+            "height": 500,
+            "watermarks": [
+              {
+                "text": "47",
+                "anchor": "top-left",
+                "x": 72,
+                "y": 520,
+                "fontSizePx": 31,
+                "strokeWidthPx": 3
+              },
+              {
+                "text": "1",
+                "anchor": "top-right",
+                "x": 952,
+                "y": 520,
+                "fontSizePx": 31,
+                "strokeWidthPx": 3
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

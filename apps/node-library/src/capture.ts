@@ -82,13 +82,23 @@ function ffmpegArgs(
     "-map",
     "0:v:0",
     "-vf",
-    `scale=${plan.cell.width}:${plan.cell.height}:flags=bicubic,format=rgba,showinfo`,
+    `${cropFilters(plan)}scale=${plan.cell.width}:${plan.cell.height}:flags=bicubic,format=rgba,showinfo`,
     "-fps_mode",
     "passthrough",
     "-f",
     "rawvideo",
     "pipe:1",
   ];
+}
+
+// Cropped as rgba because on subsampled formats the crop filter rounds to whole chroma pixels.
+function cropFilters({ crop }: RenderPlan): string {
+  if (!crop) return "";
+  const { x, y, width, height, sourceWidth, sourceHeight } = crop;
+  return (
+    `scale=${sourceWidth}:${sourceHeight}:flags=bicubic,format=rgba,` +
+    `crop=${width}:${height}:${x}:${y},`
+  );
 }
 
 type Ffmpeg = ChildProcessByStdio<null, Readable, Readable>;

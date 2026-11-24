@@ -1,0 +1,87 @@
+{
+  "name": "area-at-explicit-timestamps",
+  "sheets": [
+    [
+      {
+        "kind": "fillRect",
+        "x": 0,
+        "y": 0,
+        "width": 1024,
+        "height": 1024,
+        "color": "black"
+      },
+      {
+        "kind": "image",
+        "cellIndex": 0,
+        "x": 68,
+        "y": 8,
+        "width": 888,
+        "height": 500
+      },
+      {
+        "kind": "text",
+        "cellIndex": 0,
+        "text": "12",
+        "x": 72,
+        "y": 12,
+        "anchor": "top-left",
+        "baseline": "top",
+        "fontSizePx": 31,
+        "fontFamily": "sans-serif",
+        "fill": "black",
+        "stroke": "white",
+        "strokeWidthPx": 3
+      },
+      {
+        "kind": "text",
+        "cellIndex": 0,
+        "text": "0",
+        "x": 952,
+        "y": 12,
+        "anchor": "top-right",
+        "baseline": "top",
+        "fontSizePx": 31,
+        "fontFamily": "sans-serif",
+        "fill": "black",
+        "stroke": "white",
+        "strokeWidthPx": 3
+      },
+      {
+        "kind": "image",
+        "cellIndex": 1,
+        "x": 68,
+        "y": 516,
+        "width": 888,
+        "height": 500
+      },
+      {
+        "kind": "text",
+        "cellIndex": 1,
+        "text": "47",
+        "x": 72,
+        "y": 520,
+        "anchor": "top-left",
+        "baseline": "top",
+        "fontSizePx": 31,
+        "fontFamily": "sans-serif",
+        "fill": "black",
+        "stroke": "white",
+        "strokeWidthPx": 3
+      },
+      {
+        "kind": "text",
+        "cellIndex": 1,
+        "text": "1",
+        "x": 952,
+        "y": 520,
+        "anchor": "top-right",
+        "baseline": "top",
+        "fontSizePx": 31,
+        "fontFamily": "sans-serif",
+        "fill": "black",
+        "stroke": "white",
+        "strokeWidthPx": 3
+      }
+    ]
+  ]
+}

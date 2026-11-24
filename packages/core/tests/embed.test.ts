@@ -55,7 +55,7 @@ describe("vid2gridCore.call", () => {
   });
 
   it("reports the contract version", () => {
-    expect(call("version")).toEqual({ ok: true, value: 1 });
+    expect(call("version")).toEqual({ ok: true, value: 2 });
   });
 
   it("sends an absent result as null rather than dropping the value", () => {

@@ -5,6 +5,7 @@ export {
   collagePlanRequestProblem,
   validateCollagePlanRequest,
   type CollagePlanRequest,
+  type PictureArea,
   type SamplingRange,
 } from "./plan/request";
 export { sourceAspect, type VideoInfo } from "./probe/videoInfo";
@@ -98,7 +99,9 @@ export {
 export { buildGridsFolderName, formatClock } from "./presentation";
 export {
   RENDER_PLAN_VERSION,
+  UNCROPPED_PLAN_VERSION,
   type PlannedCell,
+  type PlannedCrop,
   type PlannedFrame,
   type PlannedGridLayout,
   type PlannedSheet,

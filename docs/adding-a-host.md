@@ -21,7 +21,12 @@ without touching media, and proves it does them the same way as the others.
    ffmpeg reports it counter-clockwise, and core's
    `normalizeRotationClockwise` flips and rounds it. Then scale it to exactly
    `plan.cell`. `VideoInfo` does not carry the rotation, so the host keeps it
-   from the probe. Several planned times can pick the same source frame.
+   from the probe. With a `plan.crop`, cut that rectangle out of the upright
+   frame at its display size, before scaling to the cell, as
+   [render-plan.md](render-plan.md#what-an-executor-must-do) says. A host that
+   checks `plan.version` accepts any version up to the newest it knows, rather
+   than testing for equality. Several planned times can pick the same source
+   frame.
    Return fewer images only when the stream ends first. A keyframe plan may
    decode keyframes alone. Hand images over as they are decoded rather than
    all at once: a JavaScript host's `capture` is an async iterable that
@@ -166,19 +171,21 @@ Where they apply it also has a `default`, a `min` and `max` (both inclusive), an
 `exclusiveMin` (strict, as JSON Schema names it), the `values` of an enum and
 a `requires` naming the host capability it needs. A `numberList` is an array of
 numbers: `items` holds the `min` and `max` of each number, and `minItems` and
-`maxItems` how many there may be. The CLIs read one as numbers separated by
-commas, `--times 1,2.5,60`, and the MCP server as a JSON array. The bounds mirror what
-`validateCollagePlanRequest` enforces on the same field; whether an `integer`
-is whole is checked only by `requestFromOptions`.
+`maxItems` how many there may be (the same number for `area`, whose four become
+the request's `left`, `top`, `right` and `bottom`). The CLIs read one as numbers
+separated by commas, `--times 1,2.5,60`, and the MCP server as a JSON array. The
+bounds mirror what `validateCollagePlanRequest` enforces on the same field;
+whether an `integer` is whole is checked only by `requestFromOptions`.
 
 A host gets its options from `optionSpecsFor(capabilities)` (`optionSpecs`
 through the embed, `option_specs(capabilities)` in Python) and converts the
 values it parsed with `requestFromOptions(values, info, capabilities)`. That
 fills in the defaults, ending at the video's duration when no end is given,
 and returns a `CollagePlanRequest`. It rejects an unknown name, a value of the
-wrong type and an enum value outside `values` as `invalid_request`. Only
-`transcript` has a `requires`, `transcription`, so a host without
-transcription passes no capabilities and never offers it.
+wrong type, a fixed-length list of another length and an enum value outside
+`values` as `invalid_request`. Only `transcript` has a `requires`,
+`transcription`, so a host without transcription passes no capabilities and
+never offers it.
 
 The defaults are the web app's startup values, and the resolution comes from
 the first model preset. `apps/web/tests/optionDefaults.test.ts` fails if its

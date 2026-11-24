@@ -25,6 +25,7 @@ def _request(
     *,
     keyframes: bool = False,
     times: list[float] | None = None,
+    area: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     return {
         "startSeconds": start,
@@ -32,6 +33,7 @@ def _request(
         "targetFps": fps,
         **({"keyframeSampling": True} if keyframes else {}),
         **({} if times is None else {"timestampsSeconds": times}),
+        **({} if area is None else {"area": area}),
         "framesPerGrid": 4,
         "outputResolution": 512,
         "jpegQuality": 85,
@@ -43,6 +45,10 @@ CASES = {
     "tiny-fps7-from-0.25-to-2.95": (TINY, _request(0.25, 2.95, 7)),
     "tiny-fps3": (TINY, _request(0, 3, 3)),
     "tiny-times": (TINY, _request(0, 3, 1, times=[2.9, 0.3333335, 0.3, 1.25, 1.21])),
+    "tiny-area": (
+        TINY,
+        _request(0, 3, 3, area={"left": 100, "top": 200, "right": 400, "bottom": 500}),
+    ),
     "tiny-keyframes": (TINY, _request(0, 3, 1, keyframes=True)),
     # A sampled plan probes no keyframes, so capture reseeks past its default 4 s gap.
     "keyframes-20s-fps0.22": (KEYFRAMES_20S, _request(0, 20, 0.22)),

@@ -57,11 +57,11 @@ can import them directly.
 
 `packages/core` takes a `CollagePlanRequest` (what the user asked for) and a
 `VideoInfo` (what the probe found) and builds a `RenderPlan`: which timestamps
-to capture, the cell size, where each frame sits on each sheet, the text burned
-into it, the JPEG quality and the file names. `sheetDrawOps` turns one sheet of
-that plan into an ordered list of draw operations. `OPTION_SPECS` lists every
-option a CLI or tool can expose, so the flags are the same in every entry
-point.
+to capture, the part of the picture to crop to, if any, the cell size, where
+each frame sits on each sheet, the text burned into it, the JPEG quality and the
+file names. `sheetDrawOps` turns one sheet of that plan into an ordered list of
+draw operations. `OPTION_SPECS` lists every option a CLI or tool can expose, so
+the flags are the same in every entry point.
 
 Core compiles with `lib: ["ES2022"]` and `types: []`, so any browser or Node
 API is a compile error, and it has no `dependencies`. That is what lets every

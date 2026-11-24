@@ -25,6 +25,9 @@ const BAD_TIMESTAMPS = "timestamps_seconds must be finite numbers, 0 or more";
 const TIMESTAMPS_COMBINED =
   "timestamps_seconds cannot be combined with keyframe_sampling, frame_count or max_keyframes";
 
+const WHOLE_PICTURE = { left: 0, top: 0, right: 1000, bottom: 1000 };
+const BAD_AREA = "area's sides must be thousandths of the picture, 0 to 1000";
+
 function validationError(overrides: Partial<CollagePlanRequest>): unknown {
   try {
     validateCollagePlanRequest(request(overrides));
@@ -46,6 +49,7 @@ describe("validateCollagePlanRequest", () => {
     expect(() =>
       validateCollagePlanRequest(request({ timestampsSeconds: [7, 0], keyframeSampling: false })),
     ).not.toThrow();
+    expect(() => validateCollagePlanRequest(request({ area: WHOLE_PICTURE }))).not.toThrow();
   });
 
   it.each<[string, Partial<CollagePlanRequest>, string]>([
@@ -77,6 +81,19 @@ describe("validateCollagePlanRequest", () => {
       "timestamps with a keyframe cap",
       { timestampsSeconds: [1], maxKeyframes: 2 },
       TIMESTAMPS_COMBINED,
+    ],
+    ["an area starting outside the picture", { area: { ...WHOLE_PICTURE, left: -1 } }, BAD_AREA],
+    ["an area ending outside the picture", { area: { ...WHOLE_PICTURE, bottom: 1001 } }, BAD_AREA],
+    ["an area side that is not a number", { area: { ...WHOLE_PICTURE, top: NaN } }, BAD_AREA],
+    [
+      "an area with no width",
+      { area: { ...WHOLE_PICTURE, left: 1000 } },
+      "area's left must be less than its right",
+    ],
+    [
+      "an upside down area",
+      { area: { ...WHOLE_PICTURE, top: 600, bottom: 400 } },
+      "area's top must be less than its bottom",
     ],
     [
       "an unknown transcript scope",

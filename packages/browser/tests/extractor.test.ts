@@ -104,6 +104,19 @@ describe("extractFrames", () => {
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:stub");
   });
 
+  it("draws the whole picture, then the plan's crop of it", async () => {
+    stubDocument(new FakeVideo(null));
+    const drawImage = vi.spyOn(CanvasRenderingContext2D.prototype, "drawImage");
+    const crop = { x: 4, y: 0, width: 4, height: 8, sourceWidth: 16, sourceHeight: 8 };
+
+    await collect(extractFrames(file, { ...planWithFramesAt(1), crop }));
+
+    expect(drawImage.mock.calls.map((call) => call.slice(1))).toEqual([
+      [0, 0, 16, 8],
+      [4, 0, 4, 8, 0, 0, 8, 8],
+    ]);
+  });
+
   it("stops at frames past the end of the video", async () => {
     stubDocument(new FakeVideo(null));
 

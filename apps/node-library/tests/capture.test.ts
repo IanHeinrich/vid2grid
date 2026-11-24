@@ -155,6 +155,49 @@ describe("captureFrames", () => {
   });
 });
 
+// Rotated and anamorphic, since the crop is in pixels of the picture as displayed.
+describe("captureFrames with an area", () => {
+  const AREA = { left: 206, top: 308, right: 506, bottom: 775 };
+
+  async function firstFrame(path: string, area?: typeof AREA): Promise<RgbaFrame> {
+    const info = await probeVideo(path);
+    const plan = buildRenderPlan(request({ framesPerGrid: 1, ...(area && { area }) }), info);
+    // A cell the size of the picture or the crop, so neither image is scaled.
+    const { width, height } = plan.crop ?? info;
+    const unscaled = { ...plan, cell: { width, height }, frames: plan.frames.slice(0, 1) };
+    const [frame] = await captureAll(path, unscaled, info);
+    if (!frame) throw new Error("no frame was captured");
+    return frame;
+  }
+
+  function cut(whole: RgbaFrame, x: number, y: number, width: number, height: number): Buffer {
+    const rows = Array.from({ length: height }, (_, row) => {
+      const start = ((y + row) * whole.width + x) * 4;
+      return Buffer.from(whole.data.subarray(start, start + width * 4));
+    });
+    return Buffer.concat(rows);
+  }
+
+  it.each([
+    ["plain", ["-c", "copy"], [33, 37, 48, 56]],
+    ["rotated", ["-c", "copy"], [25, 49, 36, 75]],
+    ["anamorphic", ["-c:v", "libx264", "-vf", "setsar=2"], [66, 37, 96, 56]],
+  ] as const)("yields the crop's own pixels of a %s video", async (kind, args, rect) => {
+    const [x, y, width, height] = rect;
+    const video = join(scratch, `${kind}.mp4`);
+    const input = kind === "rotated" ? ["-display_rotation", "90"] : [];
+    execFileSync(ffmpegPath ?? "ffmpeg", [
+      ...["-v", "error", "-y", ...input, "-i", TINY_MP4, ...args, video],
+    ]);
+
+    const whole = await firstFrame(video);
+    const cropped = await firstFrame(video, AREA);
+
+    expect([cropped.width, cropped.height]).toEqual([width, height]);
+    expect(Buffer.from(cropped.data).equals(cut(whole, x, y, width, height))).toBe(true);
+  });
+});
+
 const VIDEO_FRAMES = 200; // keyframes-20s.mp4: 20 s at 10 fps
 
 // How ffmpeg exits after a kill differs by build (Linux's traps SIGTERM and finishes the

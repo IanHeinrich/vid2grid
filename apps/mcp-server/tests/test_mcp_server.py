@@ -72,6 +72,10 @@ def test_a_list_of_numbers_is_an_array_schema() -> None:
     assert schema["items"] == {"type": "number", "minimum": 0}
     assert schema["minItems"] == 1
 
+    area = properties(list_tools()[VIDEO_TO_SHEETS])["area"]
+    assert area["items"] == {"type": "number", "minimum": 0, "maximum": 1000}
+    assert (area["minItems"], area["maxItems"]) == (4, 4)
+
 
 @pytest.mark.parametrize(("available", "offered"), [(True, True), (False, False)])
 def test_transcript_is_offered_only_with_transcription(

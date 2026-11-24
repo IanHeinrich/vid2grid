@@ -37,7 +37,8 @@ const NUMBER_SPECS = OPTION_SPECS.filter(
 );
 
 const LIST_SPECS = OPTION_SPECS.filter(
-  (option): option is NumberListOptionSpec => option.type === "numberList",
+  (option): option is NumberListOptionSpec =>
+    option.type === "numberList" && option.name !== "area",
 );
 
 // Wide enough that endSeconds > startSeconds holds for every value tried on either.
@@ -100,6 +101,7 @@ describe("OPTION_SPECS", () => {
       "targetFps",
       "frameCount",
       "timestampsSeconds",
+      "area",
       "keyframeSampling",
       "maxKeyframes",
       "framesPerGrid",
@@ -138,6 +140,19 @@ describe("OPTION_SPECS", () => {
       expect(cases.map(([value]) => [value, plannerAccepts(option, value)])).toEqual(cases);
     },
   );
+
+  it("bounds the area's four sides exactly where the planner does", () => {
+    expect(spec("area")).toMatchObject({
+      items: { min: 0, max: 1000 },
+      minItems: 4,
+      maxItems: 4,
+    });
+    const accepts = (area: number[]) =>
+      collagePlanRequestProblem(requestFromOptions({ area }, INFO)) === undefined;
+    expect(accepts([0, 0, 1000, 1000])).toBe(true);
+    expect(accepts([-1e-6, 0, 1000, 1000])).toBe(false);
+    expect(accepts([0, 0, 1000, 1000 + 1e-6])).toBe(false);
+  });
 
   it("offers the transcript scopes plus none, defaulting to none", () => {
     expect(spec("transcript")).toMatchObject({
@@ -203,9 +218,14 @@ describe("requestFromOptions", () => {
 
   it("passes every given value through", () => {
     expect(
-      requestFromOptions({ ...EVERY_OPTION, transcript: "combined" }, INFO, TRANSCRIBING),
+      requestFromOptions(
+        { ...EVERY_OPTION, area: [100, 200, 400, 500], transcript: "combined" },
+        INFO,
+        TRANSCRIBING,
+      ),
     ).toEqual({
       ...EVERY_OPTION,
+      area: { left: 100, top: 200, right: 400, bottom: 500 },
       transcript: { scope: "combined" },
     });
   });
@@ -239,6 +259,11 @@ describe("requestFromOptions's input checks", () => {
       "a list holding a string",
       { timestampsSeconds: [1, "2"] },
       "timestampsSeconds must be a list of numbers",
+    ],
+    [
+      "a list of the wrong length",
+      { area: [1, 2, 3, 4, 5] },
+      "area must be a list of exactly 4 numbers",
     ],
     [
       "a string for a boolean",

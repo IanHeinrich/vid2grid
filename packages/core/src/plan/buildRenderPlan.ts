@@ -1,3 +1,4 @@
+import { Vid2GridError } from "../errors";
 import { cellOrigin, computeOptimalGrid, GUTTER_PX, type GridLayout } from "../grid/gridMaths";
 import { combinedTranscriptFileName, gridFileName } from "./gridFileName";
 import {
@@ -7,9 +8,11 @@ import {
   MIN_FONT_SIZE,
 } from "./timestampFormat";
 import { roundToMicroseconds, planFrameTimestamps } from "./framePlanning";
+import { plannedCrop } from "./pictureCrop";
 import { computeSheetWindows } from "./sheetWindows";
 import {
   RENDER_PLAN_VERSION,
+  UNCROPPED_PLAN_VERSION,
   type PlannedCell,
   type PlannedFrame,
   type PlannedSheet,
@@ -50,11 +53,16 @@ export function buildRenderPlanUnvalidated(
   request: CollagePlanRequest,
   info: VideoInfo,
 ): RenderPlan {
+  const pictureAspect = sourceAspect(info);
+  const crop = request.area && plannedCrop(request.area, info);
   const layout = computeOptimalGrid(request.framesPerGrid, {
-    sourceAspect: sourceAspect(info),
+    sourceAspect: crop ? sourceAspect(crop) : pictureAspect,
     outputResolution: request.outputResolution,
     gutterPx: GUTTER_PX,
   });
+  if (crop && Math.min(layout.cellW, layout.cellH) < 1) {
+    throw new Vid2GridError("invalid_request", "area is too thin for a cell at output_resolution");
+  }
   const frames = planFrameTimestamps(request, info);
   const timestampFormat = chooseTimestampFormat(
     frames[frames.length - 1]?.timestampSeconds,
@@ -76,9 +84,10 @@ export function buildRenderPlanUnvalidated(
   if (request.transcript?.scope === "per-sheet") attachSheetWindows(sheets, request);
 
   return {
-    version: RENDER_PLAN_VERSION,
+    version: crop ? RENDER_PLAN_VERSION : UNCROPPED_PLAN_VERSION,
     canvas: { width: request.outputResolution, height: request.outputResolution },
     cell: { width: layout.cellW, height: layout.cellH },
+    ...(crop && { crop }),
     layout: {
       cols: layout.cols,
       rows: layout.rows,

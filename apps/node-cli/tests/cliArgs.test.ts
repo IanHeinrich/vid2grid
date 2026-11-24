@@ -42,6 +42,8 @@ describe("parseCliArgs", () => {
       "8",
       "--times",
       "1,2.5,60",
+      "--area",
+      "100,200,400,500",
     ]);
     expect(options).toEqual({
       startSeconds: 1.5,
@@ -54,6 +56,7 @@ describe("parseCliArgs", () => {
       maxKeyframes: 6,
       frameCount: 8,
       timestampsSeconds: [1, 2.5, 60],
+      area: [100, 200, 400, 500],
     });
     expect(Object.keys(options).sort()).toEqual(
       optionSpecsFor(NODE_CAPABILITIES)

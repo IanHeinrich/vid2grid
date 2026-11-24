@@ -23,7 +23,7 @@ import {
   type PlannedFrame,
   type RenderPlan,
 } from "@vid2grid/core";
-import { createCellCanvas } from "../shared/canvas";
+import { createFrameCanvas } from "../shared/canvas";
 import { supportsWebCodecs } from "./isoBmff";
 
 // Generous upper bound on B-frame reorder depth: without the padding, composition-order
@@ -265,8 +265,8 @@ function createChangeSignal() {
 }
 
 // Awaited only when taken, so a failure must not count as unhandled meanwhile.
-function captureCanvas(canvas: HTMLCanvasElement): Promise<ImageBitmap> {
-  const capture = createImageBitmap(canvas);
+function captureCanvas(captureFrame: () => Promise<ImageBitmap>): Promise<ImageBitmap> {
+  const capture = captureFrame();
   capture.catch(() => {});
   return capture;
 }
@@ -285,6 +285,7 @@ export function createFrameCollector(
   cellW: number,
   cellH: number,
   rotation: number,
+  capture = () => createImageBitmap(canvas),
 ): FrameCollector {
   const captures: Promise<ImageBitmap>[] = [];
   const matcher = createFrameMatcher(wanted);
@@ -299,7 +300,7 @@ export function createFrameCollector(
       const filled = matcher.fill(frame.timestamp / MICROSECONDS_PER_SECOND).length;
       for (let i = 0; i < filled; i++) {
         drawRotated(ctx, frame, cellW, cellH, rotation);
-        captures.push(captureCanvas(canvas));
+        captures.push(captureCanvas(capture));
       }
       changed();
     },
@@ -389,9 +390,11 @@ export async function* decodeFrames(
   wanted: number[],
   cell: { width: number; height: number },
   rotation: number,
+  crop?: RenderPlan["crop"],
 ): AsyncGenerator<ImageBitmap, void, undefined> {
-  const { canvas, ctx } = createCellCanvas(cell.width, cell.height);
-  const collector = createFrameCollector(wanted, canvas, ctx, cell.width, cell.height, rotation);
+  const { canvas, ctx, capture } = createFrameCanvas(cell, crop);
+  const { width, height } = canvas;
+  const collector = createFrameCollector(wanted, canvas, ctx, width, height, rotation, capture);
   const decoder = new VideoDecoder({
     output: (frame) => {
       try {
@@ -457,5 +460,5 @@ export async function extractFramesWebCodecs(
       findDecodeStartIndex(samples, firstFrame.timestampSeconds),
       findDecodeEndIndex(samples, lastFrame.timestampSeconds),
     );
-  return decodeFrames(decoderConfig, samples, indices, wanted, plan.cell, rotation);
+  return decodeFrames(decoderConfig, samples, indices, wanted, plan.cell, rotation, plan.crop);
 }
