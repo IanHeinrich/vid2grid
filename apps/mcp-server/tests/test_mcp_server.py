@@ -211,6 +211,28 @@ def test_a_non_boolean_include_images_is_an_error_result(video: Path, tmp_path: 
     assert not list(tmp_path.glob("*.jpg"))
 
 
+def test_video_to_sheets_takes_a_null_as_not_given(video: Path, tmp_path: Path) -> None:
+    copy = shutil.copy(video, tmp_path)
+    nulls = {"outDir": None, "includeImages": None, "endSeconds": None}
+
+    result = call_tool(VIDEO_TO_SHEETS, {"path": str(copy), **VALUES, **nulls})
+
+    assert not result.isError
+    assert result.structuredContent is not None
+    sheet_paths = [Path(sheet["path"]) for sheet in result.structuredContent["sheets"]]
+    assert all(sheet_path.parent.parent == tmp_path for sheet_path in sheet_paths)
+    assert len(result.content) == 1 + len(sheet_paths) > 1
+
+
+def test_plan_video_takes_a_null_as_not_given(video: Path) -> None:
+    nulls = {"endSeconds": None, "timestampsSeconds": None, "area": None}
+
+    result = call_tool(PLAN_VIDEO, {"path": str(video), **VALUES, **nulls})
+
+    assert not result.isError
+    assert result.structuredContent == plan_from_options(video, VALUES).to_dict()
+
+
 def test_a_missing_video_is_an_invalid_request(tmp_path: Path) -> None:
     missing = tmp_path / "absent.mp4"
 
@@ -356,8 +378,26 @@ def test_zoom_frame_leaves_no_files_behind(
 
 
 @pytest.mark.parametrize(
+    "nulls",
+    [
+        {"outputResolution": None, "jpegQuality": None},
+        {"left": None, "top": None, "right": None, "bottom": None},
+    ],
+)
+def test_zoom_frame_takes_a_null_as_not_given(video: Path, nulls: dict[str, object]) -> None:
+    arguments = {"path": str(video), "timeSeconds": 1}
+
+    assert call_tool(ZOOM_FRAME, {**arguments, **nulls}) == call_tool(ZOOM_FRAME, arguments)
+
+
+@pytest.mark.parametrize(
     ("bad", "message"),
     [
+        ({"timeSeconds": None}, "timeSeconds must be a number"),
+        (
+            {"left": None, "top": 0, "right": 500, "bottom": 500},
+            "left, top, right and bottom must be given together",
+        ),
         ({"timeSeconds": "1"}, "timeSeconds must be a number"),
         ({"left": 100, "right": 300}, "left, top, right and bottom must be given together"),
         ({"fps": 2}, 'unknown option "fps"'),

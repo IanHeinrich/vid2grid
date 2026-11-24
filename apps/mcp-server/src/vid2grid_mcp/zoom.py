@@ -1,7 +1,7 @@
 import io
 from collections.abc import Mapping, Sequence
 from contextlib import closing
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import av
 from PIL import Image
@@ -38,16 +38,7 @@ class ZoomedFrame:
 def zoom_frame(
     path: str, time_seconds: float, area: Sequence[float] | None, options: Mapping[str, object]
 ) -> ZoomedFrame:
-    values: dict[str, object] = {
-        **options,
-        "timestampsSeconds": [time_seconds],
-        "framesPerGrid": 1,
-        **({} if area is None else {"area": list(area)}),
-    }
-    planned = plan_from_options(path, values)
-    if OUTPUT_RESOLUTION not in values:
-        planned = plan_from_options(path, {**values, OUTPUT_RESOLUTION: _sheet_side(planned)})
-
+    planned = _plan(path, time_seconds, area, options)
     try:
         [picture] = capture_frames(path, planned.plan, planned.info)
         if picture is None:
@@ -66,15 +57,30 @@ def zoom_frame(
     )
 
 
-# Never below the source's own pixels: an area may be enlarged, the whole frame never is.
-def _sheet_side(planned: PlanResult) -> int:
-    plan = planned.plan
-    planned_side = max(plan.cell.as_tuple())
-    border = plan.canvas.width - planned_side
-    if plan.crop is None:
-        return max(planned.info.width, planned.info.height) + border
-    source_side = max(plan.crop.width, plan.crop.height)
-    return max(source_side, min(_MAX_ENLARGEMENT * source_side, planned_side)) + border
+def _plan(
+    path: str, time_seconds: float, area: Sequence[float] | None, options: Mapping[str, object]
+) -> PlanResult:
+    whole_frame = {**options, "timestampsSeconds": [time_seconds], "framesPerGrid": 1}
+    values = whole_frame if area is None else {**whole_frame, "area": list(area)}
+    if OUTPUT_RESOLUTION in options:
+        return plan_from_options(path, values)
+
+    planned = plan_from_options(path, whole_frame)
+    default_side = max(planned.plan.cell.as_tuple())
+    if area is None:
+        return _with_cell(planned, planned.info.width, planned.info.height)
+    # Core rejects an area too thin for its cell, and no area is too thin for a cell this long.
+    roomy = planned.plan.canvas.width + 2 * max(planned.info.width, planned.info.height)
+    planned = plan_from_options(path, {**values, OUTPUT_RESOLUTION: roomy})
+    shown = planned.plan.crop or planned.info
+    scale = max(1.0, min(_MAX_ENLARGEMENT, default_side / max(shown.width, shown.height)))
+    return _with_cell(planned, round(shown.width * scale), round(shown.height * scale))
+
+
+# Core's grid maths can truncate a pixel off a cell.
+def _with_cell(planned: PlanResult, width: int, height: int) -> PlanResult:
+    cell = replace(planned.plan.cell, width=width, height=height)
+    return replace(planned, plan=replace(planned.plan, cell=cell))
 
 
 # The plan's timestamp is the one asked for; the frame shown is the first at or after it.

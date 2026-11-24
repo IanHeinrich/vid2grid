@@ -199,6 +199,7 @@ def _option_type(spec: OptionSpec) -> dict[str, object]:
 
 
 def _video_to_sheets(arguments: Mapping[str, object]) -> types.CallToolResult:
+    arguments = _without_nulls(arguments)
     path = _string_argument(arguments, _PATH)
     out_dir = _string_argument(arguments, _OUT_DIR) if _OUT_DIR in arguments else None
     include_images = (
@@ -237,6 +238,7 @@ def _plan_video(arguments: Mapping[str, object]) -> dict[str, object]:
 
 
 def _zoom_frame(arguments: Mapping[str, object]) -> types.CallToolResult:
+    arguments = _without_nulls(arguments)
     path = _string_argument(arguments, _PATH)
     time_seconds = _number_argument(arguments, _TIME_SECONDS)
     options = {name: value for name, value in arguments.items() if name in _ZOOM_OPTIONS}
@@ -258,6 +260,10 @@ def _area_argument(arguments: Mapping[str, object]) -> list[float] | None:
     if len(given) < len(SIDES):
         raise InvalidRequestError("left, top, right and bottom must be given together")
     return [_number_argument(arguments, side) for side in SIDES]
+
+
+def _without_nulls(arguments: Mapping[str, object]) -> dict[str, object]:
+    return {name: value for name, value in arguments.items() if value is not None}
 
 
 def _string_argument(arguments: Mapping[str, object], name: str) -> str:
