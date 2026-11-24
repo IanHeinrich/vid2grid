@@ -39,7 +39,7 @@ export function transcriptWindows(
     .flatMap((sheet) => (sheet.transcript ? [sheet.transcript] : []));
   const last = windows[windows.length - 1];
   if (!last) return windows;
-  return [...windows.slice(0, -1), { ...last, endSeconds }];
+  return [...windows.slice(0, -1), { ...last, endSeconds: Math.max(endSeconds, last.endSeconds) }];
 }
 
 export function transcriptFiles(

@@ -42,11 +42,11 @@ export async function renderSheets(
   const frameTimes = await readFrameTimes(file).catch(() => undefined);
   const inside = endingAtFrame(values, info, frameTimes?.at(-1));
   const request = requestFromOptions(
-    { ...inside.values, jpegQuality: values.jpegQuality ?? DEFAULT_JPEG_QUALITY },
-    inside.info,
+    { ...inside, jpegQuality: values.jpegQuality ?? DEFAULT_JPEG_QUALITY },
+    info,
   );
   const { plan, sheets } = await generateCollages(file, request, createBrowserPorts(), {
-    videoInfo: inside.info,
+    videoInfo: info,
     ...(onProgress && {
       onProgress: (progress) => {
         if (progress.phase === "extracting") onProgress(progress.done, progress.total);

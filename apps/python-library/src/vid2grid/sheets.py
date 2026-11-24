@@ -10,6 +10,7 @@ import av
 
 from ._core import (
     build_render_plan,
+    missing_timestamps_warning,
     no_transcription_port_warning,
     resolve_keyframe_sampling,
     transcript_files,
@@ -125,6 +126,7 @@ def render_sheets(
     transcripts = _write_transcripts(
         path, request, planned.plan, len(written.sheets), directory, transcriber
     )
+    missing = missing_timestamps_warning(request, planned.plan, written.frame_count)
 
     return RenderResult(
         info=planned.info,
@@ -134,7 +136,9 @@ def render_sheets(
         timings_ms={**written.timings_ms, **transcripts.timings_ms},
         vid2grid_version=VID2GRID_VERSION,
         plan=planned.plan,
-        warnings=planned.warnings + transcripts.warnings,
+        warnings=(
+            planned.warnings + transcripts.warnings + (() if missing is None else (missing,))
+        ),
         sheets=written.sheets,
         transcript_paths=transcripts.paths,
     )

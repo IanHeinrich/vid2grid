@@ -78,6 +78,7 @@ export {
   type BooleanOptionSpec,
   type EnumOptionSpec,
   type HostCapability,
+  type NumberListOptionSpec,
   type NumberOptionSpec,
   type OptionName,
   type OptionSpec,
@@ -85,6 +86,7 @@ export {
   type PlanOptionValues,
   type TranscriptOption,
 } from "./plan/options";
+export { missingTimestampsWarning } from "./plan/missingTimestamps";
 export { resolveKeyframeSampling, type KeyframeSamplingDecision } from "./plan/keyframeFallback";
 export { createFrameMatcher, isKeyframePlan, type FrameMatcher } from "./plan/frameMatching";
 export {

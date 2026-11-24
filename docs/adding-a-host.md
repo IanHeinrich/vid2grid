@@ -99,6 +99,7 @@ for sheet in plan.sheets:
         if op.kind != "fillRect" and op.cellIndex >= len(images): continue
         draw(surface, op, images)
     write(encode_jpeg(surface, plan.jpegQuality), sheet.fileName)
+core.missingTimestampsWarning(request, plan, capturedCount)   # report it if there is one
 ```
 
 Taking one sheet's images at a time keeps memory to a sheet, whatever the
@@ -160,10 +161,13 @@ or a video. `scripts/makeKeyframeVideo.py`, run the same way, writes
 `OPTION_SPECS` in [`plan/options.ts`](../packages/core/src/plan/options.ts)
 lists every option a CLI or tool can expose. Each has a `name` (the request
 field, or `transcript` for the transcript scope), a kebab-case `flag`, a `type`
-(`number`, `integer`, `boolean` or `enum`) and a one-line `help`. Where they
-apply it also has a `default`, a `min` and `max` (both inclusive), an
+(`number`, `integer`, `numberList`, `boolean` or `enum`) and a one-line `help`.
+Where they apply it also has a `default`, a `min` and `max` (both inclusive), an
 `exclusiveMin` (strict, as JSON Schema names it), the `values` of an enum and
-a `requires` naming the host capability it needs. The bounds mirror what
+a `requires` naming the host capability it needs. A `numberList` is an array of
+numbers: `items` holds the `min` and `max` of each number, and `minItems` and
+`maxItems` how many there may be. The CLIs read one as numbers separated by
+commas, `--times 1,2.5,60`, and the MCP server as a JSON array. The bounds mirror what
 `validateCollagePlanRequest` enforces on the same field; whether an `integer`
 is whole is checked only by `requestFromOptions`.
 

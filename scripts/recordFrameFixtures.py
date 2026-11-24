@@ -18,12 +18,20 @@ KEYFRAMES_20S = "fixtures/videos/keyframes-20s.mp4"
 OUT_DIR = REPO_ROOT / "fixtures" / "frames"
 
 
-def _request(start: float, end: float, fps: float, *, keyframes: bool = False) -> dict[str, Any]:
+def _request(
+    start: float,
+    end: float,
+    fps: float,
+    *,
+    keyframes: bool = False,
+    times: list[float] | None = None,
+) -> dict[str, Any]:
     return {
         "startSeconds": start,
         "endSeconds": end,
         "targetFps": fps,
         **({"keyframeSampling": True} if keyframes else {}),
+        **({} if times is None else {"timestampsSeconds": times}),
         "framesPerGrid": 4,
         "outputResolution": 512,
         "jpegQuality": 85,
@@ -34,6 +42,7 @@ CASES = {
     "tiny-fps4": (TINY, _request(0, 3, 4)),
     "tiny-fps7-from-0.25-to-2.95": (TINY, _request(0.25, 2.95, 7)),
     "tiny-fps3": (TINY, _request(0, 3, 3)),
+    "tiny-times": (TINY, _request(0, 3, 1, times=[2.9, 0.3333335, 0.3, 1.25, 1.21])),
     "tiny-keyframes": (TINY, _request(0, 3, 1, keyframes=True)),
     # A sampled plan probes no keyframes, so capture reseeks past its default 4 s gap.
     "keyframes-20s-fps0.22": (KEYFRAMES_20S, _request(0, 20, 0.22)),
@@ -42,6 +51,8 @@ CASES = {
         KEYFRAMES_20S,
         _request(2.5, 9.5, 1, keyframes=True),
     ),
+    # Two close times, then a gap that makes capture reseek, the last near the end.
+    "keyframes-20s-times": (KEYFRAMES_20S, _request(0, 20, 1, times=[1.23, 1.25, 12, 19.85])),
 }
 
 

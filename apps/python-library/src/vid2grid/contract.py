@@ -30,6 +30,7 @@ class CollagePlanRequestJson(TypedDict):
     frameCount: NotRequired[int]
     keyframeSampling: NotRequired[bool]
     maxKeyframes: NotRequired[int]
+    timestampsSeconds: NotRequired[list[float]]
     framesPerGrid: int
     outputResolution: int
     jpegQuality: int
@@ -176,6 +177,7 @@ class CollagePlanRequest:
     keyframe_sampling: bool = False
     max_keyframes: int | None = None
     transcript_scope: TranscriptScope | None = None
+    timestamps_seconds: tuple[float, ...] | None = None
 
     def to_dict(self) -> CollagePlanRequestJson:
         request: CollagePlanRequestJson = {
@@ -192,6 +194,8 @@ class CollagePlanRequest:
             request["keyframeSampling"] = True
         if self.max_keyframes is not None:
             request["maxKeyframes"] = self.max_keyframes
+        if self.timestamps_seconds is not None:
+            request["timestampsSeconds"] = list(self.timestamps_seconds)
         if self.transcript_scope is not None:
             request["transcript"] = {"scope": self.transcript_scope}
         return request
@@ -199,6 +203,7 @@ class CollagePlanRequest:
     @classmethod
     def from_dict(cls, data: CollagePlanRequestJson) -> "CollagePlanRequest":
         transcript = data.get("transcript")
+        timestamps = data.get("timestampsSeconds")
         return cls(
             start_seconds=float(data["startSeconds"]),
             end_seconds=float(data["endSeconds"]),
@@ -210,6 +215,7 @@ class CollagePlanRequest:
             keyframe_sampling=data.get("keyframeSampling", False),
             max_keyframes=data.get("maxKeyframes"),
             transcript_scope=None if transcript is None else transcript["scope"],
+            timestamps_seconds=None if timestamps is None else tuple(float(t) for t in timestamps),
         )
 
 

@@ -22,6 +22,13 @@ describe("chooseTimestampFormat", () => {
     expect(chooseTimestampFormat(10, 2).showMilliseconds).toBe(true);
   });
 
+  it("shows milliseconds for explicit timestamps that are not whole seconds", () => {
+    expect(chooseTimestampFormat(10, 1, [3, 10]).showMilliseconds).toBe(false);
+    expect(chooseTimestampFormat(10, 1, [3.0004, 10]).showMilliseconds).toBe(false);
+    expect(chooseTimestampFormat(10, 1, [3.001, 10]).showMilliseconds).toBe(true);
+    expect(chooseTimestampFormat(10, 2, [3, 10]).showMilliseconds).toBe(true);
+  });
+
   it("drops every component when there is no last timestamp", () => {
     expect(chooseTimestampFormat(undefined, 30)).toEqual({
       showHours: false,

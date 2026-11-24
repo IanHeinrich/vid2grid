@@ -16,6 +16,7 @@ export const twoDigits = (value: number): string => String(value).padStart(2, "0
 export function chooseTimestampFormat(
   lastTimestampSeconds: number | undefined,
   targetFps: number,
+  explicitTimestampsSeconds: readonly number[] = [],
 ): TimestampFormat {
   if (lastTimestampSeconds === undefined) {
     return { showHours: false, showMinutes: false, showMilliseconds: false };
@@ -23,8 +24,12 @@ export function chooseTimestampFormat(
   return {
     showHours: lastTimestampSeconds >= SECONDS_PER_HOUR,
     showMinutes: lastTimestampSeconds >= SECONDS_PER_MINUTE,
-    showMilliseconds: targetFps > 1,
+    showMilliseconds: targetFps > 1 || explicitTimestampsSeconds.some(hasMilliseconds),
   };
+}
+
+function hasMilliseconds(seconds: number): boolean {
+  return Math.round(seconds * MS_PER_SECOND) % MS_PER_SECOND !== 0;
 }
 
 export function formatTimestamp(seconds: number, format: TimestampFormat): string {

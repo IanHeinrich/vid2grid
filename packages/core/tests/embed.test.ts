@@ -42,6 +42,18 @@ describe("vid2gridCore.call", () => {
     expect(call("isKeyframePlan", plan)).toEqual({ ok: true, value: false });
   });
 
+  it("warns of explicit timestamps with no frame, and answers null when there are none", () => {
+    const request = { timestampsSeconds: [1, 2] };
+    const plan = {
+      frames: [1, 2].map((timestampSeconds, frameIndex) => ({ frameIndex, timestampSeconds })),
+    };
+    expect(call("missingTimestampsWarning", request, plan, 1)).toMatchObject({
+      ok: true,
+      value: { code: "no_frame_at_timestamps" },
+    });
+    expect(call("missingTimestampsWarning", request, plan, 2)).toEqual({ ok: true, value: null });
+  });
+
   it("reports the contract version", () => {
     expect(call("version")).toEqual({ ok: true, value: 1 });
   });

@@ -5,6 +5,7 @@ import {
   optionSpecsFor,
   requestFromOptions,
   type HostCapability,
+  type NumberListOptionSpec,
   type NumberOptionSpec,
   type OptionSpec,
 } from "../src/plan/options";
@@ -21,6 +22,7 @@ const EVERY_OPTION = {
   keyframeSampling: true,
   maxKeyframes: 6,
   frameCount: 12,
+  timestampsSeconds: [3, 1.5],
   framesPerGrid: 4,
   outputResolution: 512,
   jpegQuality: 90,
@@ -32,6 +34,10 @@ function spec(name: OptionSpec["name"]): OptionSpec | undefined {
 
 const NUMBER_SPECS = OPTION_SPECS.filter(
   (option): option is NumberOptionSpec => option.type === "number" || option.type === "integer",
+);
+
+const LIST_SPECS = OPTION_SPECS.filter(
+  (option): option is NumberListOptionSpec => option.type === "numberList",
 );
 
 // Wide enough that endSeconds > startSeconds holds for every value tried on either.
@@ -54,8 +60,19 @@ function boundaryCases(option: NumberOptionSpec): [value: number, accepted: bool
   return cases;
 }
 
-function plannerAccepts(option: NumberOptionSpec, value: number): boolean {
+function plannerAccepts(option: OptionSpec, value: number | number[]): boolean {
   return collagePlanRequestProblem({ ...WIDE_REQUEST, [option.name]: value }) === undefined;
+}
+
+function listBoundaryCases({ items, minItems = 0 }: NumberListOptionSpec): [number[], boolean][] {
+  const cases: [number[], boolean][] = [];
+  const ofItem = (item: number) => Array.from({ length: Math.max(1, minItems) }, () => item);
+  if (items.min !== undefined) {
+    cases.push([ofItem(items.min), true], [ofItem(items.min - 1e-6), false]);
+  }
+  if (items.max === undefined) cases.push([ofItem(1e6), true]);
+  if (minItems > 0) cases.push([ofItem(1).slice(1), false]);
+  return cases;
 }
 
 function rejection(values: Record<string, unknown>): unknown {
@@ -82,6 +99,7 @@ describe("OPTION_SPECS", () => {
       "endSeconds",
       "targetFps",
       "frameCount",
+      "timestampsSeconds",
       "keyframeSampling",
       "maxKeyframes",
       "framesPerGrid",
@@ -109,6 +127,14 @@ describe("OPTION_SPECS", () => {
     "bounds $name exactly where the planner does",
     ({ option }) => {
       const cases = boundaryCases(option);
+      expect(cases.map(([value]) => [value, plannerAccepts(option, value)])).toEqual(cases);
+    },
+  );
+
+  it.each(LIST_SPECS.map((option) => ({ name: option.name, option })))(
+    "bounds $name's numbers exactly where the planner does",
+    ({ option }) => {
+      const cases = listBoundaryCases(option);
       expect(cases.map(([value]) => [value, plannerAccepts(option, value)])).toEqual(cases);
     },
   );
@@ -204,6 +230,16 @@ describe("requestFromOptions's input checks", () => {
     ["a string for a number", { targetFps: "2" }, "targetFps must be a number"],
     ["a non-finite number", { endSeconds: Infinity }, "endSeconds must be a number"],
     ["a fraction for an integer", { framesPerGrid: 2.5 }, "framesPerGrid must be an integer"],
+    [
+      "a number for a list",
+      { timestampsSeconds: 2 },
+      "timestampsSeconds must be a list of numbers",
+    ],
+    [
+      "a list holding a string",
+      { timestampsSeconds: [1, "2"] },
+      "timestampsSeconds must be a list of numbers",
+    ],
     [
       "a string for a boolean",
       { keyframeSampling: "yes" },

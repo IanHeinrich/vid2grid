@@ -42,8 +42,6 @@ export function sheetGeometry(ctx: SheetContext, outputResolution = ctx.resoluti
 }
 
 export interface SheetRenderExtras {
-  // Replaces the probed info, e.g. to hand the keyframe path the exact times to capture.
-  info?: VideoInfo;
   onProgress?: (done: number, total: number) => void;
 }
 
@@ -51,8 +49,9 @@ export async function sheetRefs(
   ctx: SheetContext,
   values: PlanOptionInput,
   call: string,
-  { info = ctx.info, onProgress }: SheetRenderExtras = {},
+  { onProgress }: SheetRenderExtras = {},
 ): Promise<ImageRef[]> {
+  const { info } = ctx;
   const keyframes = values.keyframeSampling === true ? info.keyframeTimestampsSeconds : undefined;
   const key = sheetCacheKey(ctx.video.fileKey, values, keyframes);
   const cached = await storedSheets(ctx.store, key);

@@ -17,6 +17,7 @@ export interface PlanOptionValues {
   keyframeSampling: boolean;
   maxKeyframes: number;
   frameCount: number;
+  timestampsSeconds: number[];
   transcript: TranscriptOption;
 }
 
@@ -44,6 +45,15 @@ export interface NumberOptionSpec extends OptionSpecBase {
   exclusiveMin?: number;
 }
 
+export interface NumberListOptionSpec extends OptionSpecBase {
+  type: "numberList";
+  default?: never;
+  // Bounds on each number, under the names NumberOptionSpec gives them.
+  items: { min?: number; max?: number };
+  minItems?: number;
+  maxItems?: number;
+}
+
 export interface BooleanOptionSpec extends OptionSpecBase {
   type: "boolean";
   default: boolean;
@@ -55,7 +65,8 @@ export interface EnumOptionSpec extends OptionSpecBase {
   default: TranscriptOption;
 }
 
-export type OptionSpec = NumberOptionSpec | BooleanOptionSpec | EnumOptionSpec;
+export type OptionSpec =
+  NumberOptionSpec | NumberListOptionSpec | BooleanOptionSpec | EnumOptionSpec;
 
 // The web app starts on the first preset.
 function firstModelResolution(): number {
@@ -143,6 +154,14 @@ export const OPTION_SPECS: readonly OptionSpec[] = [
     help: "exactly this many evenly spaced frames, in place of the fps",
   },
   {
+    name: "timestampsSeconds",
+    flag: "times",
+    type: "numberList",
+    items: { min: 0 },
+    minItems: 1,
+    help: "exact times in seconds to capture, in place of sampling by fps",
+  },
+  {
     name: "transcript",
     flag: "transcript",
     type: "enum",
@@ -166,7 +185,7 @@ export function requestFromOptions(
 ): CollagePlanRequest {
   const problem = optionInputProblem(values, optionSpecsFor(capabilities));
   if (problem !== undefined) throw new Vid2GridError("invalid_request", problem);
-  const { frameCount, maxKeyframes } = values;
+  const { frameCount, maxKeyframes, timestampsSeconds } = values;
   const transcript = values.transcript ?? DEFAULTS.transcript;
   return {
     startSeconds: values.startSeconds ?? DEFAULTS.startSeconds,
@@ -178,6 +197,7 @@ export function requestFromOptions(
     jpegQuality: values.jpegQuality ?? DEFAULTS.jpegQuality,
     ...(frameCount !== undefined && { frameCount }),
     ...(maxKeyframes !== undefined && { maxKeyframes }),
+    ...(timestampsSeconds !== undefined && { timestampsSeconds }),
     ...(transcript !== "none" && { transcript: { scope: transcript } }),
   };
 }
@@ -199,11 +219,13 @@ function optionInputProblem(
 function optionValueProblem(spec: OptionSpec, value: unknown): string | undefined {
   switch (spec.type) {
     case "number":
-      return typeof value === "number" && Number.isFinite(value)
-        ? undefined
-        : `${spec.name} must be a number`;
+      return isFiniteNumber(value) ? undefined : `${spec.name} must be a number`;
     case "integer":
       return Number.isInteger(value) ? undefined : `${spec.name} must be an integer`;
+    case "numberList":
+      return Array.isArray(value) && value.every(isFiniteNumber)
+        ? undefined
+        : `${spec.name} must be a list of numbers`;
     case "boolean":
       return typeof value === "boolean" ? undefined : `${spec.name} must be true or false`;
     case "enum":
@@ -211,4 +233,8 @@ function optionValueProblem(spec: OptionSpec, value: unknown): string | undefine
         ? undefined
         : `${spec.name} must be one of ${spec.values.join(", ")}`;
   }
+}
+
+function isFiniteNumber(value: unknown): boolean {
+  return typeof value === "number" && Number.isFinite(value);
 }

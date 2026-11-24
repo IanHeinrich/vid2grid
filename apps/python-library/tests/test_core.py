@@ -11,7 +11,7 @@ import pytest
 from helpers import collage_request
 
 from vid2grid import _core
-from vid2grid.contract import VideoInfo
+from vid2grid.contract import CollagePlanRequest, VideoInfo
 from vid2grid.errors import (
     InternalError,
     InvalidRequestError,
@@ -223,6 +223,7 @@ def test_option_specs_name_every_request_option_with_a_flag() -> None:
         "keyframeSampling",
         "maxKeyframes",
         "frameCount",
+        "timestampsSeconds",
         "transcript",
     ]
     assert all(spec["flag"] and spec["help"] for spec in specs)
@@ -255,6 +256,13 @@ def test_request_from_options_takes_given_values_and_skips_unset_ones() -> None:
     assert request.frame_count is None
     assert request.max_keyframes == 5
     assert request.transcript_scope == "per-sheet"
+
+
+def test_request_from_options_takes_a_list_of_times() -> None:
+    request = _core.request_from_options({"timestampsSeconds": [2, 0.5]}, INFO)
+
+    assert request.timestamps_seconds == (2.0, 0.5)
+    assert CollagePlanRequest.from_dict(request.to_dict()) == request
 
 
 def test_option_specs_offer_the_transcript_only_to_a_transcribing_host() -> None:

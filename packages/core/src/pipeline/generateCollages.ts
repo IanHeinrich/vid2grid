@@ -2,6 +2,7 @@ import { Vid2GridError } from "../errors";
 import { validateCollagePlanRequest, type CollagePlanRequest } from "../plan/request";
 import type { VideoInfo } from "../probe/videoInfo";
 import { buildRenderPlanUnvalidated } from "../plan/buildRenderPlan";
+import { missingTimestampsWarning } from "../plan/missingTimestamps";
 import { resolveKeyframeSampling } from "../plan/keyframeFallback";
 import type { PlannedSheet, RenderPlan } from "../plan/renderPlan";
 import {
@@ -416,6 +417,8 @@ export async function streamCollages<TSource, TImage, TBinary>(
       ? []
       : await generateTranscriptFiles({ source, request, plan, sheetCount, ports, options, timer });
 
+  const missingTimestamps = missingTimestampsWarning(request, plan, frameCount);
+  if (missingTimestamps) options.onWarning?.(missingTimestamps);
   options.onTiming?.({ phaseMs: timer.phaseMs, frameCount, sheetCount });
   return { plan, sheetCount, transcriptFiles };
 }

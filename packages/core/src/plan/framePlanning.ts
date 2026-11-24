@@ -34,10 +34,31 @@ export function subsampleEvenly<T>(values: readonly T[], max: number): T[] {
 }
 
 export function planFrameTimestamps(request: CollagePlanRequest, info: VideoInfo): PlannedFrame[] {
-  const timestamps = request.keyframeSampling
+  return requestedTimestamps(request, info).map((timestampSeconds, frameIndex) => ({
+    frameIndex,
+    timestampSeconds,
+  }));
+}
+
+function requestedTimestamps(request: CollagePlanRequest, info: VideoInfo): number[] {
+  if (request.timestampsSeconds !== undefined) {
+    return explicitTimestamps(request.timestampsSeconds, info);
+  }
+  return request.keyframeSampling
     ? keyframeTimestamps(request, info)
     : sampledTimestamps(request, info);
-  return timestamps.map((timestampSeconds, frameIndex) => ({ frameIndex, timestampSeconds }));
+}
+
+function explicitTimestamps(timestampsSeconds: readonly number[], info: VideoInfo): number[] {
+  const timestamps = [...new Set(timestampsSeconds.map(roundToMicroseconds))].sort((a, b) => a - b);
+  const pastTheEnd = timestamps.find((timestamp) => timestamp >= info.durationSeconds);
+  if (pastTheEnd !== undefined) {
+    throw new Vid2GridError(
+      "invalid_request",
+      `timestamps_seconds has ${pastTheEnd}, which is not before the video's end at ${info.durationSeconds}`,
+    );
+  }
+  return timestamps;
 }
 
 function keyframeTimestamps(request: CollagePlanRequest, info: VideoInfo): number[] {

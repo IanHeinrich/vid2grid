@@ -149,6 +149,20 @@ const CASES: FixtureCase[] = [
     info: { durationSeconds: 40, width: 1280, height: 720 },
   },
   {
+    name: "explicit-timestamps",
+    request: {
+      startSeconds: 0,
+      endSeconds: 92.4,
+      targetFps: 1,
+      timestampsSeconds: [61.2345678, 0, 5.5, 5.5, 92.399],
+      framesPerGrid: 3,
+      outputResolution: 1024,
+      jpegQuality: 85,
+      transcript: { scope: "per-sheet" },
+    },
+    info: HD,
+  },
+  {
     name: "min-font-clamp",
     request: {
       startSeconds: 0,

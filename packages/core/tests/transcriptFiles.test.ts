@@ -41,6 +41,24 @@ describe("transcriptWindows", () => {
     ]);
   });
 
+  it("keeps a last window that reaches past the end, to an explicit timestamp there", () => {
+    const plan = buildRenderPlan(
+      {
+        startSeconds: 5,
+        endSeconds: 35,
+        targetFps: 1,
+        timestampsSeconds: [10, 38],
+        framesPerGrid: 1,
+        outputResolution: 512,
+        jpegQuality: 85,
+        transcript: { scope: "per-sheet" },
+      },
+      INFO,
+    );
+    expect(transcriptWindows(plan, 2, 35).map((window) => window.endSeconds)).toEqual([24, 38]);
+    expect(transcriptWindows(plan, 1, 35).map((window) => window.endSeconds)).toEqual([35]);
+  });
+
   it("is the one combined window whatever rendered", () => {
     expect(transcriptWindows(planFor("combined"), 1, 35)).toEqual([
       { startSeconds: 5, endSeconds: 35, fileName: "transcript.vtt" },

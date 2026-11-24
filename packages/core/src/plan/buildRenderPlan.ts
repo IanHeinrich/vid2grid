@@ -59,6 +59,7 @@ export function buildRenderPlanUnvalidated(
   const timestampFormat = chooseTimestampFormat(
     frames[frames.length - 1]?.timestampSeconds,
     request.targetFps,
+    request.timestampsSeconds,
   );
   const fontSizePx = Math.max(MIN_FONT_SIZE, Math.floor(layout.cellH / FONT_HEIGHT_DIVISOR));
   const strokeWidthPx = Math.max(
@@ -115,10 +116,12 @@ function planSheets(
 }
 
 function attachSheetWindows(sheets: PlannedSheet[], request: CollagePlanRequest): void {
+  const timestamps = sheets.map((sheet) => sheet.cells.map((cell) => cell.timestampSeconds));
+  // Explicit timestamps may fall outside the range, which must not turn a window inside out.
   const windows = computeSheetWindows(
-    sheets.map((sheet) => ({ timestamps: sheet.cells.map((cell) => cell.timestampSeconds) })),
-    request.startSeconds,
-    request.endSeconds,
+    timestamps.map((sheetTimestamps) => ({ timestamps: sheetTimestamps })),
+    Math.min(request.startSeconds, timestamps[0]?.[0] ?? Infinity),
+    Math.max(request.endSeconds, timestamps.at(-1)?.at(-1) ?? -Infinity),
   );
   sheets.forEach((sheet, i) => {
     const window = windows[i];

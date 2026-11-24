@@ -21,6 +21,10 @@ function request(overrides: Partial<CollagePlanRequest> = {}): CollagePlanReques
 
 const UNKNOWN_SCOPE = { scope: "both" } as unknown as NonNullable<CollagePlanRequest["transcript"]>;
 
+const BAD_TIMESTAMPS = "timestamps_seconds must be finite numbers, 0 or more";
+const TIMESTAMPS_COMBINED =
+  "timestamps_seconds cannot be combined with keyframe_sampling, frame_count or max_keyframes";
+
 function validationError(overrides: Partial<CollagePlanRequest>): unknown {
   try {
     validateCollagePlanRequest(request(overrides));
@@ -39,6 +43,9 @@ describe("validateCollagePlanRequest", () => {
     expect(() =>
       validateCollagePlanRequest(request({ transcript: { scope: "combined" } })),
     ).not.toThrow();
+    expect(() =>
+      validateCollagePlanRequest(request({ timestampsSeconds: [7, 0], keyframeSampling: false })),
+    ).not.toThrow();
   });
 
   it.each<[string, Partial<CollagePlanRequest>, string]>([
@@ -52,6 +59,25 @@ describe("validateCollagePlanRequest", () => {
     ["a fractional frame count", { frameCount: 2.5 }, "frame_count must be a positive integer"],
     ["a zero frame count", { frameCount: 0 }, "frame_count must be a positive integer"],
     ["a zero keyframe cap", { maxKeyframes: 0 }, "max_keyframes must be a positive integer"],
+    ["no explicit timestamps", { timestampsSeconds: [] }, "timestamps_seconds must not be empty"],
+    ["a negative timestamp", { timestampsSeconds: [1, -0.1] }, BAD_TIMESTAMPS],
+    ["a timestamp that is not a number", { timestampsSeconds: [NaN] }, BAD_TIMESTAMPS],
+    ["an infinite timestamp", { timestampsSeconds: [Infinity] }, BAD_TIMESTAMPS],
+    [
+      "timestamps with keyframe sampling",
+      { timestampsSeconds: [1], keyframeSampling: true },
+      TIMESTAMPS_COMBINED,
+    ],
+    [
+      "timestamps with a frame count",
+      { timestampsSeconds: [1], frameCount: 2 },
+      TIMESTAMPS_COMBINED,
+    ],
+    [
+      "timestamps with a keyframe cap",
+      { timestampsSeconds: [1], maxKeyframes: 2 },
+      TIMESTAMPS_COMBINED,
+    ],
     [
       "an unknown transcript scope",
       { transcript: UNKNOWN_SCOPE },

@@ -65,6 +65,14 @@ def test_the_tool_schemas_are_the_option_specs_with_their_bounds() -> None:
             assert schema.get(key) == spec.get(bound)
 
 
+def test_a_list_of_numbers_is_an_array_schema() -> None:
+    schema = properties(list_tools()[VIDEO_TO_SHEETS])["timestampsSeconds"]
+
+    assert schema["type"] == "array"
+    assert schema["items"] == {"type": "number", "minimum": 0}
+    assert schema["minItems"] == 1
+
+
 @pytest.mark.parametrize(("available", "offered"), [(True, True), (False, False)])
 def test_transcript_is_offered_only_with_transcription(
     monkeypatch: pytest.MonkeyPatch, available: bool, offered: bool

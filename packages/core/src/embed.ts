@@ -2,6 +2,7 @@ import { Vid2GridError, type Vid2GridErrorCode } from "./errors";
 import { buildRenderPlan } from "./plan/buildRenderPlan";
 import { isKeyframePlan } from "./plan/frameMatching";
 import { resolveKeyframeSampling } from "./plan/keyframeFallback";
+import { missingTimestampsWarning } from "./plan/missingTimestamps";
 import { optionSpecsFor, requestFromOptions } from "./plan/options";
 import { RENDER_PLAN_VERSION } from "./plan/renderPlan";
 import { collagePlanRequestProblem, validateCollagePlanRequest } from "./plan/request";
@@ -29,6 +30,7 @@ const FUNCTIONS = new Map<string, (...args: never[]) => unknown>([
   ["validateCollagePlanRequest", validateCollagePlanRequest],
   ["sheetDrawOps", sheetDrawOps],
   ["resolveKeyframeSampling", resolveKeyframeSampling],
+  ["missingTimestampsWarning", missingTimestampsWarning],
   ["displaySize", displaySize],
   ["normalizeRotationClockwise", normalizeRotationClockwise],
   ["isKeyframePlan", isKeyframePlan],

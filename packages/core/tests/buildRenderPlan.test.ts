@@ -93,6 +93,35 @@ describe("buildRenderPlan, worked example", () => {
   });
 });
 
+describe("buildRenderPlan, explicit timestamps", () => {
+  const explicit = { startSeconds: 1, endSeconds: 2, targetFps: 1, framesPerGrid: 2 };
+
+  it("plans them as ordinary sheets, with milliseconds when they need them", () => {
+    const plan = buildRenderPlan(
+      workedRequest({ ...explicit, timestampsSeconds: [2.75, 0, 1.5] }),
+      WORKED_INFO,
+    );
+    const labels = plan.sheets.flatMap((sheet) => sheet.cells.map((cell) => cell.watermarks[0]));
+    expect(plan.sheets.map((sheet) => sheet.cells.length)).toEqual([2, 1]);
+    expect(labels.map((label) => label?.text)).toEqual(["00.000", "01.500", "02.750"]);
+  });
+
+  it("widens the transcript windows to the timestamps", () => {
+    const plan = buildRenderPlan(
+      workedRequest({
+        ...explicit,
+        timestampsSeconds: [0, 0.5, 2.5, 2.75],
+        transcript: { scope: "per-sheet" },
+      }),
+      WORKED_INFO,
+    );
+    expect(plan.sheets.map((sheet) => sheet.transcript)).toEqual([
+      { startSeconds: 0, endSeconds: 1.5, fileName: "grid_0001.vtt" },
+      { startSeconds: 1.5, endSeconds: 2.75, fileName: "grid_0002.vtt" },
+    ]);
+  });
+});
+
 describe("buildRenderPlan", () => {
   it("uses the fixed black-on-white-stroke style", () => {
     expect(buildRenderPlan(workedRequest(), WORKED_INFO).style).toEqual({

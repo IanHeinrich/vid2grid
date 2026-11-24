@@ -23,6 +23,8 @@ _PATH = "path"
 _OUT_DIR = "outDir"
 _BOUNDS = (("min", "minimum"), ("max", "maximum"), ("exclusiveMin", "exclusiveMinimum"))
 
+_ITEM_COUNTS = ("minItems", "maxItems")
+
 
 def create_server() -> Server[Any, Any]:
     server: Server[Any, Any] = Server("vid2grid", __version__)
@@ -100,17 +102,25 @@ def _input_schema(specs: Sequence[OptionSpec], *, with_out_dir: bool) -> dict[st
 
 
 def _option_property(spec: OptionSpec) -> dict[str, object]:
-    schema: dict[str, object] = (
-        {"type": "string", "enum": spec["values"]}
-        if spec["type"] == "enum"
-        else {"type": spec["type"]}
-    )
     fields: Mapping[str, object] = spec
+    schema = _option_type(spec)
     schema.update({key: fields[name] for name, key in _BOUNDS if name in fields})
     schema["description"] = spec["help"]
     if "default" in fields:
         schema["default"] = fields["default"]
     return schema
+
+
+def _option_type(spec: OptionSpec) -> dict[str, object]:
+    if spec["type"] == "enum":
+        return {"type": "string", "enum": spec["values"]}
+    if spec["type"] == "numberList":
+        fields: Mapping[str, object] = spec
+        item_fields: Mapping[str, object] = spec["items"]
+        items = {key: item_fields[name] for name, key in _BOUNDS if name in item_fields}
+        counts = {name: fields[name] for name in _ITEM_COUNTS if name in fields}
+        return {"type": "array", "items": {"type": "number", **items}, **counts}
+    return {"type": spec["type"]}
 
 
 def _video_to_sheets(arguments: Mapping[str, object]) -> dict[str, object]:

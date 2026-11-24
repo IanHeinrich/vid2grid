@@ -66,7 +66,8 @@ for sheet in result.sheets:
 
 The options are `startSeconds`, `endSeconds`, `targetFps`, `framesPerGrid`,
 `outputResolution`, `jpegQuality`, `keyframeSampling`, `maxKeyframes`,
-`frameCount` and, with the extra, `transcript` (`"none"`, `"per-sheet"` or
+`frameCount`, `timestampsSeconds` (a list of exact times to capture in place of
+sampling) and, with the extra, `transcript` (`"none"`, `"per-sheet"` or
 `"combined"`). An unknown name, a value of the wrong type or a `transcript`
 without the extra raises `InvalidRequestError`.
 

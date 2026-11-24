@@ -294,6 +294,41 @@ describe("generateCollages", () => {
     expect(seenPlans[0]?.frames.map((frame) => frame.timestampSeconds)).toEqual([0, 0.5]);
   });
 
+  it("warns of the explicit timestamps no frame was captured for", async () => {
+    const warnings: Vid2GridWarning[] = [];
+    const options = {
+      videoInfo: VIDEO_INFO,
+      onWarning: (warning: Vid2GridWarning) => warnings.push(warning),
+    };
+    const request = baseRequest({ timestampsSeconds: [9.95, 1, 9.9] });
+
+    const some = await generateCollages("video", request, fakePorts({ captureCount: 1 }), options);
+    expect(some.sheets).toHaveLength(1);
+    expect(warnings).toEqual([
+      {
+        code: "no_frame_at_timestamps",
+        message:
+          "The video has no frame at or after these times, so no sheet shows them: 9.9, 9.95",
+      },
+    ]);
+
+    const none = await generateCollages("video", request, fakePorts({ captureCount: 0 }), options);
+    expect(none.sheets).toEqual([]);
+    expect(warnings[1]?.message).toMatch(/: 1, 9\.9, 9\.95$/);
+  });
+
+  it("does not warn when every explicit timestamp has a frame, or a sampled plan ends early", async () => {
+    const warnings: Vid2GridWarning[] = [];
+    const options = {
+      videoInfo: VIDEO_INFO,
+      onWarning: (warning: Vid2GridWarning) => warnings.push(warning),
+    };
+
+    await generateCollages("video", baseRequest({ timestampsSeconds: [1] }), fakePorts(), options);
+    await generateCollages("video", baseRequest(), fakePorts({ captureCount: 1 }), options);
+    expect(warnings).toEqual([]);
+  });
+
   it("carries the reason keyframe times could not be read in the warning", async () => {
     const warnings: Vid2GridWarning[] = [];
     const seenPlans: RenderPlan[] = [];

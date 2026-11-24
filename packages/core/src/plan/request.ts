@@ -14,6 +14,9 @@ export interface CollagePlanRequest {
   keyframeSampling?: boolean;
   // Keyframe mode only: the keyframes are thinned out evenly to at most this many.
   maxKeyframes?: number;
+  // In place of sampling: these exact times, in any order. The range then only bounds the
+  // transcript.
+  timestampsSeconds?: number[];
   framesPerGrid: number;
   outputResolution: number;
   jpegQuality: number;
@@ -42,6 +45,8 @@ export function collagePlanRequestProblem(request: CollagePlanRequest): string |
   if (request.maxKeyframes !== undefined && !isPositiveInteger(request.maxKeyframes)) {
     return "max_keyframes must be a positive integer";
   }
+  const timestampsProblem = explicitTimestampsProblem(request);
+  if (timestampsProblem !== undefined) return timestampsProblem;
   if (request.transcript !== undefined && !TRANSCRIPT_SCOPES.includes(request.transcript.scope)) {
     return "transcript_scope must be per-sheet or combined";
   }
@@ -51,6 +56,23 @@ export function collagePlanRequestProblem(request: CollagePlanRequest): string |
 export function validateCollagePlanRequest(request: CollagePlanRequest): void {
   const problem = collagePlanRequestProblem(request);
   if (problem !== undefined) throw new Vid2GridError("invalid_request", problem);
+}
+
+function explicitTimestampsProblem(request: CollagePlanRequest): string | undefined {
+  const { timestampsSeconds } = request;
+  if (timestampsSeconds === undefined) return undefined;
+  if (timestampsSeconds.length === 0) return "timestamps_seconds must not be empty";
+  if (!timestampsSeconds.every((seconds) => Number.isFinite(seconds) && seconds >= 0)) {
+    return "timestamps_seconds must be finite numbers, 0 or more";
+  }
+  if (
+    request.keyframeSampling === true ||
+    request.frameCount !== undefined ||
+    request.maxKeyframes !== undefined
+  ) {
+    return "timestamps_seconds cannot be combined with keyframe_sampling, frame_count or max_keyframes";
+  }
+  return undefined;
 }
 
 function isPositiveInteger(value: number): boolean {

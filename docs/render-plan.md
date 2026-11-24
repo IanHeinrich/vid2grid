@@ -126,9 +126,24 @@ startSeconds) / frameCount`. Either way a timestamp at or past
 with `maxKeyframes`, thins them to the values at index `floor(i * n / m)`,
 keeping the first one always. It throws when the probe supplied no keyframe
 times.
+Explicit times (`timestampsSeconds`) take exactly the times listed, rounded to
+microseconds, sorted and with repeats dropped. `startSeconds` and `endSeconds`
+play no part in choosing those frames: they still bound what is transcribed, and
+`requestFromOptions` defaults them to the whole video, which covers any valid
+time. The list must not be empty, every time must be a finite number from 0, and
+it cannot be combined with `keyframeSampling`, `frameCount` or `maxKeyframes`.
+A time at or past `durationSeconds` is rejected rather than dropped, even in a
+file whose stream starts after zero, where frames can lie past that point. All
+of these are `invalid_request`. A time before `durationSeconds` can still come
+after the last frame starts, and then has no frame to take. Core cannot know
+that when planning, so `generateCollages`, `streamCollages` and the Python
+library's `render_sheets` report a `no_frame_at_timestamps` warning naming every
+explicit time the capture returned no image for. A sampled plan that ends early
+gets no such warning.
 `frameIndex` is 0-based across the whole export, so it keeps counting up across
-sheets. `targetFps` still matters in keyframe mode: it decides whether the
-burned-in timestamp shows milliseconds.
+sheets. `targetFps` still matters in keyframe mode and with explicit times: the
+burned-in timestamp shows milliseconds when it is above 1, and also when any
+explicit time is not a whole second to the nearest millisecond.
 
 **Microsecond rounding.** Every timestamp and transcript boundary passes through
 `floor(t * 1e6 + 0.5) / 1e6`. That is spelled out rather than using a built-in:
@@ -159,7 +174,8 @@ watermark text and file names.
 `transcript` window: the first starts at `startSeconds`, the last ends at
 `endSeconds`, and the gap between two sheets is split at the midpoint between
 the previous sheet's last frame and the next sheet's first, so every cue lands
-in exactly one sheet. With `"combined"`, the plan carries a single
+in exactly one sheet. An explicit time outside the range moves that first start
+or last end out to itself. With `"combined"`, the plan carries a single
 `combinedTranscript` over the whole range instead.
 
 **File names.** Sheets are `grid_0001.jpg` upward, per-sheet transcripts are the
@@ -250,6 +266,8 @@ the bundle itself never returns it. The functions are
 `buildRenderPlan`, `collagePlanRequestProblem`,
 `validateCollagePlanRequest`, `sheetDrawOps`, `resolveKeyframeSampling` (the
 sampled fallback and its warning, as `generateCollages` applies it),
+`missingTimestampsWarning` (a request, a plan or an object holding just its
+`frames`, and how many images were captured, to the warning above or `null`),
 `displaySize`, `normalizeRotationClockwise`, `isKeyframePlan` (a plan, or an
 object holding just its `frames`, and the keyframe times, to whether a capture
 may decode keyframes alone), `optionSpecs` (the options a CLI or tool exposes

@@ -5,19 +5,13 @@ import { exactTimes } from "./exactTimes";
 
 export const MAX_CAPTURE_PX = 4096;
 
-export interface FramePlan {
-  plan: RenderPlan;
-  info: VideoInfo;
-}
-
-export function framePlan(info: VideoInfo, seconds: number): FramePlan {
-  const exact = exactTimes(info, [seconds]);
+export function framePlan(info: VideoInfo, seconds: number): RenderPlan {
   const sourceSide = Math.max(info.width, info.height) + 2 * GUTTER_PX;
   const request = requestFromOptions(
-    { ...exact.values, outputResolution: Math.min(MAX_CAPTURE_PX, sourceSide) },
-    exact.info,
+    { ...exactTimes([seconds]), outputResolution: Math.min(MAX_CAPTURE_PX, sourceSide) },
+    info,
   );
-  return { plan: buildRenderPlan(request, exact.info), info: exact.info };
+  return buildRenderPlan(request, info);
 }
 
 // The caller closes the bitmap; undefined where the video has no frame at or after that time.
@@ -27,10 +21,10 @@ export async function captureFrame(
   seconds: number,
   frames: FrameCapturePort<File, ImageBitmap> = createBrowserPorts().frames,
 ): Promise<ImageBitmap | undefined> {
-  const planned = framePlan(info, seconds);
+  const plan = framePlan(info, seconds);
   let first: ImageBitmap | undefined;
   try {
-    for await (const image of frames.capture(file, planned.plan, planned.info)) {
+    for await (const image of frames.capture(file, plan, info)) {
       if (first === undefined) first = image;
       else image.close();
     }
