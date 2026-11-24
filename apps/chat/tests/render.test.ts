@@ -2,9 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { generateCollages, type RenderPlan } from "@vid2grid/core";
 import { fileKey, probeAttachment, renderSheets } from "../src/video/render";
 
-const { probeVideo } = vi.hoisted(() => ({ probeVideo: vi.fn() }));
+const { probeVideo, readFrameTimes } = vi.hoisted(() => ({
+  probeVideo: vi.fn(),
+  readFrameTimes: vi.fn(),
+}));
 
-vi.mock("@vid2grid/browser", () => ({ createBrowserPorts: () => ({}), probeVideo }));
+vi.mock("@vid2grid/browser", () => ({
+  createBrowserPorts: () => ({}),
+  probeVideo,
+  readFrameTimes,
+}));
 vi.mock("@vid2grid/core", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   generateCollages: vi.fn(),
@@ -25,6 +32,7 @@ function planWithSheets(sheets: Record<string, number[]>): RenderPlan {
 
 beforeEach(() => {
   vi.mocked(generateCollages).mockReset();
+  readFrameTimes.mockReset().mockResolvedValue(undefined);
 });
 
 describe("fileKey", () => {
@@ -65,6 +73,32 @@ describe("renderSheets", () => {
       { name: "grid_0001", blob: first, startSeconds: 0, endSeconds: 10, frameCount: 3 },
       { name: "grid_0002", blob: second, startSeconds: 15, endSeconds: 20, frameCount: 2 },
     ]);
+  });
+
+  it("asks for nothing after the video's last frame", async () => {
+    vi.mocked(generateCollages).mockResolvedValue({
+      plan: planWithSheets({}),
+      sheets: [],
+      transcriptFiles: [],
+    });
+    readFrameTimes.mockResolvedValue([0, 30, 58]);
+    const times = { ...info, keyframeTimestampsSeconds: [10, 59.9] };
+    const values = { keyframeSampling: true, startSeconds: 10, endSeconds: 60, framesPerGrid: 2 };
+    await renderSheets(file, times, values);
+    const [, , , options] = vi.mocked(generateCollages).mock.calls[0] ?? [];
+    expect(options).toMatchObject({ videoInfo: { keyframeTimestampsSeconds: [10, 58] } });
+  });
+
+  it("renders as asked when the frame times cannot be read", async () => {
+    vi.mocked(generateCollages).mockResolvedValue({
+      plan: planWithSheets({}),
+      sheets: [],
+      transcriptFiles: [],
+    });
+    readFrameTimes.mockRejectedValue(new Error("demux failed"));
+    await renderSheets(file, info, { frameCount: 2, framesPerGrid: 2 });
+    const [, , , options] = vi.mocked(generateCollages).mock.calls[0] ?? [];
+    expect(options).toMatchObject({ videoInfo: info });
   });
 
   it("defaults the JPEG quality to 80 and passes the probed info", async () => {

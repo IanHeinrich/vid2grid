@@ -45,6 +45,34 @@ function sampleTimeSeconds(sample: Sample): number {
   return sample.cts / sample.timescale;
 }
 
+interface PresentationStart {
+  mediaTime: number;
+  emptySeconds: number;
+}
+
+// Browsers apply the edit list, so currentTime 0 is the first edit's media time after any empty
+// edits, not cts 0. B-frame encodes typically start the media two frames in.
+function presentationStart(edits: Entry[] | undefined, movieTimescale: number): PresentationStart {
+  let emptySeconds = 0;
+  for (const edit of edits ?? []) {
+    if (edit.media_time >= 0) return { mediaTime: edit.media_time, emptySeconds };
+    emptySeconds += edit.segment_duration / movieTimescale;
+  }
+  return { mediaTime: 0, emptySeconds: 0 };
+}
+
+// Every time below is on this clock, so it matches the planned times and the seek-based path.
+export function onPresentationClock(
+  samples: readonly Sample[],
+  track: Pick<Track, "edits" | "movie_timescale">,
+): Sample[] {
+  const { mediaTime, emptySeconds } = presentationStart(track.edits, track.movie_timescale);
+  return samples.map((sample) => {
+    const shift = Math.round(emptySeconds * sample.timescale) - mediaTime;
+    return { ...sample, cts: sample.cts + shift, dts: sample.dts + shift };
+  });
+}
+
 // Demuxing is independent of the collage settings, so regenerating with new settings reuses it.
 // Keyed by File identity so a re-picked file re-parses and old entries are collectable.
 const demuxCache = new WeakMap<File, Promise<DemuxResult | null>>();
@@ -103,7 +131,7 @@ async function demux(file: File): Promise<DemuxResult | null> {
           resolve({
             videoTrack,
             description,
-            samples,
+            samples: onPresentationClock(samples, videoTrack),
             rotation: rotationFromMatrix(videoTrack.matrix),
           });
         }
@@ -118,12 +146,18 @@ async function demux(file: File): Promise<DemuxResult | null> {
   });
 }
 
-/** Every sync sample's composition time, ascending, rounded the way the planner rounds. */
-export function keyframeTimestampsFromSamples(samples: Sample[]): number[] {
+// Samples before the presentation starts decode but are never shown, so they are left out.
+export function frameTimestampsFromSamples(samples: readonly Sample[]): number[] {
   return samples
-    .filter((sample) => sample.is_sync)
     .map((sample) => roundToMicroseconds(sampleTimeSeconds(sample)))
+    .filter((time) => time >= 0)
     .sort((a, b) => a - b);
+}
+
+/** Every sync sample's time from the presentation start on, ascending, rounded the way the
+ * planner rounds. */
+export function keyframeTimestampsFromSamples(samples: Sample[]): number[] {
+  return frameTimestampsFromSamples(samples.filter((sample) => sample.is_sync));
 }
 
 export async function readKeyframeTimestamps(file: File): Promise<number[] | null> {
@@ -133,40 +167,11 @@ export async function readKeyframeTimestamps(file: File): Promise<number[] | nul
   return keyframeTimestampsFromSamples(demuxed.samples);
 }
 
-interface PresentationStart {
-  mediaTime: number;
-  emptySeconds: number;
-}
-
-// Browsers apply the edit list, so currentTime 0 is the first edit's media time after any empty
-// edits, not cts 0. B-frame encodes typically start the media two frames in.
-function presentationStart(edits: Entry[] | undefined, movieTimescale: number): PresentationStart {
-  let emptySeconds = 0;
-  for (const edit of edits ?? []) {
-    if (edit.media_time >= 0) return { mediaTime: edit.media_time, emptySeconds };
-    emptySeconds += edit.segment_duration / movieTimescale;
-  }
-  return { mediaTime: 0, emptySeconds: 0 };
-}
-
-export function frameTimestampsFromSamples(
-  samples: Sample[],
-  track: Pick<Track, "edits" | "movie_timescale">,
-): number[] {
-  const { mediaTime, emptySeconds } = presentationStart(track.edits, track.movie_timescale);
-  return samples
-    .map((sample) =>
-      roundToMicroseconds((sample.cts - mediaTime) / sample.timescale + emptySeconds),
-    )
-    .filter((time) => time >= 0)
-    .sort((a, b) => a - b);
-}
-
 export async function readFrameTimestamps(file: File): Promise<number[] | null> {
   if (!supportsWebCodecs(file)) return null;
   const demuxed = await demuxCached(file);
   if (!demuxed) return null;
-  return frameTimestampsFromSamples(demuxed.samples, demuxed.videoTrack);
+  return frameTimestampsFromSamples(demuxed.samples);
 }
 
 export async function countKeyframesInRange(

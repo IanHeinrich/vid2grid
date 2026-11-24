@@ -8,6 +8,10 @@ describe("sheetCacheKey", () => {
     expect(a).toBe(b);
   });
 
+  it("is not the key sheets were cached under before frames were timed correctly", () => {
+    expect(sheetCacheKey("v|1|2", { frameCount: 4 })).not.toBe('v|1|2#[["frameCount",4]]');
+  });
+
   it("ignores undefined values", () => {
     expect(sheetCacheKey("v|1|2", { frameCount: 4, jpegQuality: undefined })).toBe(
       sheetCacheKey("v|1|2", { frameCount: 4 }),

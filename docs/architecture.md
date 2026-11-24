@@ -102,8 +102,9 @@ file. A Node or Python host can reuse the orchestration by supplying the same
 three ports. A track the browser cannot decode raises `undecodable_audio`.
 
 The browser probe's `readFrameTimes` returns every frame's presentation time,
-corrected for the edit list, for callers that need to step between real frames
-rather than guess from the frame rate.
+for callers that need to step between real frames rather than guess from the
+frame rate. The WebCodecs demuxer corrects every sample for the edit list, so
+frame times, keyframe times and captured frames share one clock.
 
 `apps/python-library` cannot import TypeScript, so it runs core's own code
 instead of porting it. `npm run bundle` builds
