@@ -30,7 +30,8 @@ The package declares `vid2grid-node` as the bin for the same entry point.
 `-o` (or `--out`) is required. It prints the path of each sheet it wrote,
 `grid_0001.jpg` onwards, then a line on stderr with the frame and sheet count
 and the time spent extracting and rendering. Warnings go to stderr. An error
-prints its message and exits with 1.
+prints its message and exits with 1. Ctrl+C stops ffmpeg, keeps the sheets
+already written and exits with 130.
 
 ## Options
 
@@ -48,6 +49,8 @@ vid2grid offers, and core fills in the same defaults. `--help` prints them.
 | `--keyframes`       | off                  | capture the video's keyframes instead of sampling by fps           |
 | `--max-keyframes`   |                      | with `--keyframes`, thin the keyframes evenly to at most this many |
 | `--frame-count`     |                      | exactly this many evenly spaced frames, in place of the fps        |
+| `--times`           |                      | comma separated exact times in seconds to capture, in place of fps |
+| `--area`            |                      | left, top, right, bottom to show, in thousandths of the picture    |
 
 `--transcript` is not offered, because this host has no transcription.
 

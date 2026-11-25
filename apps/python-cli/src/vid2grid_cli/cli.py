@@ -80,6 +80,10 @@ def _add_option(parser: argparse.ArgumentParser, spec: OptionSpec) -> None:
         help_text += f" (default: {spec['default']})"
     if spec["type"] == "enum":
         parser.add_argument(flag, dest=spec["name"], choices=spec["values"], help=help_text)
+    elif spec["type"] == "numberList":
+        parser.add_argument(
+            flag, dest=spec["name"], type=_number_list, metavar="N,N,...", help=help_text
+        )
     else:
         parser.add_argument(flag, dest=spec["name"], type=_number, metavar=metavar, help=help_text)
 
@@ -90,6 +94,10 @@ def _number(text: str) -> int | float:
         return int(text)
     except ValueError:
         return float(text)
+
+
+def _number_list(text: str) -> list[int | float]:
+    return [_number(item) for item in text.split(",")]
 
 
 def _print_sheets(result: RenderResult) -> None:

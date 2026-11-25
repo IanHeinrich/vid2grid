@@ -1,7 +1,13 @@
 import { Vid2GridError } from "../errors";
 import { MODEL_RESOLUTION_PRESETS } from "../grid/modelProfiles";
 import type { VideoInfo } from "../probe/videoInfo";
-import { TRANSCRIPT_SCOPES, type CollagePlanRequest, type TranscriptScope } from "./request";
+import {
+  AREA_SCALE,
+  TRANSCRIPT_SCOPES,
+  type CollagePlanRequest,
+  type PictureArea,
+  type TranscriptScope,
+} from "./request";
 
 export type TranscriptOption = "none" | TranscriptScope;
 
@@ -17,6 +23,9 @@ export interface PlanOptionValues {
   keyframeSampling: boolean;
   maxKeyframes: number;
   frameCount: number;
+  timestampsSeconds: number[];
+  // left, top, right, bottom
+  area: number[];
   transcript: TranscriptOption;
 }
 
@@ -44,6 +53,15 @@ export interface NumberOptionSpec extends OptionSpecBase {
   exclusiveMin?: number;
 }
 
+export interface NumberListOptionSpec extends OptionSpecBase {
+  type: "numberList";
+  default?: never;
+  // Bounds on each number, under the names NumberOptionSpec gives them.
+  items: { min?: number; max?: number };
+  minItems?: number;
+  maxItems?: number;
+}
+
 export interface BooleanOptionSpec extends OptionSpecBase {
   type: "boolean";
   default: boolean;
@@ -55,7 +73,8 @@ export interface EnumOptionSpec extends OptionSpecBase {
   default: TranscriptOption;
 }
 
-export type OptionSpec = NumberOptionSpec | BooleanOptionSpec | EnumOptionSpec;
+export type OptionSpec =
+  NumberOptionSpec | NumberListOptionSpec | BooleanOptionSpec | EnumOptionSpec;
 
 // The web app starts on the first preset.
 function firstModelResolution(): number {
@@ -143,6 +162,23 @@ export const OPTION_SPECS: readonly OptionSpec[] = [
     help: "exactly this many evenly spaced frames, in place of the fps",
   },
   {
+    name: "timestampsSeconds",
+    flag: "times",
+    type: "numberList",
+    items: { min: 0 },
+    minItems: 1,
+    help: "exact times in seconds to capture, in place of sampling by fps",
+  },
+  {
+    name: "area",
+    flag: "area",
+    type: "numberList",
+    items: { min: 0, max: AREA_SCALE },
+    minItems: 4,
+    maxItems: 4,
+    help: "part of the picture to show: left, top, right, bottom in thousandths from its top left",
+  },
+  {
     name: "transcript",
     flag: "transcript",
     type: "enum",
@@ -166,7 +202,7 @@ export function requestFromOptions(
 ): CollagePlanRequest {
   const problem = optionInputProblem(values, optionSpecsFor(capabilities));
   if (problem !== undefined) throw new Vid2GridError("invalid_request", problem);
-  const { frameCount, maxKeyframes } = values;
+  const { frameCount, maxKeyframes, timestampsSeconds, area } = values;
   const transcript = values.transcript ?? DEFAULTS.transcript;
   return {
     startSeconds: values.startSeconds ?? DEFAULTS.startSeconds,
@@ -178,6 +214,8 @@ export function requestFromOptions(
     jpegQuality: values.jpegQuality ?? DEFAULTS.jpegQuality,
     ...(frameCount !== undefined && { frameCount }),
     ...(maxKeyframes !== undefined && { maxKeyframes }),
+    ...(timestampsSeconds !== undefined && { timestampsSeconds }),
+    ...(area !== undefined && { area: pictureArea(area) }),
     ...(transcript !== "none" && { transcript: { scope: transcript } }),
   };
 }
@@ -199,11 +237,11 @@ function optionInputProblem(
 function optionValueProblem(spec: OptionSpec, value: unknown): string | undefined {
   switch (spec.type) {
     case "number":
-      return typeof value === "number" && Number.isFinite(value)
-        ? undefined
-        : `${spec.name} must be a number`;
+      return isFiniteNumber(value) ? undefined : `${spec.name} must be a number`;
     case "integer":
       return Number.isInteger(value) ? undefined : `${spec.name} must be an integer`;
+    case "numberList":
+      return numberListProblem(spec, value);
     case "boolean":
       return typeof value === "boolean" ? undefined : `${spec.name} must be true or false`;
     case "enum":
@@ -211,4 +249,26 @@ function optionValueProblem(spec: OptionSpec, value: unknown): string | undefine
         ? undefined
         : `${spec.name} must be one of ${spec.values.join(", ")}`;
   }
+}
+
+// A list of varying length has its counts checked by the planner.
+function numberListProblem(
+  { name, minItems, maxItems }: NumberListOptionSpec,
+  value: unknown,
+): string | undefined {
+  if (!Array.isArray(value) || !value.every(isFiniteNumber)) {
+    return `${name} must be a list of numbers`;
+  }
+  return minItems !== undefined && minItems === maxItems && value.length !== minItems
+    ? `${name} must be a list of exactly ${minItems} numbers`
+    : undefined;
+}
+
+// The option's count is already checked, so no side is ever defaulted.
+function pictureArea([left = 0, top = 0, right = 0, bottom = 0]: readonly number[]): PictureArea {
+  return { left, top, right, bottom };
+}
+
+function isFiniteNumber(value: unknown): boolean {
+  return typeof value === "number" && Number.isFinite(value);
 }

@@ -21,13 +21,20 @@ without touching media, and proves it does them the same way as the others.
    ffmpeg reports it counter-clockwise, and core's
    `normalizeRotationClockwise` flips and rounds it. Then scale it to exactly
    `plan.cell`. `VideoInfo` does not carry the rotation, so the host keeps it
-   from the probe. Several planned times can pick the same source frame.
+   from the probe. With a `plan.crop`, cut that rectangle out of the upright
+   frame at its display size, before scaling to the cell, as
+   [render-plan.md](render-plan.md#what-an-executor-must-do) says. A host that
+   checks `plan.version` accepts any version up to the newest it knows, rather
+   than testing for equality. Several planned times can pick the same source
+   frame.
    Return fewer images only when the stream ends first. A keyframe plan may
    decode keyframes alone. Hand images over as they are decoded rather than
    all at once: a JavaScript host's `capture` is an async iterable that
    yields them in plan order and decodes no further ahead than the pipeline
    pulls, and its optional `release` frees an image the pipeline pulled but
-   will never encode.
+   will never encode. Its optional last argument, `signal`, asks it to stop:
+   once the signal aborts, free the decoder and let the pending pull reject. A
+   host that ignores it is still stopped, after the pull it is on.
 3. **Run draw ops.** For each sheet, run `sheetDrawOps(plan, sheetIndex)` on a
    `plan.canvas`-sized surface, in order: a background `fillRect`, then per
    cell an `image` op and its `text` ops. Skip both for a cell with no captured
@@ -42,7 +49,9 @@ Transcription is optional. A host that offers it fills the
 `TranscriptPort` in
 [`pipeline/ports.ts`](../packages/core/src/pipeline/ports.ts) and writes the
 cues inside each sheet's `transcript` window; one that does not just leaves
-`transcript` out of the request. Core's
+`transcript` out of the request. Its `transcribe` also gets the run's `signal`.
+Decode long audio in pieces rather than whole, overlapping them enough that a
+word on a join is heard complete in one of them. Core's
 [`transcript/`](../packages/core/src/transcript/) does the rest:
 `cuesFromSegments` turns a recogniser's segments into cues on the video's
 timeline, `transcriptFiles(plan, renderedSheetCount, endSeconds, cues)` gives
@@ -99,6 +108,7 @@ for sheet in plan.sheets:
         if op.kind != "fillRect" and op.cellIndex >= len(images): continue
         draw(surface, op, images)
     write(encode_jpeg(surface, plan.jpegQuality), sheet.fileName)
+core.missingTimestampsWarning(request, plan, capturedCount)   # report it if there is one
 ```
 
 Taking one sheet's images at a time keeps memory to a sheet, whatever the
@@ -111,7 +121,8 @@ therefore holds at most about `concurrency + 1` sheets of frames. When the
 capture ends early, the sheet it was part way through is encoded with its
 missing cells empty. On any error they stop pulling, close the capture with
 its iterator's `return()`, `release` every frame no encode took, let the
-encodes in flight settle and rethrow the first error.
+encodes in flight settle and rethrow the first error. An aborted `signal` in the
+options ends a run the same way, with the signal's reason as the error.
 
 ## Proving conformance
 
@@ -160,21 +171,26 @@ or a video. `scripts/makeKeyframeVideo.py`, run the same way, writes
 `OPTION_SPECS` in [`plan/options.ts`](../packages/core/src/plan/options.ts)
 lists every option a CLI or tool can expose. Each has a `name` (the request
 field, or `transcript` for the transcript scope), a kebab-case `flag`, a `type`
-(`number`, `integer`, `boolean` or `enum`) and a one-line `help`. Where they
-apply it also has a `default`, a `min` and `max` (both inclusive), an
+(`number`, `integer`, `numberList`, `boolean` or `enum`) and a one-line `help`.
+Where they apply it also has a `default`, a `min` and `max` (both inclusive), an
 `exclusiveMin` (strict, as JSON Schema names it), the `values` of an enum and
-a `requires` naming the host capability it needs. The bounds mirror what
-`validateCollagePlanRequest` enforces on the same field; whether an `integer`
-is whole is checked only by `requestFromOptions`.
+a `requires` naming the host capability it needs. A `numberList` is an array of
+numbers: `items` holds the `min` and `max` of each number, and `minItems` and
+`maxItems` how many there may be (the same number for `area`, whose four become
+the request's `left`, `top`, `right` and `bottom`). The CLIs read one as numbers
+separated by commas, `--times 1,2.5,60`, and the MCP server as a JSON array. The
+bounds mirror what `validateCollagePlanRequest` enforces on the same field;
+whether an `integer` is whole is checked only by `requestFromOptions`.
 
 A host gets its options from `optionSpecsFor(capabilities)` (`optionSpecs`
 through the embed, `option_specs(capabilities)` in Python) and converts the
 values it parsed with `requestFromOptions(values, info, capabilities)`. That
 fills in the defaults, ending at the video's duration when no end is given,
 and returns a `CollagePlanRequest`. It rejects an unknown name, a value of the
-wrong type and an enum value outside `values` as `invalid_request`. Only
-`transcript` has a `requires`, `transcription`, so a host without
-transcription passes no capabilities and never offers it.
+wrong type, a fixed-length list of another length and an enum value outside
+`values` as `invalid_request`. Only `transcript` has a `requires`,
+`transcription`, so a host without transcription passes no capabilities and
+never offers it.
 
 The defaults are the web app's startup values, and the resolution comes from
 the first model preset. `apps/web/tests/optionDefaults.test.ts` fails if its

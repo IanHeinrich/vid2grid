@@ -1,0 +1,202 @@
+{
+  "name": "explicit-timestamps",
+  "request": {
+    "startSeconds": 0,
+    "endSeconds": 92.4,
+    "targetFps": 1,
+    "timestampsSeconds": [
+      61.2345678,
+      0,
+      5.5,
+      5.5,
+      92.399
+    ],
+    "framesPerGrid": 3,
+    "outputResolution": 1024,
+    "jpegQuality": 85,
+    "transcript": {
+      "scope": "per-sheet"
+    }
+  },
+  "info": {
+    "durationSeconds": 92.4,
+    "width": 1920,
+    "height": 1080
+  },
+  "plan": {
+    "version": 1,
+    "canvas": {
+      "width": 1024,
+      "height": 1024
+    },
+    "cell": {
+      "width": 587,
+      "height": 330
+    },
+    "layout": {
+      "cols": 1,
+      "rows": 3,
+      "offsetX": 210,
+      "offsetY": 1
+    },
+    "style": {
+      "background": "black",
+      "textFill": "black",
+      "textStroke": "white",
+      "fontFamily": "sans-serif",
+      "textBaseline": "top"
+    },
+    "jpegQuality": 85,
+    "timestampFormat": {
+      "showHours": false,
+      "showMinutes": true,
+      "showMilliseconds": true
+    },
+    "frames": [
+      {
+        "frameIndex": 0,
+        "timestampSeconds": 0
+      },
+      {
+        "frameIndex": 1,
+        "timestampSeconds": 5.5
+      },
+      {
+        "frameIndex": 2,
+        "timestampSeconds": 61.234568
+      },
+      {
+        "frameIndex": 3,
+        "timestampSeconds": 92.399
+      }
+    ],
+    "sheets": [
+      {
+        "sheetIndex": 0,
+        "fileName": "grid_0001.jpg",
+        "cells": [
+          {
+            "frameIndex": 0,
+            "timestampSeconds": 0,
+            "x": 218,
+            "y": 9,
+            "width": 587,
+            "height": 330,
+            "watermarks": [
+              {
+                "text": "00:00.000",
+                "anchor": "top-left",
+                "x": 222,
+                "y": 13,
+                "fontSizePx": 20,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "0",
+                "anchor": "top-right",
+                "x": 801,
+                "y": 13,
+                "fontSizePx": 20,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 1,
+            "timestampSeconds": 5.5,
+            "x": 218,
+            "y": 347,
+            "width": 587,
+            "height": 330,
+            "watermarks": [
+              {
+                "text": "00:05.500",
+                "anchor": "top-left",
+                "x": 222,
+                "y": 351,
+                "fontSizePx": 20,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "1",
+                "anchor": "top-right",
+                "x": 801,
+                "y": 351,
+                "fontSizePx": 20,
+                "strokeWidthPx": 2
+              }
+            ]
+          },
+          {
+            "frameIndex": 2,
+            "timestampSeconds": 61.234568,
+            "x": 218,
+            "y": 685,
+            "width": 587,
+            "height": 330,
+            "watermarks": [
+              {
+                "text": "01:01.235",
+                "anchor": "top-left",
+                "x": 222,
+                "y": 689,
+                "fontSizePx": 20,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "2",
+                "anchor": "top-right",
+                "x": 801,
+                "y": 689,
+                "fontSizePx": 20,
+                "strokeWidthPx": 2
+              }
+            ]
+          }
+        ],
+        "transcript": {
+          "startSeconds": 0,
+          "endSeconds": 76.816784,
+          "fileName": "grid_0001.vtt"
+        }
+      },
+      {
+        "sheetIndex": 1,
+        "fileName": "grid_0002.jpg",
+        "cells": [
+          {
+            "frameIndex": 3,
+            "timestampSeconds": 92.399,
+            "x": 218,
+            "y": 9,
+            "width": 587,
+            "height": 330,
+            "watermarks": [
+              {
+                "text": "01:32.399",
+                "anchor": "top-left",
+                "x": 222,
+                "y": 13,
+                "fontSizePx": 20,
+                "strokeWidthPx": 2
+              },
+              {
+                "text": "3",
+                "anchor": "top-right",
+                "x": 801,
+                "y": 13,
+                "fontSizePx": 20,
+                "strokeWidthPx": 2
+              }
+            ]
+          }
+        ],
+        "transcript": {
+          "startSeconds": 76.816784,
+          "endSeconds": 92.4,
+          "fileName": "grid_0002.vtt"
+        }
+      }
+    ]
+  }
+}

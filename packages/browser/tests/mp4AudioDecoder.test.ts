@@ -1,6 +1,6 @@
 import { Vid2GridError } from "@vid2grid/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { decodeMp4AudioRange } from "../src/capture/mp4AudioDecoder";
+import { decodeMp4AudioRange, openMp4Audio } from "../src/capture/mp4AudioDecoder";
 
 const { createFile } = vi.hoisted(() => ({ createFile: vi.fn() }));
 vi.mock("mp4box", () => ({
@@ -49,6 +49,9 @@ function sampleOffsets(): number[] {
 
 interface MovieOptions {
   audio?: boolean;
+  // A sound track whose sample entry mp4box does not know.
+  unknownSound?: boolean;
+  samples?: { cts: number; duration: number }[];
   fragmented?: boolean;
   codec?: string;
   withEsds?: boolean;
@@ -56,6 +59,8 @@ interface MovieOptions {
 
 function stubMovie({
   audio = true,
+  unknownSound = false,
+  samples: times = sampleOffsets().map((_, index) => ({ cts: index * 100, duration: 100 })),
   fragmented = false,
   codec = "mp4a.40.2",
   withEsds = true,
@@ -67,11 +72,11 @@ function stubMovie({
     movie_timescale: 1000,
     timescale: 1000,
   };
-  const samples = sampleOffsets().map((offset, index) => ({
-    cts: index * 100,
-    duration: 100,
+  const offsets = sampleOffsets();
+  const samples = times.map((time, index) => ({
+    ...time,
     timescale: 1000,
-    offset,
+    offset: offsets[index] ?? 0,
     size: SAMPLE_BYTES,
   }));
   const specificInfo = { data: AUDIO_SPECIFIC_CONFIG };
@@ -82,7 +87,17 @@ function stubMovie({
     onError: undefined as undefined | ((module: string, message: string) => void),
     appendBuffer: vi.fn(),
     flush: vi.fn(),
-    getInfo: () => ({ isFragmented: fragmented, audioTracks: audio ? [track] : [] }),
+    moov: {
+      traks: [
+        { tkhd: { track_id: 2 }, mdia: { hdlr: { handler: "vide" } } },
+        ...(unknownSound ? [{ tkhd: { track_id: 1 }, mdia: { hdlr: { handler: "soun" } } }] : []),
+      ],
+    },
+    getInfo: () => ({
+      isFragmented: fragmented,
+      audioTracks: audio ? [track] : [],
+      tracks: [track],
+    }),
     getTrackSamplesInfo: () => samples,
     getTrackById: () => ({ mdia: { minf: { stbl: { stsd: { entries: [entry] } } } } }),
   };
@@ -228,6 +243,42 @@ describe("decodeMp4AudioRange", () => {
   });
 });
 
+describe("openMp4Audio", () => {
+  it("parses the movie once for every range decoded from it", async () => {
+    const isoFile = stubMovie();
+    const { file } = buildFile();
+    const resample = vi.fn((samples: Float32Array) => samples);
+
+    const audio = await openMp4Audio(file);
+    const first = await audio?.decodeRange(0, 0.3, RATE);
+    const second = await audio?.decodeRange(0.5, 0.8, RATE, undefined, resample);
+
+    expect(audio?.endSeconds).toBe(1);
+    expect(first?.samples).toHaveLength(300);
+    expect(second?.samples).toHaveLength(300);
+    expect(resample).toHaveBeenCalledTimes(1);
+    expect(isoFile.appendBuffer).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("decodeMp4AudioRange memory", () => {
+  it("allocates for the range asked for, however long its samples claim to be", async () => {
+    const hour = 3_600_000;
+    stubMovie({ samples: [{ cts: 0, duration: 2 * hour }] });
+    const allocated: number[] = [];
+    const resample = vi.fn((samples: Float32Array) => {
+      allocated.push(samples.length);
+      return samples;
+    });
+
+    const audio = await openMp4Audio(buildFile().file);
+    const decoded = await audio?.decodeRange(3600, 3630, RATE, undefined, resample);
+
+    expect(allocated).toEqual([Math.ceil((30 + 0.1 + 1) * RATE)]);
+    expect(decoded?.samples).toHaveLength(30 * RATE);
+  });
+});
+
 describe("decodeMp4AudioRange failures", () => {
   it("rejects with no_audio when the movie has no audio track", async () => {
     stubMovie({ audio: false });
@@ -236,6 +287,30 @@ describe("decodeMp4AudioRange failures", () => {
 
     expect(codeOf(failure)).toBe("no_audio");
     expect((failure as Error).message).toBe("This video has no audio track.");
+  });
+
+  it("rejects with undecodable_audio for a sound track mp4box does not know", async () => {
+    stubMovie({ audio: false, unknownSound: true, codec: "sowt" });
+
+    const failure = await failureOfFirstSecond();
+
+    expect(codeOf(failure)).toBe("undecodable_audio");
+    expect((failure as Error).message).toContain("sowt");
+  });
+
+  it("rejects with the read's own error when the file cannot be read", async () => {
+    stubMovie();
+    const { file } = buildFile();
+    const unreadable = new DOMException("gone", "NotReadableError");
+    const slice = file.slice.bind(file);
+    vi.spyOn(file, "slice").mockImplementation((start, end) =>
+      FakeAudioDecoder.instances.length > 0
+        ? ({ arrayBuffer: () => Promise.reject(unreadable) } as unknown as Blob)
+        : slice(start, end),
+    );
+
+    await expect(decodeMp4AudioRange(file, 0, 1, RATE)).rejects.toBe(unreadable);
+    expect(FakeAudioDecoder.instances[0]?.state).toBe("closed");
   });
 
   it("rejects with undecodable_audio when the browser cannot decode the codec", async () => {

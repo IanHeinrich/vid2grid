@@ -55,14 +55,23 @@ export function parseCliArgs(argv: readonly string[]): CliCommand {
   return { kind: "render", videoPath, outDir, options };
 }
 
-function optionValue(spec: OptionSpec, raw: unknown): number | boolean | string | undefined {
+function optionValue(
+  spec: OptionSpec,
+  raw: unknown,
+): number | number[] | boolean | string | undefined {
   if (spec.type === "boolean") return raw === true ? true : undefined;
   if (typeof raw !== "string") return undefined;
   if (spec.type === "enum") return raw;
-  const text = raw;
+  if (spec.type === "numberList") {
+    return raw.split(",").map((text) => parsedNumber(text, spec, "numbers separated by commas"));
+  }
+  return parsedNumber(raw, spec, "a number");
+}
+
+function parsedNumber(text: string, spec: OptionSpec, expected: string): number {
   const value = Number(text);
   if (text.trim() === "" || !Number.isFinite(value)) {
-    throw invalid(`--${spec.flag} expects a number, got "${text}"`);
+    throw invalid(`--${spec.flag} expects ${expected}, got "${text}"`);
   }
   return value;
 }
@@ -70,7 +79,7 @@ function optionValue(spec: OptionSpec, raw: unknown): number | boolean | string 
 function valueHint(spec: OptionSpec): string {
   if (spec.type === "boolean") return "";
   if (spec.type === "enum") return ` <${spec.values.join("|")}>`;
-  return " <n>";
+  return spec.type === "numberList" ? " <n,n,...>" : " <n>";
 }
 
 function specHelp(spec: OptionSpec): string {

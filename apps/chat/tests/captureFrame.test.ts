@@ -34,34 +34,26 @@ describe("framePlan", () => {
     [720, 720],
     [854, 480],
   ])("plans one frame at the source size for %ix%i", (width, height) => {
-    const { plan } = framePlan(info(width, height), 12.345);
+    const plan = framePlan(info(width, height), 12.345);
     expect(plan.cell).toEqual({ width, height });
     expect(plan.frames).toEqual([{ frameIndex: 0, timestampSeconds: 12.345 }]);
   });
 
   it("caps the canvas at 4096", () => {
-    const { plan } = framePlan(info(7680, 4320), 1);
+    const plan = framePlan(info(7680, 4320), 1);
     expect(plan.canvas.width).toBe(MAX_CAPTURE_PX);
     expect(plan.cell.width).toBeLessThanOrEqual(MAX_CAPTURE_PX);
   });
 
   it("takes the first and the last moment a frame can be asked for", () => {
-    expect(framePlan(info(640, 360), 0).plan.frames).toHaveLength(1);
-    expect(framePlan(info(640, 360), latestFrameTime(60)).plan.frames).toHaveLength(1);
+    expect(framePlan(info(640, 360), 0).frames).toHaveLength(1);
+    expect(framePlan(info(640, 360), latestFrameTime(60)).frames).toHaveLength(1);
   });
 });
 
 describe("exactTimes", () => {
-  it("offers the times as the keyframes of the range they span", () => {
-    expect(exactTimes(info(640, 360), [3, 9.5])).toEqual({
-      values: {
-        keyframeSampling: true,
-        startSeconds: 3,
-        endSeconds: 9.51,
-        framesPerGrid: 2,
-      },
-      info: { ...info(640, 360), keyframeTimestampsSeconds: [3, 9.5] },
-    });
+  it("asks for the times on one full sheet", () => {
+    expect(exactTimes([3, 9.5])).toEqual({ timestampsSeconds: [3, 9.5], framesPerGrid: 2 });
   });
 });
 

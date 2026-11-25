@@ -96,11 +96,9 @@ describe("renderSheets", () => {
       transcriptFiles: [],
     });
     readFrameTimes.mockResolvedValue([0, 30, 58]);
-    const times = { ...info, keyframeTimestampsSeconds: [10, 59.9] };
-    const values = { keyframeSampling: true, startSeconds: 10, endSeconds: 60, framesPerGrid: 2 };
-    await renderSheets(file, times, values);
-    const [, , , options] = vi.mocked(generateCollages).mock.calls[0] ?? [];
-    expect(options).toMatchObject({ videoInfo: { keyframeTimestampsSeconds: [10, 58] } });
+    await renderSheets(file, info, { timestampsSeconds: [10, 59.9], framesPerGrid: 2 });
+    const [, request] = vi.mocked(generateCollages).mock.calls[0] ?? [];
+    expect(request).toMatchObject({ timestampsSeconds: [10, 58] });
   });
 
   it("renders as asked when the frame times cannot be read", async () => {

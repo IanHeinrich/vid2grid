@@ -35,7 +35,7 @@ def iter_frame_images(
 ) -> Generator[Image.Image, None, None]:
     with closing(iter_source_frames(path, plan, info)) as frames:
         for frame in frames:
-            yield _to_cell_image(frame, plan.cell, info.rotation)
+            yield _to_cell_image(frame, plan, info.rotation)
 
 
 # The decoded source frame each planned frame picks, before scaling; conformance tests read
@@ -140,11 +140,20 @@ def _keyframe_interval_seconds(info: VideoInfo) -> float:
     return statistics.median(deltas)
 
 
-def _to_cell_image(frame: VideoFrame, cell: Size, rotation: int) -> Image.Image:
+def _to_cell_image(frame: VideoFrame, plan: RenderPlan, rotation: int) -> Image.Image:
+    crop = plan.crop
+    if crop is None:
+        return _upright_image(frame, plan.cell, rotation)
+    picture = _upright_image(frame, Size(crop.source_width, crop.source_height), rotation)
+    box = (crop.x, crop.y, crop.x + crop.width, crop.y + crop.height)
+    return picture.crop(box).resize(plan.cell.as_tuple(), Image.Resampling.BICUBIC)
+
+
+def _upright_image(frame: VideoFrame, size: Size, rotation: int) -> Image.Image:
     turned = is_quarter_turn(rotation)
     scaled = frame.reformat(
-        width=cell.height if turned else cell.width,
-        height=cell.width if turned else cell.height,
+        width=size.height if turned else size.width,
+        height=size.width if turned else size.height,
         format="rgb24",
         interpolation="BICUBIC",
     )

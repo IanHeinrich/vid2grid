@@ -117,6 +117,31 @@ def test_plan_only_prints_the_plan_and_writes_nothing(
     assert not out_dir.exists()
 
 
+def test_times_are_read_as_a_comma_separated_list(capsys: pytest.CaptureFixture[str]) -> None:
+    code = cli.main([str(TINY), "--times", "2.5,0,1.25", "--plan-only"])
+
+    assert code == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert [frame["timestampSeconds"] for frame in plan["frames"]] == [0, 1.25, 2.5]
+
+
+def test_an_area_is_read_as_four_numbers(capsys: pytest.CaptureFixture[str]) -> None:
+    values: dict[str, object] = {"area": [100, 200, 400, 500]}
+
+    code = cli.main([str(TINY), "--area", "100,200,400,500", "--plan-only"])
+
+    assert code == 0
+    assert json.loads(capsys.readouterr().out) == plan_from_options(TINY, values).plan.to_dict()
+
+
+def test_a_list_with_a_word_in_it_is_rejected(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main([str(TINY), "--times", "1,soon"])
+
+    assert exit_info.value.code == 2
+    assert "--times" in capsys.readouterr().err
+
+
 def test_plan_only_sends_the_plans_warnings_to_stderr(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -90,6 +90,19 @@ class NumberOptionSpec(_OptionSpecBase):
     exclusiveMin: NotRequired[float]
 
 
+class ListItemBounds(TypedDict):
+    min: NotRequired[float]
+    max: NotRequired[float]
+
+
+class NumberListOptionSpec(_OptionSpecBase):
+    type: Literal["numberList"]
+    default: NotRequired[list[float]]
+    items: ListItemBounds
+    minItems: NotRequired[int]
+    maxItems: NotRequired[int]
+
+
 class BooleanOptionSpec(_OptionSpecBase):
     type: Literal["boolean"]
     default: bool
@@ -101,7 +114,7 @@ class EnumOptionSpec(_OptionSpecBase):
     default: TranscriptOption
 
 
-OptionSpec = NumberOptionSpec | BooleanOptionSpec | EnumOptionSpec
+OptionSpec = NumberOptionSpec | NumberListOptionSpec | BooleanOptionSpec | EnumOptionSpec
 
 
 class WarningJson(TypedDict):
@@ -256,6 +269,14 @@ def request_from_options(
     given = {name: value for name, value in values.items() if value is not None}
     request = call("requestFromOptions", given, info.to_dict(), list(capabilities))
     return CollagePlanRequest.from_dict(cast("CollagePlanRequestJson", request))
+
+
+def missing_timestamps_warning(
+    request: CollagePlanRequest, plan: RenderPlan, captured_count: int
+) -> str | None:
+    frames = {"frames": [frame.to_dict() for frame in plan.frames]}
+    warning = call("missingTimestampsWarning", request.to_dict(), frames, captured_count)
+    return None if warning is None else cast("WarningJson", warning)["message"]
 
 
 def cues_from_segments(

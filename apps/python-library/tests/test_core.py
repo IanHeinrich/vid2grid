@@ -11,7 +11,7 @@ import pytest
 from helpers import collage_request
 
 from vid2grid import _core
-from vid2grid.contract import VideoInfo
+from vid2grid.contract import CollagePlanRequest, PictureArea, VideoInfo
 from vid2grid.errors import (
     InternalError,
     InvalidRequestError,
@@ -32,7 +32,7 @@ class _EnvelopeEngine:
 
 
 def test_version_is_the_render_plan_version() -> None:
-    assert _core.version() == 1
+    assert _core.version() == 2
 
 
 def test_an_unknown_function_is_an_internal_error() -> None:
@@ -147,10 +147,10 @@ def _version_in_child() -> int:
 # V8 runs its own threads, so Python warns about forking at all; that is the case under test.
 @pytest.mark.filterwarnings("ignore:This process:DeprecationWarning")
 def test_a_forked_child_gets_its_own_engine() -> None:
-    assert _core.version() == 1
+    assert _core.version() == 2
     # Pool's exit terminates a hung child, so a regression fails here instead of hanging.
     with multiprocessing.get_context("fork").Pool(1) as pool:
-        assert pool.apply_async(_version_in_child).get(timeout=30) == 1
+        assert pool.apply_async(_version_in_child).get(timeout=30) == 2
 
 
 def test_a_process_that_used_the_engine_exits() -> None:
@@ -223,6 +223,8 @@ def test_option_specs_name_every_request_option_with_a_flag() -> None:
         "keyframeSampling",
         "maxKeyframes",
         "frameCount",
+        "timestampsSeconds",
+        "area",
         "transcript",
     ]
     assert all(spec["flag"] and spec["help"] for spec in specs)
@@ -255,6 +257,25 @@ def test_request_from_options_takes_given_values_and_skips_unset_ones() -> None:
     assert request.frame_count is None
     assert request.max_keyframes == 5
     assert request.transcript_scope == "per-sheet"
+
+
+def test_request_from_options_takes_a_list_of_times() -> None:
+    request = _core.request_from_options({"timestampsSeconds": [2, 0.5]}, INFO)
+
+    assert request.timestamps_seconds == (2.0, 0.5)
+    assert CollagePlanRequest.from_dict(request.to_dict()) == request
+
+
+def test_request_from_options_takes_an_area() -> None:
+    request = _core.request_from_options({"area": [100, 200, 400, 500]}, INFO)
+
+    assert request.area == PictureArea(left=100, top=200, right=400, bottom=500)
+    assert CollagePlanRequest.from_dict(request.to_dict()) == request
+
+
+def test_request_from_options_rejects_an_area_without_four_sides() -> None:
+    with pytest.raises(InvalidRequestError, match=r"^area must be a list of exactly 4 numbers$"):
+        _core.request_from_options({"area": [100, 200, 400]}, INFO)
 
 
 def test_option_specs_offer_the_transcript_only_to_a_transcribing_host() -> None:

@@ -3,12 +3,13 @@ from dataclasses import replace
 from pathlib import Path
 
 import av
+import pytest
 from helpers import collage_request
 from PIL import Image
 
-from vid2grid import build_render_plan
+from vid2grid import build_render_plan, capture
 from vid2grid.capture import capture_frames
-from vid2grid.contract import PlannedFrame, RenderPlan, VideoInfo
+from vid2grid.contract import PictureArea, PlannedFrame, RenderPlan, Size, VideoInfo
 from vid2grid.probe import probe_video
 
 
@@ -98,3 +99,60 @@ def test_a_sparse_plan_reseeks_to_the_same_frames_as_a_decode_through(tiny_video
 
     assert _bytes(reseeked) == [reference[0].tobytes(), reference[29].tobytes()]
     assert _bytes(straight) == _bytes(reseeked)
+
+
+# Not whole chroma pixels, and off centre so that a wrong turn moves it.
+AREA = PictureArea(left=206, top=304, right=506, bottom=775)
+
+
+def _first_image_unscaled(
+    path: Path, info: VideoInfo, area: PictureArea | None
+) -> tuple[RenderPlan, Image.Image]:
+    plan = build_render_plan(collage_request(frames_per_grid=1, area=area), info)
+    size = Size(info.width, info.height)
+    if plan.crop is not None:
+        size = Size(plan.crop.width, plan.crop.height)
+    plan = replace(plan, cell=size, frames=plan.frames[:1])
+    (image,) = capture_frames(path, plan, info)
+    assert image is not None
+    return plan, image
+
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_a_crop_is_the_same_pixels_of_the_upright_picture(curator_mp4: Path, rotation: int) -> None:
+    info = probe_video(curator_mp4)
+    if rotation in (90, 270):
+        info = replace(info, width=info.height, height=info.width)
+    info = replace(info, rotation=rotation)
+
+    _, whole = _first_image_unscaled(curator_mp4, info, None)
+    plan, cropped = _first_image_unscaled(curator_mp4, info, AREA)
+
+    crop = plan.crop
+    assert crop is not None
+    box = (crop.x, crop.y, crop.x + crop.width, crop.y + crop.height)
+    assert cropped.size == (crop.width, crop.height)
+    assert cropped.tobytes() == whole.crop(box).tobytes()
+
+
+def test_a_scaled_crop_takes_nothing_from_outside_itself() -> None:
+    info = VideoInfo(duration_seconds=3.0, width=64, height=48)
+    area = PictureArea(left=250, top=250, right=500, bottom=500)
+    plan = build_render_plan(collage_request(frames_per_grid=1, area=area), info)
+    assert plan.crop is not None
+    assert plan.cell.width > plan.crop.width
+    picture = Image.new("RGB", (64, 48), "red")
+    picture.paste("blue", (16, 12, 32, 24))
+
+    image = capture._to_cell_image(av.VideoFrame.from_image(picture), plan, info.rotation)
+
+    assert image.getcolors() == [(plan.cell.width * plan.cell.height, (0, 0, 255))]
+
+
+def test_a_crop_is_scaled_to_the_cell(tiny_video: Path) -> None:
+    info = probe_video(tiny_video)
+    plan = build_render_plan(collage_request(area=AREA), info)
+
+    images = capture_frames(tiny_video, plan, info)
+
+    assert {image.size for image in images if image is not None} == {plan.cell.as_tuple()}

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   byteRuns,
   presentationOffsetSeconds,
-  readBoxHeader,
   samplesForRange,
   trimToRange,
   type StoredSample,
@@ -16,14 +15,6 @@ const SAMPLES: StoredSample[] = Array.from({ length: 10 }, (_, index) => ({
   offset: 1000 + index * 4 + (index >= 5 ? 50 : 0),
   size: 4,
 }));
-
-function header(size: number, type: string, largeSize?: number): DataView {
-  const view = new DataView(new ArrayBuffer(16));
-  view.setUint32(0, size);
-  [...type].forEach((char, index) => view.setUint8(4 + index, char.charCodeAt(0)));
-  if (largeSize !== undefined) view.setBigUint64(8, BigInt(largeSize));
-  return view;
-}
 
 describe("presentationOffsetSeconds", () => {
   it("shifts by an empty edit and back by the first edit's media time", () => {
@@ -96,26 +87,5 @@ describe("trimToRange", () => {
 
   it("gives silence when the audio starts after the range ends", () => {
     expect(Array.from(trimToRange(samples, 10, 2, 0, 0.3))).toEqual([0, 0, 0]);
-  });
-});
-
-describe("readBoxHeader", () => {
-  it("reads a box's size and type", () => {
-    expect(readBoxHeader(header(1234, "moov"), 9999)).toEqual({ type: "moov", size: 1234 });
-  });
-
-  it("runs a size-zero box to the end of the file", () => {
-    expect(readBoxHeader(header(0, "mdat"), 500)).toEqual({ type: "mdat", size: 500 });
-  });
-
-  it("reads a 64-bit size", () => {
-    expect(readBoxHeader(header(1, "mdat", 2 ** 33), 0)).toEqual({ type: "mdat", size: 2 ** 33 });
-  });
-
-  it("rejects a header too short or too small to be a box", () => {
-    expect(readBoxHeader(new DataView(new ArrayBuffer(4)), 10)).toBeNull();
-    expect(readBoxHeader(header(4, "free"), 10)).toBeNull();
-    expect(readBoxHeader(header(1, "mdat", 8), 10)).toBeNull();
-    expect(readBoxHeader(new DataView(header(1, "mdat").buffer, 0, 8), 10)).toBeNull();
   });
 });

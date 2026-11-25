@@ -1,3 +1,6 @@
+import type { AbortSignalLike } from "@vid2grid/core";
+import { abortError } from "../shared/workerRequest";
+
 // One in-flight job per worker, so replies correlate by worker identity and need no message ids.
 interface PoolTask<TRequest, TResponse> {
   request: TRequest;
@@ -20,11 +23,34 @@ export class WorkerPool<TRequest, TResponse> {
     }
   }
 
-  run(request: TRequest, transfer: Transferable[] = []): Promise<TResponse> {
-    return new Promise<TResponse>((resolve, reject) => {
-      this.queue.push({ request, transfer, resolve, reject });
+  // An abort drops a task still waiting for a worker; one a worker already has runs on.
+  async run(
+    request: TRequest,
+    transfer: Transferable[] = [],
+    signal?: AbortSignalLike,
+  ): Promise<TResponse> {
+    if (signal?.aborted) throw abortError(signal);
+    let drop = (): void => {};
+    const response = new Promise<TResponse>((resolve, reject) => {
+      const task = { request, transfer, resolve, reject };
+      drop = () => {
+        if (signal && this.unqueue(task)) reject(abortError(signal));
+      };
+      this.queue.push(task);
       this.pump();
     });
+    signal?.addEventListener("abort", drop);
+    try {
+      return await response;
+    } finally {
+      signal?.removeEventListener("abort", drop);
+    }
+  }
+
+  private unqueue(task: PoolTask<TRequest, TResponse>): boolean {
+    const index = this.queue.indexOf(task);
+    if (index !== -1) this.queue.splice(index, 1);
+    return index !== -1;
   }
 
   terminate(): void {

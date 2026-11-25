@@ -1,4 +1,4 @@
-import type { PlanOptionInput, VideoInfo } from "@vid2grid/core";
+import type { PlanOptionInput } from "@vid2grid/core";
 import { sheetLine } from "../imageRefs";
 import { clamp } from "../spans";
 import { errorText } from "../text";
@@ -26,8 +26,6 @@ export { renderOverview, roundForLabel, sheetRefs, type SheetRenderExtras } from
 export { LISTEN_SCHEMA, toolOffer, type ToolOffer } from "./toolSchemas";
 
 const SAME_MOMENT_SECONDS = 0.05;
-// Above 1 fps the burned-in timestamps show milliseconds, so 1:45.5 is not printed as 1:45.
-const SUBSECOND_TIMESTAMP_FPS = 2;
 
 // The loaded video, as the overview, a study and its audio use it.
 export type ToolContext = SheetContext;
@@ -157,17 +155,10 @@ async function runFrames(ctx: SheetContext, args: Args): Promise<ToolResult> {
   const times = distinctMoments(
     requested.value.map((t) => clamp(t, 0, latestFrameTime(ctx.info.durationSeconds))),
   );
-  const exact = exactTimes(ctx.info, times);
   return runRender(
     ctx,
-    {
-      ...exact.values,
-      outputResolution: ctx.resolution,
-      ...(times.some(hasTenths) && { targetFps: SUBSECOND_TIMESTAMP_FPS }),
-    },
+    { ...exactTimes(times), outputResolution: ctx.resolution },
     `frames(${times.map(momentLabel).join(", ")})`,
-    undefined,
-    exact.info,
   );
 }
 
@@ -207,10 +198,9 @@ async function runRender(
   values: PlanOptionInput,
   call: string,
   adjustment?: string,
-  info?: VideoInfo,
 ): Promise<ToolResult> {
   try {
-    const images = await sheetRefs(ctx, values, call, info === undefined ? {} : { info });
+    const images = await sheetRefs(ctx, values, call);
     const lines = adjustment === undefined ? [] : [adjustment];
     return { text: [...lines, describeSheets(images)].join("\n"), images };
   } catch (error) {

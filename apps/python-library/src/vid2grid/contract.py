@@ -23,6 +23,13 @@ class TranscriptRequestJson(TypedDict):
     scope: TranscriptScope
 
 
+class PictureAreaJson(TypedDict):
+    left: float
+    top: float
+    right: float
+    bottom: float
+
+
 class CollagePlanRequestJson(TypedDict):
     startSeconds: float
     endSeconds: float
@@ -30,6 +37,8 @@ class CollagePlanRequestJson(TypedDict):
     frameCount: NotRequired[int]
     keyframeSampling: NotRequired[bool]
     maxKeyframes: NotRequired[int]
+    timestampsSeconds: NotRequired[list[float]]
+    area: NotRequired[PictureAreaJson]
     framesPerGrid: int
     outputResolution: int
     jpegQuality: int
@@ -91,6 +100,15 @@ class TranscriptWindowJson(TypedDict):
     fileName: str
 
 
+class PlannedCropJson(TypedDict):
+    x: int
+    y: int
+    width: int
+    height: int
+    sourceWidth: int
+    sourceHeight: int
+
+
 class PlannedSheetJson(TypedDict):
     sheetIndex: int
     fileName: str
@@ -116,6 +134,7 @@ class RenderPlanJson(TypedDict):
     version: int
     canvas: SizeJson
     cell: SizeJson
+    crop: NotRequired[PlannedCropJson]
     layout: PlannedGridLayoutJson
     style: RenderPlanStyleJson
     jpegQuality: int
@@ -164,6 +183,27 @@ class VideoInfo:
         )
 
 
+# In thousandths of the displayed picture, from its top left.
+@dataclass(frozen=True, slots=True)
+class PictureArea:
+    left: float
+    top: float
+    right: float
+    bottom: float
+
+    def to_dict(self) -> PictureAreaJson:
+        return {"left": self.left, "top": self.top, "right": self.right, "bottom": self.bottom}
+
+    @classmethod
+    def from_dict(cls, data: PictureAreaJson) -> "PictureArea":
+        return cls(
+            left=float(data["left"]),
+            top=float(data["top"]),
+            right=float(data["right"]),
+            bottom=float(data["bottom"]),
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class CollagePlanRequest:
     start_seconds: float
@@ -176,6 +216,8 @@ class CollagePlanRequest:
     keyframe_sampling: bool = False
     max_keyframes: int | None = None
     transcript_scope: TranscriptScope | None = None
+    timestamps_seconds: tuple[float, ...] | None = None
+    area: PictureArea | None = None
 
     def to_dict(self) -> CollagePlanRequestJson:
         request: CollagePlanRequestJson = {
@@ -192,6 +234,10 @@ class CollagePlanRequest:
             request["keyframeSampling"] = True
         if self.max_keyframes is not None:
             request["maxKeyframes"] = self.max_keyframes
+        if self.timestamps_seconds is not None:
+            request["timestampsSeconds"] = list(self.timestamps_seconds)
+        if self.area is not None:
+            request["area"] = self.area.to_dict()
         if self.transcript_scope is not None:
             request["transcript"] = {"scope": self.transcript_scope}
         return request
@@ -199,6 +245,8 @@ class CollagePlanRequest:
     @classmethod
     def from_dict(cls, data: CollagePlanRequestJson) -> "CollagePlanRequest":
         transcript = data.get("transcript")
+        timestamps = data.get("timestampsSeconds")
+        area = data.get("area")
         return cls(
             start_seconds=float(data["startSeconds"]),
             end_seconds=float(data["endSeconds"]),
@@ -210,6 +258,8 @@ class CollagePlanRequest:
             keyframe_sampling=data.get("keyframeSampling", False),
             max_keyframes=data.get("maxKeyframes"),
             transcript_scope=None if transcript is None else transcript["scope"],
+            timestamps_seconds=None if timestamps is None else tuple(float(t) for t in timestamps),
+            area=None if area is None else PictureArea.from_dict(area),
         )
 
 
@@ -339,6 +389,38 @@ class PlannedCell:
         )
 
 
+# In whole pixels of the picture as displayed, upright and source_width by source_height.
+@dataclass(frozen=True, slots=True)
+class PlannedCrop:
+    x: int
+    y: int
+    width: int
+    height: int
+    source_width: int
+    source_height: int
+
+    def to_dict(self) -> PlannedCropJson:
+        return {
+            "x": self.x,
+            "y": self.y,
+            "width": self.width,
+            "height": self.height,
+            "sourceWidth": self.source_width,
+            "sourceHeight": self.source_height,
+        }
+
+    @classmethod
+    def from_dict(cls, data: PlannedCropJson) -> "PlannedCrop":
+        return cls(
+            x=data["x"],
+            y=data["y"],
+            width=data["width"],
+            height=data["height"],
+            source_width=data["sourceWidth"],
+            source_height=data["sourceHeight"],
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class TranscriptCue:
     start: float
@@ -465,6 +547,7 @@ class RenderPlan:
     frames: tuple[PlannedFrame, ...]
     sheets: tuple[PlannedSheet, ...]
     combined_transcript: TranscriptWindow | None = None
+    crop: PlannedCrop | None = None
 
     def to_dict(self) -> RenderPlanJson:
         plan: RenderPlanJson = {
@@ -478,6 +561,8 @@ class RenderPlan:
             "frames": [frame.to_dict() for frame in self.frames],
             "sheets": [sheet.to_dict() for sheet in self.sheets],
         }
+        if self.crop is not None:
+            plan["crop"] = self.crop.to_dict()
         if self.combined_transcript is not None:
             plan["combinedTranscript"] = self.combined_transcript.to_dict()
         return plan
@@ -485,6 +570,7 @@ class RenderPlan:
     @classmethod
     def from_dict(cls, data: RenderPlanJson) -> "RenderPlan":
         combined = data.get("combinedTranscript")
+        crop = data.get("crop")
         return cls(
             version=data["version"],
             canvas=Size.from_dict(data["canvas"]),
@@ -496,4 +582,5 @@ class RenderPlan:
             frames=tuple(PlannedFrame.from_dict(frame) for frame in data["frames"]),
             sheets=tuple(PlannedSheet.from_dict(sheet) for sheet in data["sheets"]),
             combined_transcript=None if combined is None else TranscriptWindow.from_dict(combined),
+            crop=None if crop is None else PlannedCrop.from_dict(crop),
         )

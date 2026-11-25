@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Sample } from "mp4box";
+import type { PlannedCrop } from "@vid2grid/core";
 import { decodeFrames, MAX_BUFFERED_FRAMES } from "../src/capture/webcodecsExtractor";
+import { sourceFile } from "./sourceFile";
 
 // jsdom has no WebCodecs, so this decoder emits each chunk back as a frame on the next
 // microtask: enough to watch how far ahead of the consumer the pass decodes.
@@ -44,13 +45,13 @@ const TIMESCALE = 10;
 const samples = Array.from({ length: FRAME_COUNT }, (_, i) => ({
   is_sync: true,
   cts: i,
-  dts: i,
   timescale: TIMESCALE,
   duration: 1,
-  data: new Uint8Array([0]),
-})) as unknown as Sample[];
+  offset: i,
+  size: 1,
+}));
 const wanted = Array.from({ length: FRAME_COUNT }, (_, i) => i / TIMESCALE);
-const indices = Array.from({ length: FRAME_COUNT }, (_, i) => i);
+const { file } = sourceFile(new Uint8Array(FRAME_COUNT));
 
 let bitmaps: { close: ReturnType<typeof vi.fn> }[];
 
@@ -61,8 +62,19 @@ function decoder(): FakeDecoder {
 
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-function decodeAll() {
-  return decodeFrames({ codec: "avc1" }, samples, indices, wanted, { width: 8, height: 8 }, 0);
+function decodeAll(crop?: PlannedCrop) {
+  return decodeFrames(
+    { codec: "avc1" },
+    {
+      file,
+      samples,
+      keyframeIndices: null,
+      wanted,
+      cell: { width: 8, height: 8 },
+      rotation: 0,
+      crop,
+    },
+  );
 }
 
 beforeEach(() => {
@@ -100,6 +112,20 @@ describe("decodeFrames", () => {
     expect(images).toHaveLength(FRAME_COUNT);
     for (const frame of decoder().frames) expect(frame.close).toHaveBeenCalledTimes(1);
     expect(decoder().state).toBe("closed");
+  });
+
+  it("draws the whole picture, then the plan's crop of it", async () => {
+    const drawImage = vi.spyOn(CanvasRenderingContext2D.prototype, "drawImage");
+    const crop = { x: 4, y: 0, width: 4, height: 8, sourceWidth: 16, sourceHeight: 8 };
+
+    const frames = decodeAll(crop);
+    await frames.next();
+    await frames.return();
+
+    expect(drawImage.mock.calls.slice(0, 2).map((call) => call.slice(1))).toEqual([
+      [0, 0, 16, 8],
+      [4, 0, 4, 8, 0, 0, 8, 8],
+    ]);
   });
 
   it("decodes only a bounded buffer ahead of what the consumer has pulled", async () => {

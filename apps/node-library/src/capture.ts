@@ -7,15 +7,26 @@ import {
   isKeyframePlan,
   roundToMicroseconds,
   Vid2GridError,
+  type AbortSignalLike,
   type RenderPlan,
   type VideoInfo,
 } from "@vid2grid/core";
+import { onAbort, throwIfAborted } from "./abort";
 import {
   assertPixelsMatchLog,
   createFrameStream,
   type FrameHandler,
   type FrameStream,
 } from "./frameStream";
+import { readSeekFacts, readSeekLandings } from "./probe";
+import { exitFailure, isCrash } from "./processExit";
+import {
+  MIN_SKIPPED_SECONDS,
+  minSkippedSeconds,
+  seeksToTry,
+  splitIntoSegments,
+  type CaptureSegment,
+} from "./segments";
 
 export interface RgbaFrame {
   width: number;
@@ -26,23 +37,122 @@ export interface RgbaFrame {
 }
 
 const RGBA_BYTES = 4;
+// Wider than the matcher's microsecond rounding, so the filter keeps every frame it could pick.
+const SELECT_MARGIN_SECONDS = 0.001;
+
+interface Source {
+  path: string;
+  plan: RenderPlan;
+  keyframesOnly: boolean;
+  signal: AbortSignalLike | undefined;
+}
+
+interface SegmentOutcome {
+  filled: number;
+  // "late": the first frame decoded was already past the first planned time.
+  // "crashed": the seeking ffmpeg did, before it gave a frame.
+  ending: "filled" | "stream ended" | "late" | "crashed";
+}
 
 export async function* captureFrames(
   path: string,
   plan: RenderPlan,
   info: VideoInfo,
+  signal?: AbortSignalLike,
 ): AsyncGenerator<RgbaFrame, void, undefined> {
   const planned = plan.frames.map((frame) => frame.timestampSeconds);
-  const firstSeconds = planned[0];
-  if (firstSeconds === undefined) return;
-
-  const { width, height } = plan.cell;
-  const matcher = createFrameMatcher(planned);
-  const ready: RgbaFrame[] = [];
   const keyframesOnly = isKeyframePlan(plan, info.keyframeTimestampsSeconds);
-  const args = ffmpegArgs(path, plan, firstSeconds, keyframesOnly);
-  yield* decodeFrames(path, args, width * height * RGBA_BYTES, ready, (frame) => {
+  const source = { path, plan, keyframesOnly, signal };
+  const segments = await planSegments(source, planned);
+  const [first] = segments;
+  if (!first) return;
+
+  let filled = 0;
+  for (const segment of segments) {
+    // Nothing comes before the first segment to fall back on, so it may land late.
+    const outcome = yield* captureSegment(source, segment, segment === first);
+    if (outcome.ending === "late" || outcome.ending === "crashed") {
+      const seekSeconds = outcome.ending === "late" ? first.seekSeconds : 0;
+      const plannedSeconds = planned.slice(filled);
+      yield* captureStraightThrough(source, { seekSeconds, plannedSeconds });
+      return;
+    }
+    if (outcome.ending === "stream ended") return;
+    filled += outcome.filled;
+  }
+}
+
+async function* captureStraightThrough(
+  source: Source,
+  segment: CaptureSegment,
+): AsyncGenerator<RgbaFrame, void, undefined> {
+  const { ending } = yield* captureSegment(source, segment, true);
+  if (ending === "crashed") yield* captureSegment(source, { ...segment, seekSeconds: 0 }, true);
+}
+
+async function planSegments(source: Source, planned: number[]): Promise<CaptureSegment[]> {
+  const straightThrough = splitIntoSegments(planned, new Map(), MIN_SKIPPED_SECONDS);
+  // A keyframe-only decode is quick, and ffmpeg can time its frames differently after a seek.
+  const maySeek = !source.keyframesOnly && seeksToTry(planned, MIN_SKIPPED_SECONDS).length > 0;
+  if (!maySeek) return straightThrough;
+  try {
+    return await planSeeks(source, planned);
+  } catch {
+    throwIfAborted(source.signal);
+    // Decoding straight through needs no probe, and reports a file that cannot be read.
+    return straightThrough;
+  }
+}
+
+async function planSeeks({ path, signal }: Source, planned: number[]): Promise<CaptureSegment[]> {
+  const facts = await readSeekFacts(path, signal);
+  const minSkipped = minSkippedSeconds(facts);
+  const seeks = facts.startsWithPts ? seeksToTry(planned, minSkipped) : [];
+  const landings = await readSeekLandings(path, seeks, facts.backOffSeconds, signal);
+  return splitIntoSegments(planned, landings, minSkipped);
+}
+
+async function* captureSegment(
+  source: Source,
+  segment: CaptureSegment,
+  mayLandLate: boolean,
+): AsyncGenerator<RgbaFrame, SegmentOutcome, undefined> {
+  const { width, height } = source.plan.cell;
+  const ready: RgbaFrame[] = [];
+  const filler = createFiller(source.plan, segment, ready, mayLandLate);
+  const args = ffmpegArgs(source, segment);
+  let yielded = 0;
+  try {
+    const frameBytes = width * height * RGBA_BYTES;
+    for await (const image of decodeFrames(source, args, frameBytes, ready, filler.onFrame)) {
+      yielded++;
+      yield image;
+    }
+  } catch (error) {
+    if (yielded > 0 || segment.seekSeconds <= 0 || !isCrash(error)) throw error;
+    return { filled: 0, ending: "crashed" };
+  }
+  return filler.outcome();
+}
+
+function createFiller(
+  plan: RenderPlan,
+  { plannedSeconds }: CaptureSegment,
+  ready: RgbaFrame[],
+  mayLandLate: boolean,
+): { onFrame: FrameHandler; outcome: () => SegmentOutcome } {
+  const { width, height } = plan.cell;
+  const [firstPlanned = 0] = plannedSeconds;
+  const matcher = createFrameMatcher(plannedSeconds);
+  let filledCount = 0;
+  let landed = mayLandLate;
+
+  const onFrame: FrameHandler = (frame) => {
     const { exactSeconds, pixels } = frame;
+    const decodedSeconds = roundToMicroseconds(exactSeconds);
+    if (!Number.isFinite(decodedSeconds)) return false;
+    if (!landed && decodedSeconds > firstPlanned) return true;
+    landed = true;
     const filled = matcher.fill(exactSeconds);
     if (filled.length === 0) return false;
     // Checked only on kept frames: a frame lost from either stream shifts every pairing
@@ -52,19 +162,22 @@ export async function* captureFrames(
       width,
       height,
       data: new Uint8ClampedArray(pixels.buffer, pixels.byteOffset, pixels.length),
-      decodedTimestampSeconds: roundToMicroseconds(exactSeconds),
+      decodedTimestampSeconds: decodedSeconds,
     };
     filled.forEach(() => ready.push(image));
+    filledCount += filled.length;
     return matcher.done;
-  });
+  };
+  const ending = () => {
+    if (!landed) return "late";
+    return matcher.done ? "filled" : "stream ended";
+  };
+  return { onFrame, outcome: () => ({ filled: filledCount, ending: ending() }) };
 }
 
-// One ffmpeg process for the whole plan, from the keyframe before the first planned time.
 function ffmpegArgs(
-  path: string,
-  plan: RenderPlan,
-  firstSeconds: number,
-  keyframesOnly: boolean,
+  { path, plan, keyframesOnly }: Source,
+  { seekSeconds, plannedSeconds: [firstPlanned = 0] }: CaptureSegment,
 ): string[] {
   return [
     "-hide_banner",
@@ -73,8 +186,8 @@ function ffmpegArgs(
     ...(keyframesOnly ? ["-skip_frame", "nokey"] : []),
     // -seek_timestamp keeps ffmpeg from adding the container's start time to -ss, and
     // -copyts keeps the stream's own timestamps: the raw times Python's capture seeks by.
-    ...(firstSeconds > 0
-      ? ["-seek_timestamp", "1", "-ss", firstSeconds.toFixed(6), "-noaccurate_seek"]
+    ...(seekSeconds > 0
+      ? ["-seek_timestamp", "1", "-ss", seekSeconds.toFixed(6), "-noaccurate_seek"]
       : []),
     "-copyts",
     "-i",
@@ -82,7 +195,7 @@ function ffmpegArgs(
     "-map",
     "0:v:0",
     "-vf",
-    `scale=${plan.cell.width}:${plan.cell.height}:flags=bicubic,format=rgba,showinfo`,
+    filterGraph(plan, firstPlanned),
     "-fps_mode",
     "passthrough",
     "-f",
@@ -91,10 +204,28 @@ function ffmpegArgs(
   ];
 }
 
+// Frames before the first planned time are decoded but not scaled or piped out, except the
+// very first, which shows where the seek landed.
+function filterGraph(plan: RenderPlan, firstPlanned: number): string {
+  const { width, height } = plan.cell;
+  const wanted = `select='eq(n,0)+gte(t,${(firstPlanned - SELECT_MARGIN_SECONDS).toFixed(6)})'`;
+  return `${wanted},${cropFilters(plan)}scale=${width}:${height}:flags=bicubic,format=rgba,showinfo`;
+}
+
+// Cropped as rgba because on subsampled formats the crop filter rounds to whole chroma pixels.
+function cropFilters({ crop }: RenderPlan): string {
+  if (!crop) return "";
+  const { x, y, width, height, sourceWidth, sourceHeight } = crop;
+  return (
+    `scale=${sourceWidth}:${sourceHeight}:flags=bicubic,format=rgba,` +
+    `crop=${width}:${height}:${x}:${y},`
+  );
+}
+
 type Ffmpeg = ChildProcessByStdio<null, Readable, Readable>;
 
 interface Decoding {
-  failure: Error | undefined;
+  failure: { reason: unknown } | undefined;
   exited: boolean;
   logEnded: boolean;
   wake: (() => void) | undefined;
@@ -103,12 +234,13 @@ interface Decoding {
 // Yields what onFrame queues on ready. stdout is paused while a frame waits there or for
 // its log line, so the pipe fills and ffmpeg blocks until the consumer pulls again.
 async function* decodeFrames<T>(
-  path: string,
+  { path, signal }: Source,
   args: string[],
   frameBytes: number,
   ready: T[],
   onFrame: FrameHandler,
 ): AsyncGenerator<T, void, undefined> {
+  throwIfAborted(signal);
   const ffmpeg = spawnFfmpeg(path, args);
   const stream = createFrameStream(frameBytes, onFrame);
   const state: Decoding = { failure: undefined, exited: false, logEnded: false, wake: undefined };
@@ -118,9 +250,16 @@ async function* decodeFrames<T>(
     else ffmpeg.stdout.resume();
   };
   const detach = listen(ffmpeg, path, stream, state, flow);
+  const stopListening = onAbort(signal, (reason) => {
+    state.failure ??= { reason };
+    if (!state.exited) stopFfmpeg(ffmpeg);
+    // The consumer may never pull again, and a paused pipe would hold the event loop.
+    ffmpeg.stdout.resume();
+    wake(state);
+  });
   try {
     for (;;) {
-      if (state.failure) throw state.failure;
+      if (state.failure) throw state.failure.reason;
       const next = ready.shift();
       if (next !== undefined) {
         yield next;
@@ -131,12 +270,18 @@ async function* decodeFrames<T>(
       await new Promise<void>((resolve) => (state.wake = resolve));
     }
   } finally {
+    stopListening();
     detach();
     if (!state.exited) stopFfmpeg(ffmpeg);
     // Drained, not left paused, so the pipes reach their end and stop holding the event loop.
     ffmpeg.stdout.resume();
     ffmpeg.stderr.resume();
   }
+}
+
+function wake(state: Decoding): void {
+  state.wake?.();
+  state.wake = undefined;
 }
 
 // Anything thrown while handling ffmpeg's output stops ffmpeg and becomes state.failure.
@@ -147,10 +292,6 @@ function listen(
   state: Decoding,
   flow: () => void,
 ): () => void {
-  const notify = (): void => {
-    state.wake?.();
-    state.wake = undefined;
-  };
   const guarded =
     <V>(handle: (value: V) => void) =>
     (value: V): void => {
@@ -160,11 +301,10 @@ function listen(
         if (stream.stopped) stopFfmpeg(ffmpeg);
         flow();
       } catch (error) {
-        state.failure =
-          error instanceof Error ? error : new Vid2GridError("internal", String(error));
+        state.failure = { reason: error };
         stopFfmpeg(ffmpeg);
       }
-      notify();
+      wake(state);
     };
 
   const onPixels = guarded((chunk: Buffer) => stream.writePixels(chunk));
@@ -175,20 +315,22 @@ function listen(
     state.logEnded = true;
   });
   const onError = (cause: Error): void => {
-    state.failure ??= new Vid2GridError("internal", `ffmpeg could not start for ${path}`, {
-      cause,
-    });
-    notify();
+    state.failure ??= {
+      reason: new Vid2GridError("internal", `ffmpeg could not start for ${path}`, { cause }),
+    };
+    wake(state);
   };
-  const onClose = guarded((code: number | null) => {
-    if (!stream.stopped && code !== 0) {
-      const message = `ffmpeg exited with code ${code} on ${path}:
-${stream.logTail()}`;
-      throw new Vid2GridError("internal", message);
+  const onExit = guarded((cause: Error | undefined) => {
+    if (!stream.stopped && cause) {
+      const message = `${cause.message} on ${path}:\n${stream.logTail()}`;
+      throw new Vid2GridError("internal", message, { cause });
     }
     stream.finish();
     state.exited = true;
   });
+  const onClose = (code: number | null, signal: NodeJS.Signals | null): void => {
+    onExit(exitFailure("ffmpeg", code, signal));
+  };
   ffmpeg.stdout.on("data", onPixels);
   lines.on("line", onLine);
   lines.on("close", onLogEnd);

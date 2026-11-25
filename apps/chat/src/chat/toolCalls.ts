@@ -55,7 +55,7 @@ export async function answerToolCalls(
   for (const { result } of started) result.catch(() => undefined);
   for (const { call, result: pending } of started) {
     const result = await unlessAnsweringNow(turn, pending);
-    // A render cannot be cancelled once started, so a stop only discards its result.
+    // A stop cancels a render, and whatever the call then gives is discarded.
     if (result === undefined || halted(turn)) return false;
     const message: ToolMessage = {
       id: turn.newId(),

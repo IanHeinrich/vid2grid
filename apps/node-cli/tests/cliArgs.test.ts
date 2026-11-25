@@ -40,6 +40,10 @@ describe("parseCliArgs", () => {
       "6",
       "--frame-count",
       "8",
+      "--times",
+      "1,2.5,60",
+      "--area",
+      "100,200,400,500",
     ]);
     expect(options).toEqual({
       startSeconds: 1.5,
@@ -51,6 +55,8 @@ describe("parseCliArgs", () => {
       keyframeSampling: true,
       maxKeyframes: 6,
       frameCount: 8,
+      timestampsSeconds: [1, 2.5, 60],
+      area: [100, 200, 400, 500],
     });
     expect(Object.keys(options).sort()).toEqual(
       optionSpecsFor(NODE_CAPABILITIES)
@@ -79,6 +85,14 @@ describe("parseCliArgs input checks", () => {
     [["a.mp4", "b.mp4", "-o", "out"], "expected exactly one video"],
     [["clip.mp4", "-o", "out", "--fps", "fast"], '--fps expects a number, got "fast"'],
     [["clip.mp4", "-o", "out", "--fps", ""], '--fps expects a number, got ""'],
+    [
+      ["clip.mp4", "-o", "out", "--times", "1,b"],
+      '--times expects numbers separated by commas, got "b"',
+    ],
+    [
+      ["clip.mp4", "-o", "out", "--times", "1,,2"],
+      '--times expects numbers separated by commas, got ""',
+    ],
   ])("rejects %j", (argv, message) => {
     expect(() => parseCliArgs(argv)).toThrow(message);
   });

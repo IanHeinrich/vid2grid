@@ -266,7 +266,9 @@ async function openMoment(
   target: Extract<ZoomTarget, { kind: "moment" }>,
 ): Promise<Parsed<OpenedTarget>> {
   if (!sheets) return { problem: "The video is not loaded." };
-  const capture = sheets.capture ?? captureFrame;
+  const capture =
+    sheets.capture ??
+    ((file, info, seconds) => captureFrame(file, info, seconds, undefined, sheets.signal));
   const earlier = EARLIER_SECONDS.map((by) => Math.round((target.seconds - by) * 1e6) / 1e6);
   for (const seconds of [target.seconds, ...earlier.filter((time) => time >= 0)]) {
     const picture = await capture(sheets.file, sheets.info, seconds);

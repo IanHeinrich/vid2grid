@@ -48,9 +48,11 @@ const { plan, sheetPaths, timings, warnings } = await renderVideo(
 `renderVideo(path, request, outDir, options?)` plans the sheets and writes
 each one to `outDir` as soon as it is encoded, `grid_0001.jpg` onwards. It
 returns the `RenderPlan`, the paths written, the timings and any warnings.
-`options` takes `onProgress` and a `videoInfo` you have already probed. The
-folder is made on the first sheet, so a rejected request leaves none; a run
-that fails partway leaves the sheets written before the failure.
+`options` takes `onProgress`, a `videoInfo` you have already probed and a
+`signal`. Aborting the signal kills the running ffmpeg and rejects with the
+signal's reason. The folder is made on the first sheet, so a rejected request
+leaves none; a run that fails or is aborted partway leaves the sheets written
+before that.
 
 The library also exports:
 
@@ -65,10 +67,13 @@ The library also exports:
 - **Probe**: ffprobe reads the duration and coded size; core applies the
   sample aspect ratio and rotation, as for every host. Keyframe times are read
   only when keyframe sampling asks for them.
-- **Capture**: one ffmpeg process per run decodes from the keyframe before
-  the first planned time, scales each frame to its cell and pipes it out as
-  raw RGBA. Each planned time takes the first frame at or after it. When every
-  planned time is a keyframe, ffmpeg decodes keyframes alone.
+- **Capture**: ffmpeg decodes from the keyframe before the first planned time,
+  scales each frame to its cell and pipes it out as raw RGBA. Each planned time
+  takes the first frame at or after it. Where a keyframe lets it skip at least
+  five seconds and 150 frames of video, it seeks there with a new ffmpeg
+  process instead of decoding through, one process at a time, so a sparse plan
+  over a long video is quick. When every planned time is a keyframe, one
+  process decodes keyframes alone.
 - **Render**: core's `paintSheetFromPlan` paints each sheet onto an
   `@napi-rs/canvas` canvas, which encodes it as JPEG. Two sheets encode at
   once.
@@ -79,9 +84,15 @@ The library also exports:
 
 - No transcription. A request with `transcript` set still renders its sheets
   and reports a `no_transcription_port` warning.
-- ffmpeg decodes every frame between the first and last planned time. The
-  Python library seeks across long gaps instead, so a very low frame rate over
-  a long video is slower here.
+- A sparse plan decodes straight through, which is slow on a long video, when
+  a seek does not land on a keyframe with a known time (MPEG-TS, AVI) or the
+  video has too few keyframes to skip to.
+- On Linux, the bundled ffmpeg can crash opening an MPEG-TS file. Remux it to MP4
+  or MKV first.
+- A file with no seek index is read from its start on every seek. FLV is sought
+  only across 30 seconds or more; an MKV without cues can be slower than a full
+  decode when the wanted times are close together.
+- If ffmpeg crashes while seeking, the rest of the plan is decoded from the start.
 
 ## Development
 

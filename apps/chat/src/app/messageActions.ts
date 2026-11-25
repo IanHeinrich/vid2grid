@@ -286,7 +286,7 @@ async function verify(
     store: toolCtx.store,
     resolution: toolCtx.resolution,
     maxImages: toolCtx.maxImages,
-    sheets: toolCtx,
+    sheets: { ...toolCtx, signal },
     tools: conversationTools(model, state.messages, { videoLoaded: true, listen: false }).tools,
     knownImages: () => knownImages,
   });

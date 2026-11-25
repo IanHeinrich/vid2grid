@@ -1,3 +1,4 @@
+import type { AbortSignalLike } from "../audio/audioAnalysis";
 import type { PlannedSheet, RenderPlan } from "../plan/renderPlan";
 import type { TranscriptCue } from "../transcript/vtt";
 import type { VideoInfo } from "../probe/videoInfo";
@@ -32,7 +33,14 @@ export interface FrameCapturePort<TSource, TImage> {
   // early only when the stream ends. A host keeps only a small, bounded buffer ahead of
   // what the pipeline pulls, so memory stays at the sheets in flight, and the pipeline
   // counts progress itself. info is what the plan was built from, for isKeyframePlan.
-  capture(source: TSource, plan: RenderPlan, info: VideoInfo): AsyncIterable<TImage>;
+  // Once signal aborts, the host stops decoding and the pending pull rejects; a host that
+  // ignores it is stopped by its iterator's return() after the pull it is on.
+  capture(
+    source: TSource,
+    plan: RenderPlan,
+    info: VideoInfo,
+    signal?: AbortSignalLike,
+  ): AsyncIterable<TImage>;
   // Frees an image the pipeline pulled but will never encode (a failed or abandoned run).
   release?(image: TImage): void;
 }
@@ -45,7 +53,8 @@ export interface SheetRenderJob<TImage> {
 }
 
 export interface SheetEncoderPort<TImage, TBinary> {
-  encode(plan: RenderPlan, job: SheetRenderJob<TImage>): Promise<TBinary>;
+  // A host may reject a job it has not begun once signal aborts.
+  encode(plan: RenderPlan, job: SheetRenderJob<TImage>, signal?: AbortSignalLike): Promise<TBinary>;
   // How many sheets may encode at once (a worker pool's size); 1 when unset.
   concurrency?: number;
 }
@@ -56,6 +65,7 @@ export interface TranscriptPort<TSource> {
     startSeconds: number,
     endSeconds: number,
     onProgress?: PortProgressCallback,
+    signal?: AbortSignalLike,
   ): Promise<TranscriptCue[]>;
 }
 

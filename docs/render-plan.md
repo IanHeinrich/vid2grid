@@ -21,8 +21,13 @@ executor and proving it conforms.
 CollagePlanRequest + VideoInfo  ->  buildRenderPlan  ->  RenderPlan  ->  executor  ->  JPEG sheets (+ .vtt)
 ```
 
-`RENDER_PLAN_VERSION` is `1`; `plan.version` carries it so an executor can
-refuse a plan it does not understand.
+`RENDER_PLAN_VERSION` is `2`, the newest version core plans; `plan.version`
+carries the version a plan needs so an executor can refuse a plan it does not
+understand. A plan with a `crop` is version `2`, because an executor that
+ignored the crop would squash the whole picture into a cell shaped for part of
+it. Every other plan is version `1` (`UNCROPPED_PLAN_VERSION`), unchanged, so an
+executor that only knows version `1` still renders it. An executor that checks
+accepts any version up to the newest it knows, never just the one equal to it.
 
 ## The shape, with the worked example
 
@@ -126,9 +131,24 @@ startSeconds) / frameCount`. Either way a timestamp at or past
 with `maxKeyframes`, thins them to the values at index `floor(i * n / m)`,
 keeping the first one always. It throws when the probe supplied no keyframe
 times.
+Explicit times (`timestampsSeconds`) take exactly the times listed, rounded to
+microseconds, sorted and with repeats dropped. `startSeconds` and `endSeconds`
+play no part in choosing those frames: they still bound what is transcribed, and
+`requestFromOptions` defaults them to the whole video, which covers any valid
+time. The list must not be empty, every time must be a finite number from 0, and
+it cannot be combined with `keyframeSampling`, `frameCount` or `maxKeyframes`.
+A time at or past `durationSeconds` is rejected rather than dropped, even in a
+file whose stream starts after zero, where frames can lie past that point. All
+of these are `invalid_request`. A time before `durationSeconds` can still come
+after the last frame starts, and then has no frame to take. Core cannot know
+that when planning, so `generateCollages`, `streamCollages` and the Python
+library's `render_sheets` report a `no_frame_at_timestamps` warning naming every
+explicit time the capture returned no image for. A sampled plan that ends early
+gets no such warning.
 `frameIndex` is 0-based across the whole export, so it keeps counting up across
-sheets. `targetFps` still matters in keyframe mode: it decides whether the
-burned-in timestamp shows milliseconds.
+sheets. `targetFps` still matters in keyframe mode and with explicit times: the
+burned-in timestamp shows milliseconds when it is above 1, and also when any
+explicit time is not a whole second to the nearest millisecond.
 
 **Microsecond rounding.** Every timestamp and transcript boundary passes through
 `floor(t * 1e6 + 0.5) / 1e6`. That is spelled out rather than using a built-in:
@@ -136,6 +156,21 @@ JavaScript's `Math.round` rounds a half up and Python's `round` rounds a half to
 even, so a host that matches decoded frame times against the plan in its own
 language must use this rule too, or it would disagree on exact
 half-microseconds.
+
+**Area.** With `area`, only part of the picture is rendered. Its `left`, `top`,
+`right` and `bottom` are thousandths of the picture as displayed, from its top
+left: each from `0` to `1000`, `left` less than `right` and `top` less than
+`bottom`, anything else being `invalid_request`. Core turns it into `plan.crop`,
+in whole pixels of a picture `sourceWidth` by `sourceHeight`, which are the
+`VideoInfo`'s `width` and `height`. Each side goes to its nearest pixel with
+JavaScript's `Math.round`, and a crop is always at least one pixel, inside the
+picture. Cells then take the crop's aspect ratio in place of the picture's. An
+area so thin that a cell would have no width or no height is `invalid_request`.
+A plan without an `area` has no `crop` field.
+
+```json
+"crop": { "x": 192, "y": 216, "width": 576, "height": 324, "sourceWidth": 1920, "sourceHeight": 1080 }
+```
 
 **Layout.** `computeOptimalGrid` searches every column count and picks the one
 that maximises a single cell's area inside the square canvas without distorting
@@ -159,7 +194,8 @@ watermark text and file names.
 `transcript` window: the first starts at `startSeconds`, the last ends at
 `endSeconds`, and the gap between two sheets is split at the midpoint between
 the previous sheet's last frame and the next sheet's first, so every cue lands
-in exactly one sheet. With `"combined"`, the plan carries a single
+in exactly one sheet. An explicit time outside the range moves that first start
+or last end out to itself. With `"combined"`, the plan carries a single
 `combinedTranscript` over the whole range instead.
 
 **File names.** Sheets are `grid_0001.jpg` upward, per-sheet transcripts are the
@@ -178,7 +214,12 @@ in the plan; hosts must not recompute them.
    180 or 270; `normalizeRotationClockwise` converts the counter-clockwise
    value ffmpeg reports) and scale it to exactly `plan.cell`.
    `VideoInfo.width` and `height` are display dimensions, so the cell is
-   display-oriented.
+   display-oriented. With a `plan.crop`, scale the turned frame to
+   `sourceWidth` by `sourceHeight` first (a no-op unless its pixels are not
+   square), cut out the crop's rectangle and scale that to `plan.cell`. A
+   subsampled pixel format must become RGB before the cut, or an odd edge lands
+   between its chroma samples. Scaling the cut must take nothing from outside
+   it, so the neighbouring pixels never show at a cell's edge.
 3. Per sheet, run core's `sheetDrawOps(plan, sheetIndex)` on a
    `plan.canvas`-sized surface, in order. It returns a `fillRect` with
    `style.background` over the whole canvas, then for each cell an `image` op
@@ -215,12 +256,14 @@ JavaScript host by running the same draw ops on a canvas
 [`pipeline/ports.ts`](../packages/core/src/pipeline/ports.ts) as a stream: the
 capture port yields frames in plan order, each sheet starts encoding as soon as
 its cells are captured, and up to the encoder's `concurrency` sheets encode at
-once, so memory stays at the sheets in flight whatever the video's length.
-Step 1's rule is
-core's too: `createFrameMatcher` decides which planned frames each decoded frame
-fills, and `isKeyframePlan` decides when a capture may decode keyframes alone.
-The capture port receives the `VideoInfo` the plan was built from for that
-decision.
+once, so memory stays at the sheets in flight whatever the video's length. The
+browser's WebCodecs capture adds its own bounds: it reads the file in ranges and
+skips what no planned frame needs. The Node capture seeks past long gaps between
+planned frames. Neither changes the order of the frames, or, apart from the
+known limitations below, which are picked. Step 1's rule is core's too:
+`createFrameMatcher` decides which planned frames each decoded frame fills, and
+`isKeyframePlan` decides when a capture may decode keyframes alone. The capture
+port receives the `VideoInfo` the plan was built from for that decision.
 
 **One documented deviation.** The browser's `<video>` fallback (used when
 WebCodecs or the ISO-BMFF demuxer cannot handle the file) sets `currentTime`,
@@ -230,10 +273,17 @@ timestamp. The browser's WebCodecs path and the Node executor match frames with
 Python executor calls `isKeyframePlan` through the embedded core and applies
 the same at-or-after rule in its own per-frame loop.
 
-**One known limitation.** A container whose seek lands after the target, as
-ffmpeg's MPEG-TS demuxer can, makes the hosts that seek through ffmpeg (Node and
-Python) pick their first frames late, because the frames before the landing
-point are never decoded.
+**Known limitations.** A container whose seek lands after the target, as
+ffmpeg's MPEG-TS demuxer can, makes the hosts that seek through ffmpeg pick
+frames late, because the frames before the landing point are never decoded. In
+Node this reaches only a plan's first frames: it checks every later seek, and
+decodes through from the first when one lands late. When a seeking ffmpeg
+crashes, Node decodes the rest of the plan from the start of the file.
+
+A file whose timestamps are out of order, such as an MP4 made by joining clips
+with B-frames with `concat -c copy`, can give Node a frame one off from the one
+a full decode picks. ffmpeg swaps pts for dts partway through such a file, and
+a decode that starts after that point has not swapped.
 
 ## Hosts without JavaScript
 
@@ -250,6 +300,8 @@ the bundle itself never returns it. The functions are
 `buildRenderPlan`, `collagePlanRequestProblem`,
 `validateCollagePlanRequest`, `sheetDrawOps`, `resolveKeyframeSampling` (the
 sampled fallback and its warning, as `generateCollages` applies it),
+`missingTimestampsWarning` (a request, a plan or an object holding just its
+`frames`, and how many images were captured, to the warning above or `null`),
 `displaySize`, `normalizeRotationClockwise`, `isKeyframePlan` (a plan, or an
 object holding just its `frames`, and the keyframe times, to whether a capture
 may decode keyframes alone), `optionSpecs` (the options a CLI or tool exposes

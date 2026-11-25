@@ -1,7 +1,9 @@
+import type { AbortSignalLike } from "../audio/audioAnalysis";
 import { Vid2GridError } from "../errors";
 import { validateCollagePlanRequest, type CollagePlanRequest } from "../plan/request";
 import type { VideoInfo } from "../probe/videoInfo";
 import { buildRenderPlanUnvalidated } from "../plan/buildRenderPlan";
+import { missingTimestampsWarning } from "../plan/missingTimestamps";
 import { resolveKeyframeSampling } from "../plan/keyframeFallback";
 import type { PlannedSheet, RenderPlan } from "../plan/renderPlan";
 import {
@@ -51,6 +53,8 @@ export interface GenerateCollagesOptions {
   // are reported rather than thrown, so they never lose the rendered sheets.
   onWarning?: (warning: Vid2GridWarning) => void;
   videoInfo?: VideoInfo;
+  // Once aborted, the run frees what it holds and rejects with the signal's own reason.
+  signal?: AbortSignalLike;
 }
 
 export interface StreamCollagesOptions<TBinary> extends GenerateCollagesOptions {
@@ -66,6 +70,15 @@ export interface StreamCollagesResult<TBinary> {
 
 function errorReason(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+// The signal's own reason is rethrown as given, so a caller sees the AbortError it expects.
+function abortReason(signal: AbortSignalLike): unknown {
+  return signal.reason ?? new Error("Collage generation was aborted.");
+}
+
+function throwIfAborted(signal: AbortSignalLike | undefined): void {
+  if (signal?.aborted) throw abortReason(signal);
 }
 
 interface PhaseTimer {
@@ -87,7 +100,9 @@ function phaseTimer(clock: ClockPort): PhaseTimer {
 }
 
 function progressFor(options: GenerateCollagesOptions, phase: Phase): PortProgressCallback {
-  return (progress) => options.onProgress?.({ ...progress, phase });
+  return (progress) => {
+    if (!options.signal?.aborted) options.onProgress?.({ ...progress, phase });
+  };
 }
 
 interface ResolvedVideoInfo {
@@ -204,6 +219,7 @@ function sheetWriter<TSource, TImage, TBinary>(
   failure: FirstFailure,
 ): SheetWriter<TImage> {
   const limit = encodeConcurrency(run.ports.sheets);
+  const { signal } = run.options;
   const reportRendering = progressFor(run.options, "rendering");
   const inFlight: Promise<void>[] = [];
   let lastDelivery = Promise.resolve();
@@ -214,11 +230,14 @@ function sheetWriter<TSource, TImage, TBinary>(
 
   async function deliver(job: SheetRenderJob<TImage>, previous: Promise<void>): Promise<void> {
     try {
-      const data = await run.timer.time("rendering", () => run.ports.sheets.encode(run.plan, job));
+      const data = await run.timer.time("rendering", () =>
+        run.ports.sheets.encode(run.plan, job, signal),
+      );
       encoded++;
       reportRendering({ done: encoded, total: renderTotal });
       await previous;
       if (failure.failed) return;
+      throwIfAborted(signal);
       await run.options.onSheet({ name: job.sheet.fileName, data });
       written++;
     } catch (err) {
@@ -231,6 +250,7 @@ function sheetWriter<TSource, TImage, TBinary>(
       const oldest = inFlight.length >= limit ? inFlight.shift() : undefined;
       if (oldest) await oldest;
       throwIfFailed(failure);
+      throwIfAborted(signal);
     },
     start(job) {
       started++;
@@ -277,8 +297,12 @@ async function pullFrames<TSource, TImage, TBinary>(
 ): Promise<void> {
   const reportExtracting = progressFor(run.options, "extracting");
   const { assembly } = stream;
+  const { signal } = run.options;
   for (;;) {
+    throwIfAborted(signal);
     const next = await run.timer.time("extracting", () => stream.frames.next());
+    if (!next.done) assembly.pending.set(assembly.pulled++, next.value);
+    throwIfAborted(signal);
     if (next.done) {
       const { pulled } = assembly;
       if (pulled > 0 && pulled < run.plan.frames.length) {
@@ -286,8 +310,6 @@ async function pullFrames<TSource, TImage, TBinary>(
       }
       return;
     }
-    assembly.pending.set(assembly.pulled, next.value);
-    assembly.pulled++;
     reportExtracting({ done: assembly.pulled, total: run.plan.frames.length });
     throwIfFailed(stream.failure);
     await writeCapturedSheets(run.plan, stream);
@@ -329,8 +351,10 @@ async function writeSheets<TSource, TImage, TBinary>(
   run: SheetRun<TSource, TImage, TBinary>,
 ): Promise<WrittenSheets> {
   const failure: FirstFailure = { failed: false, error: undefined };
+  const { source, plan, info, ports, options } = run;
+  const capture = ports.frames.capture(source, plan, info, options.signal);
   const stream: SheetStream<TImage> = {
-    frames: run.ports.frames.capture(run.source, run.plan, run.info)[Symbol.asyncIterator](),
+    frames: capture[Symbol.asyncIterator](),
     assembly: { pending: new Map(), pulled: 0, nextSheet: 0 },
     writer: sheetWriter(run, failure),
     failure,
@@ -341,6 +365,7 @@ async function writeSheets<TSource, TImage, TBinary>(
   } catch (err) {
     recordFailure(failure, err);
     await abandonSheets(run, stream);
+    throwIfAborted(options.signal);
     throw failure.error;
   }
   return { frameCount: stream.assembly.pulled, sheetCount: stream.writer.written() };
@@ -380,13 +405,16 @@ async function generateTranscriptFiles<TSource, TImage, TBinary>(
         request.startSeconds,
         request.endSeconds,
         progressFor(options, "transcribing"),
+        options.signal,
       ),
     );
+    throwIfAborted(options.signal);
     return transcriptFiles(plan, step.sheetCount, request.endSeconds, cues).map((file) => ({
       name: file.fileName,
       data: ports.text.encodeText(file.vtt, "text/vtt"),
     }));
   } catch (err) {
+    throwIfAborted(options.signal);
     options.onWarning?.(transcriptionFailure(err));
     return [];
   }
@@ -399,7 +427,14 @@ export async function streamCollages<TSource, TImage, TBinary>(
   options: StreamCollagesOptions<TBinary>,
 ): Promise<StreamCollagesResult<TBinary>> {
   validateCollagePlanRequest(request);
-  const resolved = await resolveVideoInfo(source, request, ports.probe, options.videoInfo);
+  throwIfAborted(options.signal);
+  const resolved = await resolveVideoInfo(source, request, ports.probe, options.videoInfo).catch(
+    (err: unknown) => {
+      throwIfAborted(options.signal);
+      throw err;
+    },
+  );
+  throwIfAborted(options.signal);
   const plan = planWithKeyframeFallback(request, resolved, options.onWarning);
   const timer = phaseTimer(ports.clock);
 
@@ -411,11 +446,14 @@ export async function streamCollages<TSource, TImage, TBinary>(
     options,
     timer,
   });
+  throwIfAborted(options.signal);
   const transcriptFiles =
     frameCount === 0
       ? []
       : await generateTranscriptFiles({ source, request, plan, sheetCount, ports, options, timer });
 
+  const missingTimestamps = missingTimestampsWarning(request, plan, frameCount);
+  if (missingTimestamps) options.onWarning?.(missingTimestamps);
   options.onTiming?.({ phaseMs: timer.phaseMs, frameCount, sheetCount });
   return { plan, sheetCount, transcriptFiles };
 }

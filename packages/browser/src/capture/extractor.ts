@@ -1,5 +1,6 @@
-import type { RenderPlan } from "@vid2grid/core";
-import { createCellCanvas } from "../shared/canvas";
+import type { AbortSignalLike, RenderPlan } from "@vid2grid/core";
+import { createFrameCanvas } from "../shared/canvas";
+import { throwIfAborted, untilAborted } from "./abort";
 import { createVideoElement, releaseVideo, waitForEvent } from "./video";
 
 /** `currentTime` lands on the nearest frame, not the first at/after the timestamp: the one
@@ -8,23 +9,26 @@ export async function* extractFrames(
   file: File,
   plan: RenderPlan,
   fromFrame = 0,
+  signal?: AbortSignalLike,
 ): AsyncGenerator<ImageBitmap, void, undefined> {
+  throwIfAborted(signal);
   const video = createVideoElement("auto");
   const url = URL.createObjectURL(file);
 
   try {
     video.src = url;
-    await waitForEvent(video, "loadedmetadata");
+    await untilAborted(waitForEvent(video, "loadedmetadata"), signal);
 
     // Cell-sized, not source-sized, so no frame is downscaled twice.
-    const { canvas, ctx } = createCellCanvas(plan.cell.width, plan.cell.height);
+    const { canvas, ctx, capture } = createFrameCanvas(plan.cell, plan.crop);
 
     for (const frame of plan.frames.slice(fromFrame)) {
       if (frame.timestampSeconds >= video.duration) break;
 
-      await seekTo(video, frame.timestampSeconds);
+      throwIfAborted(signal);
+      await untilAborted(seekTo(video, frame.timestampSeconds), signal);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      yield await createImageBitmap(canvas);
+      yield await capture();
     }
   } finally {
     releaseVideo(video);

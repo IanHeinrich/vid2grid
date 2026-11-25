@@ -4,21 +4,18 @@ import {
   keyframeTimestampsFromSamples,
   onPresentationClock,
   selectKeyframeSampleIndices,
-} from "../src/capture/webcodecsExtractor";
-import type { Sample } from "mp4box";
+  type SyncSample,
+} from "../src/capture/videoSamples";
 
-// jsdom has no VideoDecoder, so only these pure helpers of the fast path can be tested here.
 // The 30-tick timescale makes a sample's cts tick equal its frame index.
 const TIMESCALE = 30;
 
-function fakeSamples(count: number, gopSize: number): Sample[] {
+function fakeSamples(count: number, gopSize: number): SyncSample[] {
   return Array.from({ length: count }, (_, i) => ({
     is_sync: i % gopSize === 0,
     cts: i,
-    dts: i,
     timescale: TIMESCALE,
-    duration: 1,
-  })) as unknown as Sample[];
+  }));
 }
 
 const framesAt = (timestamps: number[]) =>
@@ -32,7 +29,7 @@ describe("keyframeTimestampsFromSamples", () => {
 
   it("returns nothing when the track has no sync samples", () => {
     const samples = fakeSamples(5, 10).map((sample) => ({ ...sample, is_sync: false }));
-    expect(keyframeTimestampsFromSamples(samples as unknown as Sample[])).toEqual([]);
+    expect(keyframeTimestampsFromSamples(samples)).toEqual([]);
   });
 });
 
@@ -42,16 +39,13 @@ describe("frameTimestampsFromSamples", () => {
   });
 
   it("orders samples stored in decode order by presentation time", () => {
-    const [i, p, b] = fakeSamples(3, 10);
-    const reordered = [i, { ...p, cts: 2 }, { ...b, cts: 1 }] as unknown as Sample[];
+    const reordered = [0, 2, 1].map((cts) => ({ cts, timescale: TIMESCALE }));
     expect(frameTimestampsFromSamples(reordered)).toEqual([0, 0.033333, 0.066667]);
   });
 
   it("keeps the uneven gaps of a variable frame rate track", () => {
     const samples = [0, 1, 7, 8].map((cts) => ({ cts, timescale: TIMESCALE }));
-    expect(frameTimestampsFromSamples(samples as unknown as Sample[])).toEqual([
-      0, 0.033333, 0.233333, 0.266667,
-    ]);
+    expect(frameTimestampsFromSamples(samples)).toEqual([0, 0.033333, 0.233333, 0.266667]);
   });
 });
 
@@ -79,7 +73,6 @@ describe("onPresentationClock", () => {
     const samples = onPresentationClock(delayed, track(edit(2)));
     expect(frameTimestampsFromSamples(samples).slice(0, 4)).toEqual([0, 0.033333, 0.066667, 0.1]);
     expect(keyframeTimestampsFromSamples(samples)).toEqual([0, 0.333333]);
-    expect(samples.slice(0, 2).map((sample) => sample.dts)).toEqual([-2, -1]);
   });
 
   it("matches a keyframe plan made on the presentation clock", () => {

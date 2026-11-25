@@ -125,6 +125,16 @@ def test_a_supplied_info_is_topped_up_with_keyframes(tiny_video: Path, tmp_path:
     ]
 
 
+def test_times_after_the_last_frame_starts_are_a_warning(curator_mp4: Path, tmp_path: Path) -> None:
+    # tiny.mp4's last frame starts at 2.9 s and lasts to its end at 3 s.
+    some = render_sheets(curator_mp4, collage_request(timestamps_seconds=(2.95, 1.0)), tmp_path)
+    none = render_sheets(curator_mp4, collage_request(timestamps_seconds=(2.95,)), tmp_path)
+
+    warning = "The video has no frame at or after these times, so no sheet shows them: 2.95"
+    assert (some.frame_count, some.warnings) == (1, (warning,))
+    assert (none.sheets, none.warnings) == ((), (warning,))
+
+
 def test_render_sheets_validates_before_probing(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="jpeg_quality must be between 1 and 100"):
         render_sheets(tmp_path / "missing.mp4", collage_request(jpeg_quality=0), tmp_path)

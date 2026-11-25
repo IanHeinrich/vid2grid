@@ -1,0 +1,100 @@
+{
+  "name": "area-of-one-pixel",
+  "request": {
+    "startSeconds": 0,
+    "endSeconds": 1,
+    "targetFps": 1,
+    "area": {
+      "left": 999.9,
+      "top": 999.9,
+      "right": 1000,
+      "bottom": 1000
+    },
+    "framesPerGrid": 1,
+    "outputResolution": 512,
+    "jpegQuality": 85
+  },
+  "info": {
+    "durationSeconds": 3,
+    "width": 320,
+    "height": 240
+  },
+  "plan": {
+    "version": 2,
+    "canvas": {
+      "width": 512,
+      "height": 512
+    },
+    "cell": {
+      "width": 496,
+      "height": 496
+    },
+    "crop": {
+      "x": 319,
+      "y": 239,
+      "width": 1,
+      "height": 1,
+      "sourceWidth": 320,
+      "sourceHeight": 240
+    },
+    "layout": {
+      "cols": 1,
+      "rows": 1,
+      "offsetX": 0,
+      "offsetY": 0
+    },
+    "style": {
+      "background": "black",
+      "textFill": "black",
+      "textStroke": "white",
+      "fontFamily": "sans-serif",
+      "textBaseline": "top"
+    },
+    "jpegQuality": 85,
+    "timestampFormat": {
+      "showHours": false,
+      "showMinutes": false,
+      "showMilliseconds": false
+    },
+    "frames": [
+      {
+        "frameIndex": 0,
+        "timestampSeconds": 0
+      }
+    ],
+    "sheets": [
+      {
+        "sheetIndex": 0,
+        "fileName": "grid_0001.jpg",
+        "cells": [
+          {
+            "frameIndex": 0,
+            "timestampSeconds": 0,
+            "x": 8,
+            "y": 8,
+            "width": 496,
+            "height": 496,
+            "watermarks": [
+              {
+                "text": "00",
+                "anchor": "top-left",
+                "x": 12,
+                "y": 12,
+                "fontSizePx": 31,
+                "strokeWidthPx": 3
+              },
+              {
+                "text": "0",
+                "anchor": "top-right",
+                "x": 500,
+                "y": 12,
+                "fontSizePx": 31,
+                "strokeWidthPx": 3
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

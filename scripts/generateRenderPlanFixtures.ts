@@ -149,6 +149,61 @@ const CASES: FixtureCase[] = [
     info: { durationSeconds: 40, width: 1280, height: 720 },
   },
   {
+    name: "explicit-timestamps",
+    request: {
+      startSeconds: 0,
+      endSeconds: 92.4,
+      targetFps: 1,
+      timestampsSeconds: [61.2345678, 0, 5.5, 5.5, 92.399],
+      framesPerGrid: 3,
+      outputResolution: 1024,
+      jpegQuality: 85,
+      transcript: { scope: "per-sheet" },
+    },
+    info: HD,
+  },
+  {
+    name: "area-at-explicit-timestamps",
+    request: {
+      startSeconds: 0,
+      endSeconds: 92.4,
+      targetFps: 1,
+      timestampsSeconds: [12, 47],
+      area: { left: 100, top: 200, right: 400, bottom: 500 },
+      framesPerGrid: 2,
+      outputResolution: 1024,
+      jpegQuality: 85,
+    },
+    info: HD,
+  },
+  // Sides that fall between pixels, and a corner thinner than one.
+  {
+    name: "area-rounded-to-pixels",
+    request: {
+      startSeconds: 0,
+      endSeconds: 4,
+      targetFps: 1,
+      area: { left: 333.3, top: 0.1, right: 666.6, bottom: 999.9 },
+      framesPerGrid: 4,
+      outputResolution: 768,
+      jpegQuality: 85,
+    },
+    info: { durationSeconds: 4, width: 854, height: 480 },
+  },
+  {
+    name: "area-of-one-pixel",
+    request: {
+      startSeconds: 0,
+      endSeconds: 1,
+      targetFps: 1,
+      area: { left: 999.9, top: 999.9, right: 1000, bottom: 1000 },
+      framesPerGrid: 1,
+      outputResolution: 512,
+      jpegQuality: 85,
+    },
+    info: LANDSCAPE,
+  },
+  {
     name: "min-font-clamp",
     request: {
       startSeconds: 0,

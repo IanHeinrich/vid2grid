@@ -166,6 +166,50 @@ describe("renderVideo failing at a sheet", () => {
   });
 });
 
+// keyframes-20s.mp4 at 2 fps plans 40 frames, 10 sheets of 4.
+describe("renderVideo aborting", () => {
+  const reason = new Error("stopped");
+  const video = fixtureVideo("keyframes-20s.mp4");
+  const abortedRequest: CollagePlanRequest = {
+    startSeconds: 0,
+    endSeconds: 20,
+    targetFps: 2,
+    framesPerGrid: 4,
+    outputResolution: 256,
+    jpegQuality: 85,
+  };
+
+  it("reads nothing and leaves no folder when already aborted", async () => {
+    const dir = join(outDir, "aborted-early");
+    const signal = AbortSignal.abort(reason);
+
+    await expect(
+      renderVideo(join(outDir, "missing.mp4"), abortedRequest, dir, { signal }),
+    ).rejects.toBe(reason);
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  // The fourth sheet starts only once the second is written, so by frame 20 two or more are.
+  it("rejects with the reason and keeps the sheets already written", async () => {
+    const dir = join(outDir, "aborted");
+    const controller = new AbortController();
+
+    await expect(
+      renderVideo(video, abortedRequest, dir, {
+        signal: controller.signal,
+        onProgress: ({ phase, done }) => {
+          if (phase === "extracting" && done === 20) controller.abort(reason);
+        },
+      }),
+    ).rejects.toBe(reason);
+
+    const written = filesIn(dir);
+    expect(written.length).toBeGreaterThanOrEqual(2);
+    expect(written.length).toBeLessThanOrEqual(4);
+    expect(written[0]).toBe("grid_0001.jpg");
+  });
+});
+
 // keyframes-20s.mp4 at 10 fps plans 200 frames, 23 sheets of 9.
 describe("renderVideo memory", () => {
   it("holds only the sheets in flight and writes each sheet as it arrives", async () => {

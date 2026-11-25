@@ -17,6 +17,8 @@ export interface SheetContext {
   overviewResolution?: (sheets: number) => number;
   render?: typeof renderSheets;
   capture?: typeof captureFrame;
+  // Stops a render or capture when the reply it is for is stopped.
+  signal?: AbortSignal;
 }
 
 export async function renderOverview(
@@ -42,8 +44,6 @@ export function sheetGeometry(ctx: SheetContext, outputResolution = ctx.resoluti
 }
 
 export interface SheetRenderExtras {
-  // Replaces the probed info, e.g. to hand the keyframe path the exact times to capture.
-  info?: VideoInfo;
   onProgress?: (done: number, total: number) => void;
 }
 
@@ -51,14 +51,15 @@ export async function sheetRefs(
   ctx: SheetContext,
   values: PlanOptionInput,
   call: string,
-  { info = ctx.info, onProgress }: SheetRenderExtras = {},
+  { onProgress }: SheetRenderExtras = {},
 ): Promise<ImageRef[]> {
+  const { info } = ctx;
   const keyframes = values.keyframeSampling === true ? info.keyframeTimestampsSeconds : undefined;
   const key = sheetCacheKey(ctx.video.fileKey, values, keyframes);
   const cached = await storedSheets(ctx.store, key);
   if (cached !== undefined) return cached.map((ref) => stamped(ref, ctx.video.fileKey));
   const render = ctx.render ?? renderSheets;
-  const sheets = await render(ctx.file, info, values, onProgress);
+  const sheets = await render(ctx.file, info, values, onProgress, ctx.signal);
   if (sheets.length === 0) throw new Error("No frame was found there; try an earlier time.");
   const { outputResolution } = values;
   const refs = await Promise.all(

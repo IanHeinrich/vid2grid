@@ -6,9 +6,11 @@ import {
   type TranscriptCue,
   type TranscriptSegment,
 } from "@vid2grid/core";
+import { DECODED_SAMPLE_RATE, type SpeechAudio } from "../capture/audioExtraction";
 import { abortError, requestFromWorker, type WorkerRequestOptions } from "../shared/workerRequest";
 import { speechPieces, spokenText } from "./speechPieces";
-import type { TranscribeRequest } from "./transcriptionWorker";
+import { speechWindows } from "./speechWindows";
+import type { TranscribeRequest, WindowTokens } from "./transcriptionWorker";
 
 let sharedWorker: Worker | null = null;
 
@@ -21,23 +23,43 @@ function getWorker(): Worker {
   return sharedWorker;
 }
 
-function requestTranscription(
+function requestTranscription<TResult>(
   request: TranscribeRequest,
   options: WorkerRequestOptions<PortProgress>,
-): Promise<TranscriptSegment[]> {
-  return requestFromWorker(getWorker(), request, [request.samples.buffer], options);
+): Promise<TResult> {
+  const transfer = request.kind === "join" ? [] : [request.samples.buffer];
+  return requestFromWorker(getWorker(), request, transfer, options);
 }
 
-/** `samples` is mono 16kHz PCM; `offsetSeconds` puts cues back on the absolute video timeline. */
-export async function transcribeAudio(
-  samples: Float32Array,
+// The worker times only its model download; the work itself is counted here.
+function modelProgressOnly(onProgress: PortProgressCallback | undefined): PortProgressCallback {
+  return (progress) => {
+    if (progress.stage === "model") onProgress?.(progress);
+  };
+}
+
+/** Timed cues for the whole of `audio`, holding one window of it at a time. `offsetSeconds` puts
+ * the cues back on the absolute video timeline. */
+export async function transcribeTimed(
+  audio: SpeechAudio,
   offsetSeconds: number,
   onProgress?: PortProgressCallback,
   signal?: AbortSignalLike,
 ): Promise<TranscriptCue[]> {
-  const segments = await requestTranscription(
-    { samples, timestamps: true },
-    { onProgress, signal },
+  const options = { onProgress: modelProgressOnly(onProgress), signal };
+  const windows = [...speechWindows(audio.sampleCount, DECODED_SAMPLE_RATE)];
+  if (windows.length === 0) return [];
+  const heard: WindowTokens[] = [];
+  for (const { startIndex, endIndex, strideSeconds } of windows) {
+    if (signal?.aborted) throw abortError(signal);
+    const samples = await audio.read(startIndex, endIndex, signal);
+    const tokens = await requestTranscription<number[]>({ kind: "window", samples }, options);
+    heard.push({ tokens, stride: strideSeconds });
+    onProgress?.({ stage: "transcribe", done: heard.length, total: windows.length });
+  }
+  const segments = await requestTranscription<TranscriptSegment[]>(
+    { kind: "join", windows: heard },
+    options,
   );
   return cuesFromSegments(segments, offsetSeconds);
 }
@@ -52,17 +74,15 @@ export async function transcribeInPieces(
   signal?: AbortSignalLike,
 ): Promise<TranscriptCue[]> {
   const pieces = speechPieces(samples, sampleRate);
-  const onModelProgress = (progress: PortProgress): void => {
-    if (progress.stage === "model") onProgress?.(progress);
-  };
+  const options = { onProgress: modelProgressOnly(onProgress), signal };
   const cues: TranscriptCue[] = [];
   for (const [index, piece] of pieces.entries()) {
     if (signal?.aborted) throw abortError(signal);
     if (piece.audible) {
       const clip = samples.slice(piece.startIndex, piece.endIndex);
-      const segments = await requestTranscription(
-        { samples: clip, timestamps: false },
-        { onProgress: onModelProgress, signal },
+      const segments = await requestTranscription<TranscriptSegment[]>(
+        { kind: "clip", samples: clip },
+        options,
       );
       const text = spokenText(segments);
       if (text !== "") {

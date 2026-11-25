@@ -103,6 +103,29 @@ describe("planFrameTimestamps, sampled mode", () => {
   });
 });
 
+describe("planFrameTimestamps, explicit timestamps", () => {
+  it("sorts them, rounds them to microseconds and drops repeats", () => {
+    expect(timestampsOf(request({ timestampsSeconds: [9.5, 1 / 3, 2, 0.3333331, 2] }))).toEqual([
+      0.333333, 2, 9.5,
+    ]);
+  });
+
+  it("ignores the range and targetFps", () => {
+    const outside = { startSeconds: 4, endSeconds: 5, targetFps: 30, timestampsSeconds: [1, 8] };
+    expect(timestampsOf(request(outside))).toEqual([1, 8]);
+  });
+
+  it.each([10, 12.5])("rejects %s in a 10 second video", (seconds) => {
+    const plan = () => timestampsOf(request({ timestampsSeconds: [1, seconds] }));
+    expect(plan).toThrowError(
+      new Vid2GridError(
+        "invalid_request",
+        `timestamps_seconds has ${seconds}, which is not before the video's end at 10`,
+      ),
+    );
+  });
+});
+
 describe("planFrameTimestamps, keyframe mode", () => {
   const keyframes = [0, 0.333333, 0.666667, 1, 1.333333];
   const info: VideoInfo = { ...INFO, keyframeTimestampsSeconds: keyframes };

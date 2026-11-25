@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { create2dCanvas, create2dOffscreenCanvas, createCellCanvas } from "../src/shared/canvas";
+import {
+  create2dCanvas,
+  create2dOffscreenCanvas,
+  createCellCanvas,
+  createFrameCanvas,
+} from "../src/shared/canvas";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -28,6 +33,42 @@ describe("createCellCanvas", () => {
 
     expect(ctx.imageSmoothingEnabled).toBe(true);
     expect(ctx.imageSmoothingQuality).toBe("high");
+  });
+});
+
+describe("createFrameCanvas", () => {
+  const CELL = { width: 600, height: 200 };
+
+  function stubImageBitmap() {
+    const create = vi.fn<(canvas: HTMLCanvasElement) => Promise<unknown>>(() =>
+      Promise.resolve({}),
+    );
+    vi.stubGlobal("createImageBitmap", create);
+    return create;
+  }
+
+  it("captures the cell the frame was drawn over", async () => {
+    const create = stubImageBitmap();
+    const { canvas, capture } = createFrameCanvas(CELL);
+
+    await capture();
+
+    expect([canvas.width, canvas.height]).toEqual([600, 200]);
+    expect(create).toHaveBeenCalledWith(canvas);
+  });
+
+  it("with a crop, scales just that part of the whole picture to the cell", async () => {
+    const create = stubImageBitmap();
+    const drawImage = vi.spyOn(CanvasRenderingContext2D.prototype, "drawImage");
+    const crop = { x: 30, y: 10, width: 60, height: 20, sourceWidth: 120, sourceHeight: 80 };
+    const { canvas, capture } = createFrameCanvas(CELL, crop);
+
+    await capture();
+
+    expect([canvas.width, canvas.height]).toEqual([120, 80]);
+    expect(drawImage).toHaveBeenCalledWith(canvas, 30, 10, 60, 20, 0, 0, 600, 200);
+    const [captured] = create.mock.calls[0] ?? [];
+    expect([captured?.width, captured?.height]).toEqual([600, 200]);
   });
 });
 

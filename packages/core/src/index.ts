@@ -5,6 +5,7 @@ export {
   collagePlanRequestProblem,
   validateCollagePlanRequest,
   type CollagePlanRequest,
+  type PictureArea,
   type SamplingRange,
 } from "./plan/request";
 export { sourceAspect, type VideoInfo } from "./probe/videoInfo";
@@ -78,6 +79,7 @@ export {
   type BooleanOptionSpec,
   type EnumOptionSpec,
   type HostCapability,
+  type NumberListOptionSpec,
   type NumberOptionSpec,
   type OptionName,
   type OptionSpec,
@@ -85,6 +87,7 @@ export {
   type PlanOptionValues,
   type TranscriptOption,
 } from "./plan/options";
+export { missingTimestampsWarning } from "./plan/missingTimestamps";
 export { resolveKeyframeSampling, type KeyframeSamplingDecision } from "./plan/keyframeFallback";
 export { createFrameMatcher, isKeyframePlan, type FrameMatcher } from "./plan/frameMatching";
 export {
@@ -96,7 +99,9 @@ export {
 export { buildGridsFolderName, formatClock } from "./presentation";
 export {
   RENDER_PLAN_VERSION,
+  UNCROPPED_PLAN_VERSION,
   type PlannedCell,
+  type PlannedCrop,
   type PlannedFrame,
   type PlannedGridLayout,
   type PlannedSheet,

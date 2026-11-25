@@ -1,0 +1,51 @@
+{
+  "name": "area-of-one-pixel",
+  "sheets": [
+    [
+      {
+        "kind": "fillRect",
+        "x": 0,
+        "y": 0,
+        "width": 512,
+        "height": 512,
+        "color": "black"
+      },
+      {
+        "kind": "image",
+        "cellIndex": 0,
+        "x": 8,
+        "y": 8,
+        "width": 496,
+        "height": 496
+      },
+      {
+        "kind": "text",
+        "cellIndex": 0,
+        "text": "00",
+        "x": 12,
+        "y": 12,
+        "anchor": "top-left",
+        "baseline": "top",
+        "fontSizePx": 31,
+        "fontFamily": "sans-serif",
+        "fill": "black",
+        "stroke": "white",
+        "strokeWidthPx": 3
+      },
+      {
+        "kind": "text",
+        "cellIndex": 0,
+        "text": "0",
+        "x": 500,
+        "y": 12,
+        "anchor": "top-right",
+        "baseline": "top",
+        "fontSizePx": 31,
+        "fontFamily": "sans-serif",
+        "fill": "black",
+        "stroke": "white",
+        "strokeWidthPx": 3
+      }
+    ]
+  ]
+}

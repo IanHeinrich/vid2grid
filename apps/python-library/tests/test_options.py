@@ -66,6 +66,19 @@ def test_plan_from_options_is_cores_plan_for_the_probed_video(tiny_video: Path) 
     assert planned.warnings == ()
 
 
+def test_render_from_options_captures_exact_times(tiny_video: Path, tmp_path: Path) -> None:
+    result = render_from_options(tiny_video, tmp_path, {"timestampsSeconds": [2.5, 0.25]})
+
+    assert result.frame_count == 2
+    assert result.first_timestamp_seconds == 0.25
+    assert result.last_timestamp_seconds == 2.5
+
+
+def test_a_time_past_the_end_is_an_invalid_request(tiny_video: Path) -> None:
+    with pytest.raises(InvalidRequestError, match="not before the video's end"):
+        plan_from_options(tiny_video, {"timestampsSeconds": [1, 600]})
+
+
 def test_plan_from_options_reads_keyframes_for_keyframe_sampling() -> None:
     video = repo_root() / "fixtures" / "videos" / "keyframes-20s.mp4"
 

@@ -425,40 +425,27 @@ describe("look limits", () => {
 });
 
 describe("frames", () => {
-  it("renders exactly the requested moments through the keyframe path", async () => {
+  it("renders exactly the requested moments on one sheet", async () => {
     const { ctx, run, render } = setup([sheet("grid_0001", 102, 105.5, 2)]);
     const result = await run(call("frames", { times: [105.5, 102] }));
-    expect(render.mock.calls[0]?.[1]).toEqual({
-      ...ctx.info,
-      keyframeTimestampsSeconds: [102, 105.5],
-    });
+    expect(render.mock.calls[0]?.[1]).toEqual(ctx.info);
     expect(render.mock.calls[0]?.[2]).toEqual({
-      keyframeSampling: true,
-      startSeconds: 102,
-      endSeconds: 105.51,
+      timestampsSeconds: [102, 105.5],
       framesPerGrid: 2,
       outputResolution: 1568,
-      targetFps: 2,
     });
     expect(result.text).toBe("grid_0001: 1:42.0 to 1:45.5, 2 frames\n1 image follows.");
     expect(result.images[0]?.source).toMatchObject({ kind: "sheet", call: "frames(1:42, 1:45.5)" });
   });
 
-  it("keeps whole-second timestamps when every time is a whole second", async () => {
-    const { run, render } = setup();
-    await run(call("frames", { times: [10, 20] }));
-    expect(render.mock.calls[0]?.[2]).not.toHaveProperty("targetFps");
-  });
-
   it("clamps, sorts and drops times within 0.05 s of another", async () => {
     const { run, render } = setup();
     await run(call("frames", { times: [9999, 30, -3, 30.04, 120, 30.2] }));
-    const times = render.mock.calls[0]?.[1].keyframeTimestampsSeconds ?? [];
+    const times = render.mock.calls[0]?.[2].timestampsSeconds ?? [];
     expect(times.slice(0, 3)).toEqual([0, 30, 30.2]);
     expect(times).toHaveLength(4);
     expect(times[3]).toBeCloseTo(119.95);
-    expect(render.mock.calls[0]?.[2]).toMatchObject({ startSeconds: 0, framesPerGrid: 4 });
-    expect(render.mock.calls[0]?.[2].endSeconds).toBeLessThan(120);
+    expect(render.mock.calls[0]?.[2]).toMatchObject({ framesPerGrid: 4 });
   });
 });
 
@@ -493,10 +480,9 @@ describe("frames arguments", () => {
   });
 
   it("maps the old frame(t) call to one time", async () => {
-    const { ctx, run, render } = setup([sheet("grid_0001", 102, 102, 1)]);
+    const { run, render } = setup([sheet("grid_0001", 102, 102, 1)]);
     const result = await run(call("frame", { t: 102 }));
-    expect(render.mock.calls[0]?.[1]).toEqual({ ...ctx.info, keyframeTimestampsSeconds: [102] });
-    expect(render.mock.calls[0]?.[2]).toMatchObject({ startSeconds: 102, framesPerGrid: 1 });
+    expect(render.mock.calls[0]?.[2]).toMatchObject({ timestampsSeconds: [102], framesPerGrid: 1 });
     expect(result.images[0]?.source).toMatchObject({ call: "frames(1:42)" });
   });
 });

@@ -1,10 +1,13 @@
 import { ChildProcess, execFileSync } from "node:child_process";
+import type * as ChildProcessModule from "node:child_process";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
+import { PassThrough } from "node:stream";
+import { setImmediate as nextTick, setTimeout as delay } from "node:timers/promises";
 import ffmpegPath from "ffmpeg-static";
 import {
   buildRenderPlan,
@@ -12,18 +15,63 @@ import {
   type RenderPlan,
   type VideoInfo,
 } from "@vid2grid/core";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { captureFrames, type RgbaFrame } from "../src/capture";
 import { probeVideo, readKeyframeTimes } from "../src/probe";
 import { fixtureVideo } from "../../../packages/core/tests/fixturePaths";
 
 const TINY_MP4 = fixtureVideo("tiny.mp4");
+const KEYFRAMES_MP4 = fixtureVideo("keyframes-20s.mp4");
+
+const spawned = vi.hoisted((): ChildProcess[] => []);
+// Says which spawns to replace with a process that crashes.
+const dying = vi.hoisted((): { when: (file: string, args: string[]) => boolean } => ({
+  when: () => false,
+}));
+
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof ChildProcessModule>();
+  const spawn = (...args: Parameters<typeof actual.spawn>): ChildProcess => {
+    const [file, processArgs] = args;
+    const child = dying.when(file, [...processArgs])
+      ? dyingProcess(file, [...processArgs])
+      : actual.spawn(...args);
+    spawned.push(child);
+    return child;
+  };
+  return { ...actual, spawn };
+});
+
+function dyingProcess(file: string, args: string[]): ChildProcess {
+  const child = new ChildProcess();
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  Object.assign(child, { spawnfile: file, spawnargs: args, stdout, stderr, kill: () => true });
+  setImmediate(() => {
+    stdout.end();
+    stderr.end();
+    Object.assign(child, { signalCode: "SIGSEGV" });
+    child.emit("exit", null, "SIGSEGV");
+    child.emit("close", null, "SIGSEGV");
+  });
+  return child;
+}
+
+function ffmpegProcesses(): ChildProcess[] {
+  return spawned.filter((child) => child.spawnfile === ffmpegPath);
+}
+
+beforeEach(() => {
+  spawned.length = 0;
+  dying.when = () => false;
+});
 
 let scratch: string;
 // tiny.mp4 re-encoded with a keyframe every 10 frames (1 s), and the same again with a
 // 1.4 s container start time.
 let gopMp4: string;
 let offsetMp4: string;
+let closedMp4: string;
 
 function encodeCopy(target: string, extraArgs: string[]): void {
   execFileSync(ffmpegPath ?? "ffmpeg", [
@@ -38,6 +86,7 @@ beforeAll(() => {
   offsetMp4 = join(scratch, "offset.mp4");
   encodeCopy(gopMp4, []);
   encodeCopy(offsetMp4, ["-output_ts_offset", "1.4"]);
+  closedMp4 = encodeClip("closed.mp4", []);
 });
 
 afterAll(() => {
@@ -155,6 +204,49 @@ describe("captureFrames", () => {
   });
 });
 
+// Rotated and anamorphic, since the crop is in pixels of the picture as displayed.
+describe("captureFrames with an area", () => {
+  const AREA = { left: 206, top: 308, right: 506, bottom: 775 };
+
+  async function firstFrame(path: string, area?: typeof AREA): Promise<RgbaFrame> {
+    const info = await probeVideo(path);
+    const plan = buildRenderPlan(request({ framesPerGrid: 1, ...(area && { area }) }), info);
+    // A cell the size of the picture or the crop, so neither image is scaled.
+    const { width, height } = plan.crop ?? info;
+    const unscaled = { ...plan, cell: { width, height }, frames: plan.frames.slice(0, 1) };
+    const [frame] = await captureAll(path, unscaled, info);
+    if (!frame) throw new Error("no frame was captured");
+    return frame;
+  }
+
+  function cut(whole: RgbaFrame, x: number, y: number, width: number, height: number): Buffer {
+    const rows = Array.from({ length: height }, (_, row) => {
+      const start = ((y + row) * whole.width + x) * 4;
+      return Buffer.from(whole.data.subarray(start, start + width * 4));
+    });
+    return Buffer.concat(rows);
+  }
+
+  it.each([
+    ["plain", ["-c", "copy"], [33, 37, 48, 56]],
+    ["rotated", ["-c", "copy"], [25, 49, 36, 75]],
+    ["anamorphic", ["-c:v", "libx264", "-vf", "setsar=2"], [66, 37, 96, 56]],
+  ] as const)("yields the crop's own pixels of a %s video", async (kind, args, rect) => {
+    const [x, y, width, height] = rect;
+    const video = join(scratch, `${kind}.mp4`);
+    const input = kind === "rotated" ? ["-display_rotation", "90"] : [];
+    execFileSync(ffmpegPath ?? "ffmpeg", [
+      ...["-v", "error", "-y", ...input, "-i", TINY_MP4, ...args, video],
+    ]);
+
+    const whole = await firstFrame(video);
+    const cropped = await firstFrame(video, AREA);
+
+    expect([cropped.width, cropped.height]).toEqual([width, height]);
+    expect(Buffer.from(cropped.data).equals(cut(whole, x, y, width, height))).toBe(true);
+  });
+});
+
 const VIDEO_FRAMES = 200; // keyframes-20s.mp4: 20 s at 10 fps
 
 // How ffmpeg exits after a kill differs by build (Linux's traps SIGTERM and finishes the
@@ -215,5 +307,388 @@ describe("captureFrames backpressure", () => {
       pause.mockRestore();
       restore();
     }
+  });
+});
+
+function planAt(times: number[]): RenderPlan {
+  const info = { durationSeconds: 1000, width: 320, height: 240 };
+  const frames = times.map((timestampSeconds, frameIndex) => ({ frameIndex, timestampSeconds }));
+  return { ...buildRenderPlan(request({}), info), frames };
+}
+
+// The times and pixels of frames, hashed because comparing them byte by byte is slow.
+function picked(frames: RgbaFrame[]): string[] {
+  return frames.map(({ decodedTimestampSeconds, data }) => {
+    return `${decodedTimestampSeconds} ${createHash("sha1").update(data).digest("hex")}`;
+  });
+}
+
+const ANY_INFO: VideoInfo = { durationSeconds: 1000, width: 320, height: 240 };
+
+// The same times with every half second between them too, so nothing is far enough apart to
+// seek over: one process decodes everything.
+async function captureDecodingThrough(path: string, times: number[]): Promise<RgbaFrame[]> {
+  const halfSeconds = Array.from({ length: 64 }, (_, i) => i / 2);
+  const dense = [...new Set([...times, ...halfSeconds])].sort((a, b) => a - b);
+  const images = await captureAll(path, planAt(dense), ANY_INFO);
+  return times.flatMap((time) => images[dense.indexOf(time)] ?? []);
+}
+
+function encodeClip(name: string, codecArgs: string[], outputArgs: string[] = []): string {
+  const clip = join(scratch, name);
+  const source = "testsrc2=size=160x120:rate=30:duration=32,noise=alls=20:allf=t";
+  execFileSync(ffmpegPath ?? "ffmpeg", [
+    ...["-v", "error", "-y", "-f", "lavfi", "-i", source],
+    ...["-preset", "ultrafast", "-sc_threshold", "0", "-g", "60", "-bf", "3"],
+    ...["-c:v", "libx264", ...codecArgs, ...outputArgs, clip],
+  ]);
+  return clip;
+}
+
+function remux(source: string, name: string, inputArgs: string[], outputArgs: string[]): string {
+  const clip = join(scratch, name);
+  execFileSync(ffmpegPath ?? "ffmpeg", [
+    ...["-v", "error", "-y", ...inputArgs, "-i", source, "-c", "copy", ...outputArgs, clip],
+  ]);
+  return clip;
+}
+
+interface Edit {
+  milliseconds: number;
+  // In the clip's own 1/15360 s, so 512 a frame.
+  mediaTime: number;
+}
+
+// Replaces the edit list of an mp4 whose moov is its last box.
+function withEdits(source: string, name: string, edits: Edit[]): string {
+  const bytes = readFileSync(source);
+  let at = bytes.lastIndexOf("moov");
+  const boxes = ["moov", "trak", "edts", "elst"].map((type) => (at = bytes.indexOf(type, at)) - 4);
+  const entries = edits.flatMap(({ milliseconds, mediaTime }) => [
+    milliseconds,
+    mediaTime,
+    0x10000,
+  ]);
+  const content = Buffer.alloc(8 + entries.length * 4);
+  content.writeUInt32BE(edits.length, 4);
+  entries.forEach((entry, i) => content.writeUInt32BE(entry, 8 + i * 4));
+
+  const list = boxes.at(-1) ?? 0;
+  const oldSize = bytes.readUInt32BE(list);
+  const added = 8 + content.length - oldSize;
+  for (const box of boxes) bytes.writeUInt32BE(bytes.readUInt32BE(box) + added, box);
+  const clip = join(scratch, name);
+  const parts = [bytes.subarray(0, list + 8), content, bytes.subarray(list + oldSize)];
+  writeFileSync(clip, Buffer.concat(parts));
+  return clip;
+}
+
+// Either side of the join at 9 s is a different frame at 8.966667 s, and the second edit's
+// is reached only by decoding from its discarded pre-roll keyframe.
+const THREE_EDITS: Edit[] = [
+  { milliseconds: 9000, mediaTime: 37164 },
+  { milliseconds: 8000, mediaTime: 192512 },
+  { milliseconds: 6000, mediaTime: 359424 },
+];
+const TIMES_AT_THE_JOINS = [0, 8.966667, 9.01, 16.966667, 22.9];
+
+const OPEN_GOP = ["-x264-params", "open-gop=1"];
+const VARIABLE_RATE = ["-vf", "select='mod(n*n,7)'", "-fps_mode", "vfr", "-g", "40"];
+
+interface SparseCase {
+  name: string;
+  clip: () => string;
+  seeks: boolean;
+  times?: number[];
+}
+
+const SPARSE_CASES: SparseCase[] = [
+  { name: "B-frames", clip: () => closedMp4, seeks: true },
+  { name: "an open GOP in mp4", clip: () => encodeClip("open.mp4", OPEN_GOP), seeks: true },
+  { name: "an open GOP in mkv", clip: () => encodeClip("open.mkv", OPEN_GOP), seeks: true },
+  { name: "a variable frame rate", clip: () => encodeClip("vfr.mp4", VARIABLE_RATE), seeks: true },
+  {
+    name: "an edit list that starts inside a GOP",
+    clip: () => remux(closedMp4, "edit.mp4", ["-ss", "3.35"], []),
+    seeks: true,
+  },
+  {
+    name: "three edits that cut into GOPs",
+    clip: () => withEdits(closedMp4, "edits.mp4", THREE_EDITS),
+    seeks: true,
+    times: TIMES_AT_THE_JOINS,
+  },
+  {
+    name: "a container start time of 1.4 s",
+    clip: () => remux(closedMp4, "late-start.mp4", [], ["-output_ts_offset", "1.4"]),
+    seeks: true,
+  },
+  {
+    name: "a fragmented mp4",
+    clip: () => remux(closedMp4, "frag.mp4", [], ["-movflags", "frag_keyframe+empty_moov"]),
+    seeks: true,
+  },
+  { name: "one keyframe", clip: () => encodeClip("single.mp4", ["-g", "9999"]), seeks: false },
+  {
+    name: "seeks that land at no known time",
+    clip: () => remux(closedMp4, "stream.avi", [], []),
+    seeks: false,
+  },
+];
+
+const SPARSE_TIMES = [0.31, 0.62, 9.9343, 10, 17.8891, 18.2, 26.02];
+
+function seekArgument(ffmpeg: ChildProcess | undefined): string | undefined {
+  const args = ffmpeg?.spawnargs ?? [];
+  return args[args.indexOf("-ss") + 1];
+}
+
+describe("captureFrames on a sparse plan", () => {
+  it.each(SPARSE_CASES)("picks the frames a full decode does: $name", async (testCase) => {
+    const { clip, seeks, times = SPARSE_TIMES } = testCase;
+    const path = clip();
+    const frames = await captureAll(path, planAt(times), ANY_INFO);
+
+    expect(ffmpegProcesses().length > 1).toBe(seeks);
+    expect(frames).toHaveLength(times.length);
+    expect(picked(frames)).toEqual(picked(await captureDecodingThrough(path, times)));
+  });
+
+  // Decoding recovers more than a second after each of this clip's keyframes.
+  it("decodes through from the first seek once a seek lands late", async () => {
+    const path = encodeClip("refresh.mp4", ["-x264-params", "intra-refresh=1:keyint=60"]);
+    const frames = await captureAll(path, planAt(SPARSE_TIMES), ANY_INFO);
+
+    expect(ffmpegProcesses().length).toBeGreaterThanOrEqual(3);
+    expect(seekArgument(ffmpegProcesses().at(-1))).toBe(seekArgument(ffmpegProcesses()[0]));
+    expect(picked(frames)).toEqual(picked(await captureDecodingThrough(path, SPARSE_TIMES)));
+  });
+
+  it("seeks less readily in FLV, which has no seek index", async () => {
+    const flv = remux(closedMp4, "closed.flv", [], []);
+    const frames = await captureAll(flv, planAt(SPARSE_TIMES), ANY_INFO);
+
+    expect(ffmpegProcesses()).toHaveLength(1);
+    expect(picked(frames)).toEqual(picked(await captureDecodingThrough(flv, SPARSE_TIMES)));
+  });
+
+  it("picks the frames a full decode does on keyframes-20s.mp4", async () => {
+    const times = [0.25, 2.5, 18.95];
+    const frames = await captureAll(KEYFRAMES_MP4, planAt(times), ANY_INFO);
+
+    expect(ffmpegProcesses()).toHaveLength(2);
+    expect(picked(frames)).toEqual(picked(await captureDecodingThrough(KEYFRAMES_MP4, times)));
+  });
+
+  it("ends where the stream does", async () => {
+    const times = [0, 8, 31.95, 31.96, 39, 47];
+    const frames = await captureAll(closedMp4, planAt(times), ANY_INFO);
+
+    const picked = frames.map((frame) => frame.decodedTimestampSeconds);
+    expect(picked).toEqual([0, 8, 31.966667, 31.966667]);
+    expect(ffmpegProcesses()).toHaveLength(3);
+  });
+});
+
+async function expectAllExited(): Promise<void> {
+  for (const child of spawned) {
+    if (child.exitCode === null && child.signalCode === null) await once(child, "exit");
+  }
+}
+
+// Every frame of each far-apart second: more pixels than a pipe holds.
+const SECONDS_APART = [0, 8, 16].flatMap((start) =>
+  Array.from({ length: 20 }, (_, i) => start + i / 10),
+);
+
+function seeks(args: string[]): boolean {
+  return args.includes("-ss");
+}
+
+describe("captureFrames when a seeking process crashes", () => {
+  const isProbe = (file: string) => file !== ffmpegPath;
+
+  async function expectFullDecodeFrames(frames: RgbaFrame[]): Promise<void> {
+    dying.when = () => false;
+    expect(picked(frames)).toEqual(picked(await captureDecodingThrough(closedMp4, SPARSE_TIMES)));
+  }
+
+  it("decodes straight through when the landing probe does", async () => {
+    dying.when = (file, args) => isProbe(file) && args.includes("-read_intervals");
+    const frames = await captureAll(closedMp4, planAt(SPARSE_TIMES), ANY_INFO);
+
+    expect(ffmpegProcesses()).toHaveLength(1);
+    await expectFullDecodeFrames(frames);
+  });
+
+  it("decodes the rest from the start when a later segment's ffmpeg does", async () => {
+    let seeking = 0;
+    dying.when = (file, args) => !isProbe(file) && seeks(args) && ++seeking === 3;
+    const frames = await captureAll(closedMp4, planAt(SPARSE_TIMES), ANY_INFO);
+
+    expect(ffmpegProcesses().map((child) => seeks(child.spawnargs))).toEqual([
+      ...[true, true, true],
+      false,
+    ]);
+    await expectFullDecodeFrames(frames);
+  });
+
+  it("decodes everything from the start when the first segment's ffmpeg does", async () => {
+    dying.when = (file, args) => !isProbe(file) && seeks(args);
+    const frames = await captureAll(closedMp4, planAt(SPARSE_TIMES), ANY_INFO);
+
+    expect(ffmpegProcesses().map((child) => seeks(child.spawnargs))).toEqual([true, false]);
+    await expectFullDecodeFrames(frames);
+  });
+
+  it("rejects, naming the signal, when decoding from the start does too", async () => {
+    dying.when = (file) => !isProbe(file);
+    await expect(captureAll(closedMp4, planAt(SPARSE_TIMES), ANY_INFO)).rejects.toMatchObject({
+      code: "internal",
+      message: expect.stringContaining("ffmpeg was killed by SIGSEGV on ") as unknown,
+    });
+    expect(ffmpegProcesses()).toHaveLength(2);
+  });
+
+  it("starts nothing more once aborted", async () => {
+    const controller = new AbortController();
+    const reason = new Error("stopped");
+    dying.when = (file, args) => {
+      if (isProbe(file) || !seeks(args)) return false;
+      controller.abort(reason);
+      return true;
+    };
+    const frames = captureFrames(closedMp4, planAt(SPARSE_TIMES), ANY_INFO, controller.signal);
+
+    await expect(frames.next()).rejects.toBe(reason);
+    expect(ffmpegProcesses()).toHaveLength(1);
+  });
+});
+
+describe("captureFrames stopping a sparse plan", () => {
+  it("kills the segment under way and starts no other when the consumer returns", async () => {
+    const frames = captureFrames(closedMp4, planAt(SECONDS_APART), ANY_INFO);
+    for (let i = 0; i < 21; i++) await frames.next();
+    await frames.return();
+
+    await expectAllExited();
+    expect(ffmpegProcesses()).toHaveLength(2);
+    expect(ffmpegProcesses().map((child) => child.killed)).toEqual([true, true]);
+  });
+
+  it("rejects when ffmpeg dies partway through a later segment", async () => {
+    const frames = captureFrames(closedMp4, planAt(SECONDS_APART), ANY_INFO);
+    for (let i = 0; i < 21; i++) await frames.next();
+    const [, second] = ffmpegProcesses();
+    if (!second) throw new Error("the second segment never started");
+    process.kill(second.pid ?? 0, "SIGKILL");
+
+    await expect(async () => {
+      for await (const frame of frames) expect(frame.decodedTimestampSeconds).toBeLessThan(10);
+    }).rejects.toMatchObject({
+      code: "internal",
+      message: expect.stringMatching(/ffmpeg (exited|was killed)/) as unknown,
+    });
+    await expectAllExited();
+    expect(ffmpegProcesses()).toHaveLength(2);
+  });
+});
+
+describe("captureFrames aborting", () => {
+  const reason = new Error("stopped");
+  // Too close together to seek between, so ffmpeg starts without a landing probe.
+  const CLOSE_TOGETHER = [0, 0.1, 0.2];
+
+  function abortable(times: number[], abortReason: unknown = reason) {
+    const controller = new AbortController();
+    const { signal } = controller;
+    const add = vi.spyOn(signal, "addEventListener");
+    const remove = vi.spyOn(signal, "removeEventListener");
+    return {
+      signal,
+      frames: captureFrames(closedMp4, planAt(times), ANY_INFO, signal),
+      abort: () => controller.abort(abortReason),
+      expectNoListeners: () => expect(remove.mock.calls).toEqual(add.mock.calls),
+    };
+  }
+
+  it("starts no process when already aborted", async () => {
+    for (const times of [SECONDS_APART, CLOSE_TOGETHER]) {
+      const signal = AbortSignal.abort(reason);
+      const frames = captureFrames(closedMp4, planAt(times), ANY_INFO, signal);
+
+      await expect(frames.next()).rejects.toBe(reason);
+    }
+    expect(spawned).toEqual([]);
+  });
+
+  it("kills the landing probe and starts no ffmpeg", async () => {
+    const { frames, abort, expectNoListeners } = abortable(SECONDS_APART);
+    const pulled = frames.next();
+    expect(spawned).toHaveLength(1);
+
+    abort();
+
+    await expect(pulled).rejects.toBe(reason);
+    expect(spawned.map((child) => child.killed)).toEqual([true]);
+    await expectAllExited();
+    expectNoListeners();
+  });
+
+  it("rejects a pull that is waiting on ffmpeg", async () => {
+    const { frames, abort, expectNoListeners } = abortable(CLOSE_TOGETHER);
+    const pulled = frames.next();
+    await nextTick();
+    expect(ffmpegProcesses()).toHaveLength(1);
+
+    abort();
+
+    await expect(pulled).rejects.toBe(reason);
+    expect(await frames.next()).toEqual({ done: true, value: undefined });
+    await expectAllExited();
+    expectNoListeners();
+  });
+
+  it("kills ffmpeg mid-segment without waiting for the next pull", async () => {
+    const { frames, abort, expectNoListeners } = abortable(SECONDS_APART, "stopped");
+    for (let i = 0; i < 21; i++) await frames.next();
+
+    abort();
+
+    expect(ffmpegProcesses().map((child) => child.killed)).toEqual([true, true]);
+    await expectAllExited();
+    await expect(frames.next()).rejects.toBe("stopped");
+    expect(ffmpegProcesses()).toHaveLength(2);
+    expectNoListeners();
+  });
+
+  it("starts no further segment when aborted between two", async () => {
+    const { frames, abort, expectNoListeners } = abortable(SECONDS_APART);
+    for (let i = 0; i < 20; i++) await frames.next();
+
+    abort();
+
+    await expect(frames.next()).rejects.toBe(reason);
+    expect(ffmpegProcesses()).toHaveLength(1);
+    await expectAllExited();
+    expectNoListeners();
+  });
+
+  it("does nothing once the capture is over", async () => {
+    const { frames, abort, expectNoListeners } = abortable(SECONDS_APART);
+    let count = 0;
+    for await (const frame of frames) {
+      expect(frame.width).toBeGreaterThan(0);
+      count++;
+    }
+    const processes = spawned.length;
+    expectNoListeners();
+
+    abort();
+
+    expect(count).toBe(SECONDS_APART.length);
+    expect(await frames.next()).toEqual({ done: true, value: undefined });
+    expect(spawned).toHaveLength(processes);
+    await expectAllExited();
   });
 });
