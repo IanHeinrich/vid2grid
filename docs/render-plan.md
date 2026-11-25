@@ -273,10 +273,16 @@ timestamp. The browser's WebCodecs path and the Node executor match frames with
 Python executor calls `isKeyframePlan` through the embedded core and applies
 the same at-or-after rule in its own per-frame loop.
 
-**One known limitation.** A container whose seek lands after the target, as
-ffmpeg's MPEG-TS demuxer can, makes the hosts that seek through ffmpeg (Node and
-Python) pick their first frames late, because the frames before the landing
-point are never decoded.
+**Known limitations.** A container whose seek lands after the target, as
+ffmpeg's MPEG-TS demuxer can, makes the hosts that seek through ffmpeg pick
+frames late, because the frames before the landing point are never decoded. In
+Node this reaches only a plan's first frames: it checks every later seek, and
+decodes through from the first when one lands late.
+
+A file whose timestamps are out of order, such as an MP4 made by joining clips
+with B-frames with `concat -c copy`, can give Node a frame one off from the one
+a full decode picks. ffmpeg swaps pts for dts partway through such a file, and
+a decode that starts after that point has not swapped.
 
 ## Hosts without JavaScript
 

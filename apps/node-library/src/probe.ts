@@ -11,11 +11,13 @@ import {
   type VideoInfo,
 } from "@vid2grid/core";
 import { onAbort, throwIfAborted } from "./abort";
+import { diedOnSignal, exitFailure } from "./processExit";
 
 interface FfprobeStream {
   width?: number;
   height?: number;
   sample_aspect_ratio?: string;
+  avg_frame_rate?: string;
   duration?: string;
   tags?: { rotate?: string };
   side_data_list?: { rotation?: number }[];
@@ -23,27 +25,36 @@ interface FfprobeStream {
 
 interface FfprobeOutput {
   streams?: FfprobeStream[];
-  format?: { duration?: string };
+  packets?: { pts?: number }[];
+  format?: { duration?: string; format_name?: string };
 }
 
-interface PacketTime {
+interface Packet {
   // NaN when ffprobe has no pts for it.
   seconds: number;
-  isKeyframe: boolean;
+  flags: string;
+}
+
+export interface SeekFacts {
+  // False when the first packet has no pts: ffmpeg then makes up times a seek would not.
+  startsWithPts: boolean;
+  framesPerSecond: number | undefined;
+  // How much earlier than asked ffmpeg may seek.
+  backOffSeconds: number;
 }
 
 const PACKET_LINE = /^packet,([^,]*),(\w*)/;
 const TIME_BASE_LINE = /^stream,(\d+\/\d+)/;
 // Keeps the command line well under Windows' 32,767 characters.
 const SEEKS_PER_FFPROBE = 500;
+// ffmpeg takes 3/23 s off -ss when a stream has B-frames and its demuxer, unlike the mov one,
+// seeks by decode time.
+const DECODE_TIME_BACK_OFF_SECONDS = 0.131;
 
 export async function probeVideo(path: string): Promise<VideoInfo> {
   // Whole sections rather than -show_entries: ffprobe 4.4, as shipped for macOS arm64, has
   // no stream_side_data section to name.
-  const query = ["-show_streams", "-show_format", "-of", "json"];
-  let json = "";
-  for await (const line of ffprobeLines(path, query)) json += line;
-  const output = JSON.parse(json) as FfprobeOutput;
+  const output = await readJson(path, ["-show_streams", "-show_format"]);
   const stream = output.streams?.[0];
   if (!stream?.width || !stream.height) {
     throw new Vid2GridError("no_frames", `No video stream in ${path}`);
@@ -65,7 +76,7 @@ export async function probeVideo(path: string): Promise<VideoInfo> {
 // Undefined when the file has no video stream or no keyframe with a pts; an unreadable
 // file rejects.
 export async function readKeyframeTimes(path: string): Promise<number[] | undefined> {
-  const packets = await readPacketTimes(path, [], (isKeyframe) => isKeyframe);
+  const packets = await readPackets(path, [], isKeyframe);
   // Packets arrive in decode order, hence the sort.
   const times = packets
     .map((packet) => packet.seconds)
@@ -74,51 +85,102 @@ export async function readKeyframeTimes(path: string): Promise<number[] | undefi
   return times.length > 0 ? times : undefined;
 }
 
+export async function readSeekFacts(path: string, signal?: AbortSignalLike): Promise<SeekFacts> {
+  const entries = "packet=pts:stream=avg_frame_rate:format=format_name";
+  const query = ["-read_intervals", "%+#1", "-show_entries", entries];
+  const { packets, streams, format } = await readJson(path, query, signal);
+  // "0/0" when ffprobe does not know it.
+  const rate = parseRatio(streams?.[0]?.avg_frame_rate, "/");
+  const seeksByPts = format?.format_name?.split(",").includes("mov") === true;
+  return {
+    startsWithPts: packets?.[0]?.pts !== undefined,
+    framesPerSecond: rate ? rate.numerator / rate.denominator : undefined,
+    backOffSeconds: seeksByPts ? 0 : DECODE_TIME_BACK_OFF_SECONDS,
+  };
+}
+
 // The time of the keyframe a seek to each time lands on, without the times whose seek lands
 // on anything else. One packet is read per time, so a long file costs no more than a short one.
 export async function readSeekLandings(
   path: string,
   times: readonly number[],
+  backOffSeconds = 0,
   signal?: AbortSignalLike,
 ): Promise<Map<number, number>> {
   const landings = new Map<number, number>();
   for (let start = 0; start < times.length; start += SEEKS_PER_FFPROBE) {
     const batch = times.slice(start, start + SEEKS_PER_FFPROBE);
-    const intervals = batch.map((seconds) => `${seconds.toFixed(6)}%+#1`).join(",");
-    const query = ["-read_intervals", intervals];
-    const packets = await readPacketTimes(path, query, () => true, signal);
+    const seeks = batch.map((seconds) => Math.max(0, seconds - backOffSeconds));
+    const packets = await readPacketAtEach(path, seeks, signal);
     // A seek that found no packet leaves no way to tell which time each packet answers.
     if (packets.length !== batch.length) continue;
     batch.forEach((seconds, i) => {
       const packet = packets[i];
-      if (packet?.isKeyframe === true) landings.set(seconds, packet.seconds);
+      if (packet && isKeyframe(packet.flags) && !isDiscarded(packet.flags)) {
+        landings.set(seconds, packet.seconds);
+      }
     });
   }
   return landings;
 }
 
-async function readPacketTimes(
+async function readPacketAtEach(
+  path: string,
+  seeks: readonly number[],
+  signal: AbortSignalLike | undefined,
+): Promise<Packet[]> {
+  const intervals = seeks.map((seconds) => `${seconds.toFixed(6)}%+#1`).join(",");
+  try {
+    return await readPackets(path, ["-read_intervals", intervals], () => true, signal);
+  } catch (error) {
+    // Some ffprobe builds crash seeking in some containers; those seeks have no landing.
+    if (diedOnSignal(error)) return [];
+    throw error;
+  }
+}
+
+function isKeyframe(flags: string): boolean {
+  return flags.startsWith("K");
+}
+
+// Decoded but not shown: an edit list's pre-roll.
+function isDiscarded(flags: string): boolean {
+  return flags.includes("D");
+}
+
+async function readPackets(
   path: string,
   query: string[],
-  keep: (isKeyframe: boolean) => boolean,
+  keep: (flags: string) => boolean,
   signal?: AbortSignalLike,
-): Promise<PacketTime[]> {
-  const packets: { pts: number; isKeyframe: boolean }[] = [];
+): Promise<Packet[]> {
+  const packets: { pts: number; flags: string }[] = [];
   let timeBase: SampleAspectRatio | null = null;
   const entries = ["-show_entries", "stream=time_base:packet=pts,flags", "-of", "csv"];
   for await (const line of ffprobeLines(path, [...entries, ...query], signal)) {
     const [, pts, flags] = PACKET_LINE.exec(line) ?? [];
-    const isKeyframe = flags?.startsWith("K") === true;
-    if (pts !== undefined && keep(isKeyframe)) packets.push({ pts: Number(pts), isKeyframe });
+    if (pts !== undefined && flags !== undefined && keep(flags)) {
+      packets.push({ pts: Number(pts), flags });
+    }
     // ffprobe prints the streams after their packets.
     timeBase ??= parseRatio(TIME_BASE_LINE.exec(line)?.[1], "/");
   }
   if (timeBase === null) return [];
   const { numerator, denominator } = timeBase;
-  return packets.map(({ pts, isKeyframe }) => ({
+  return packets.map(({ pts, flags }) => ({
     seconds: roundToMicroseconds((pts * numerator) / denominator),
-    isKeyframe,
+    flags,
   }));
+}
+
+async function readJson(
+  path: string,
+  query: string[],
+  signal?: AbortSignalLike,
+): Promise<FfprobeOutput> {
+  let json = "";
+  for await (const line of ffprobeLines(path, [...query, "-of", "json"], signal)) json += line;
+  return JSON.parse(json) as FfprobeOutput;
 }
 
 // ffprobe's display matrix rotation is already av_display_rotation_get's angle, and the
@@ -154,8 +216,8 @@ async function* ffprobeLines(
   ffprobeProcess.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
   const finished = new Promise<Error | undefined>((resolve) => {
     ffprobeProcess.on("error", resolve);
-    ffprobeProcess.on("close", (code) => {
-      resolve(code === 0 ? undefined : new Error(`ffprobe exited with code ${code}`));
+    ffprobeProcess.on("close", (code, exitSignal) => {
+      resolve(exitFailure("ffprobe", code, exitSignal));
     });
   });
   const stopListening = onAbort(signal, () => ffprobeProcess.kill("SIGKILL"));
@@ -163,7 +225,10 @@ async function* ffprobeLines(
     yield* createInterface({ input: ffprobeProcess.stdout });
     const failure = await finished;
     throwIfAborted(signal);
-    if (failure) throw unreadable(path, failure, Buffer.concat(stderr).toString("utf8").trim());
+    if (failure) {
+      const detail = Buffer.concat(stderr).toString("utf8").trim();
+      throw unreadable(path, failure, detail || failure.message);
+    }
   } finally {
     stopListening();
   }
