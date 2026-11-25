@@ -90,3 +90,20 @@ describe("chatModel", () => {
     expect(chatModel(state, blankChat("vision", "chat", 1))?.id).toBe("vision");
   });
 });
+
+describe("the looking model", () => {
+  it("sizes the sheets and caps the images in place of the chat's model", () => {
+    const chat = videoChat("vision", "auto");
+    const state = loaded({ ...chat, settings: { ...chat.settings, lookingModelId: "eyes" } });
+    setModels(state, [model("vision", { maxImages: 6 }), model("eyes", { maxImages: 2 })]);
+    setLoadedVideo(state, { chatId: "chat", file: new File([], "beach.mp4"), info: INFO });
+    expect(toolContext(state, createMemoryStore())).toMatchObject({ maxImages: 2 });
+  });
+
+  it("offers ask whatever the chat's model sees", () => {
+    const sent = [user("u", "hi", { images: [upload("i")] })];
+    const parts = { videoLoaded: false, listen: false, looking: true };
+    const { tools } = conversationTools(model("blind", { vision: false }), sent, parts);
+    expect(tools.map((entry) => entry.function.name)).toEqual(["ask", "zoom"]);
+  });
+});

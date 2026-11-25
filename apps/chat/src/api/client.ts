@@ -1,5 +1,5 @@
 import type { ApiSettings, ChatRequest, StreamEvent } from "../types";
-import { ApiError, requestHeaders, throwForStatus } from "./http";
+import { ApiError, requestHeaders, safeError, throwForStatus } from "./http";
 import { createReplyReader } from "./replyReader";
 import { createSseParser } from "./sse";
 import { normaliseBaseUrl } from "./venice";
@@ -16,6 +16,19 @@ export async function* streamChat(
   request: ChatRequest,
   signal: AbortSignal,
   fetchImpl: typeof fetch = fetch,
+): AsyncGenerator<StreamEvent> {
+  try {
+    yield* streamReply(settings, request, signal, fetchImpl);
+  } catch (error) {
+    throw safeError(error, settings);
+  }
+}
+
+async function* streamReply(
+  settings: ApiSettings,
+  request: ChatRequest,
+  signal: AbortSignal,
+  fetchImpl: typeof fetch,
 ): AsyncGenerator<StreamEvent> {
   if (settings.baseUrl.trim() === "") throw new ApiError(0, NO_API_MESSAGE);
   if (request.model.trim() === "") throw new ApiError(0, NO_MODEL_MESSAGE);

@@ -2,6 +2,7 @@ import { modelVisionProfile } from "@vid2grid/core";
 import { cachedAudio } from "../audio/videoAudio";
 import { currentModel } from "../chat/models";
 import { buildRequest } from "../chat/request";
+import { lookingModelId } from "../chat/seen";
 import { keptImages, visibleMessages } from "../chat/story";
 import { estimateRequestTokens, sheetSidesByUrl } from "../chat/tokenEstimate";
 import { transcriptToCarry, transcriptTokenCap, type HeardSpeech } from "../chat/transcript";
@@ -36,6 +37,7 @@ export function estimateTokens(input: TokenEstimateInput): number {
   const { tools, guidance } = conversationTools(model, messages, {
     videoLoaded: input.videoLoaded,
     listen: audioCoverage?.canListen === true,
+    looking: lookingModelId(chat) !== undefined,
   });
   const kept = keptImages(chat, messages, model.maxImages);
   // Each image's id stands in for its pixels, so its recorded side can be found by URL.

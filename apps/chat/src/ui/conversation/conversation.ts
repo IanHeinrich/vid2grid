@@ -1,11 +1,13 @@
 import type { TurnEvent } from "../../chat/agentLoop";
 import type { AppElements } from "../../dom";
+import { withSeen } from "../../chat/seen";
 import { formatTimestamp } from "../../time";
 import type { ChatMessage, VideoAttachment } from "../../types";
-import { answerOf, describeCall, waitingStatus, type RequestStart } from "./activity";
+import { answerOf, describeCall, lookingStatus, waitingStatus } from "./activity";
 import { smallButton } from "../shared/buttons";
 import {
   dispose,
+  lookingName,
   upsertStep,
   videoAbout,
   type ConversationContext,
@@ -89,6 +91,7 @@ export function initConversation(
     checks: new Map(),
     compare: null,
     thinking: false,
+    looking: false,
     showMessage: (message) => showMessage(ctx, message),
     renderAnswer: (turn) => renderAnswer(ctx, turn),
     afterChange: () => afterChange(ctx),
@@ -201,21 +204,28 @@ function lastTurn(ctx: ConversationContext): TurnView {
   return ctx.turns[ctx.turns.length - 1] ?? createTurn(ctx, undefined, undefined);
 }
 
-function startWaiting(ctx: ConversationContext, event: RequestStart): void {
+function startWaiting(ctx: ConversationContext, status: (seconds: number) => string): void {
   stopWaiting(ctx);
   const turn = lastTurn(ctx);
   const startedAt = Date.now();
   const show = () => {
-    turn.live = waitingStatus(event, Math.floor((Date.now() - startedAt) / 1000));
+    turn.live = status(Math.floor((Date.now() - startedAt) / 1000));
     renderActivity(ctx, turn);
   };
   show();
   ctx.waiting = { turn, timer: setInterval(show, 1000) };
 }
 
+function startLooking(ctx: ConversationContext, images: number, modelId: string): void {
+  const name = lookingName(ctx, modelId);
+  startWaiting(ctx, (seconds) => lookingStatus(images, name, seconds));
+  ctx.looking = true;
+}
+
 function stopWaiting(ctx: ConversationContext): void {
   if (ctx.waiting) clearInterval(ctx.waiting.timer);
   ctx.waiting = null;
+  ctx.looking = false;
 }
 function applyEvent(ctx: ConversationContext, event: TurnEvent): void {
   if (event.type !== "requestStart" && event.type !== "note") stopWaiting(ctx);
@@ -259,8 +269,17 @@ function applyEvent(ctx: ConversationContext, event: TurnEvent): void {
     }
     case "requestStart":
       if (event.round === 1) announce(ctx, "Waiting for the reply.");
-      startWaiting(ctx, event);
+      startWaiting(ctx, (seconds) => waitingStatus(event, seconds));
       break;
+    case "lookStart":
+      startLooking(ctx, event.images, event.modelId);
+      break;
+    // Shown again so the message an edit or a pin starts from holds what was seen.
+    case "looked": {
+      const message = ctx.messages.get(event.messageId);
+      if (message) showMessage(ctx, withSeen(message, event.seen));
+      break;
+    }
     case "note":
       return;
   }
@@ -285,17 +304,20 @@ function afterStreamedChange(ctx: ConversationContext): void {
   reportThinking(ctx);
 }
 
-// Thinking means the latest round streams reasoning and has written no answer or call yet.
-// A retry after a cut carries the old reasoning, so it never counts as thinking.
+// Thinking means the latest round streams reasoning and has written no answer or call yet, or that
+// pictures are being looked at. A retry after a cut carries the old reasoning, so it never counts.
 function reportThinking(ctx: ConversationContext): void {
   const turn = ctx.turns[ctx.turns.length - 1];
   const step = turn && turn.live !== null ? streamingStep(turn) : undefined;
+  const asking = turn?.pendingCalls.some((call) => call.name === "ask") === true;
   const thinking =
-    step !== undefined &&
-    step.reasoningCutShort !== true &&
-    (step.reasoning ?? "") !== "" &&
-    step.text === "" &&
-    step.toolCalls.length === 0;
+    ctx.looking ||
+    asking ||
+    (step !== undefined &&
+      step.reasoningCutShort !== true &&
+      (step.reasoning ?? "") !== "" &&
+      step.text === "" &&
+      step.toolCalls.length === 0);
   if (thinking === ctx.thinking) return;
   ctx.thinking = thinking;
   ctx.deps.onThinkingChanged?.(thinking);
@@ -318,7 +340,9 @@ function showMessage(ctx: ConversationContext, message: ChatMessage): void {
   if (message.role === "user") {
     const turn = ctx.turnOf.get(message.id) ?? createTurn(ctx, message, undefined);
     turn.user = message;
+    turn.activity.dirty = true;
     renderUser(ctx, turn);
+    renderActivity(ctx, turn);
     return;
   }
   const turn = ctx.turnOf.get(message.id) ?? turnForNewStep(ctx, message.id);

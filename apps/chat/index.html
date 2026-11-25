@@ -661,6 +661,23 @@
             <div class="field">
               <span id="modelPickerLabel">Model</span>
               <div id="modelPicker" role="group" aria-labelledby="modelPickerLabel"></div>
+              <span id="textOnlyWarning" class="small is-error" role="status" hidden>
+                This model cannot see images and the chat has no looking model, so pictures cannot
+                be sent in it. Choose a looking model below, or another model.
+              </span>
+            </div>
+            <div class="field">
+              <span id="lookingModelPickerLabel">Looking model</span>
+              <div
+                id="lookingModelPicker"
+                role="group"
+                aria-labelledby="lookingModelPickerLabel"
+                aria-describedby="lookingModelHint lookingModelServer"
+              ></div>
+              <span id="lookingModelHint" class="muted small">
+                Describes pictures for this chat's model and answers its questions about them.
+              </span>
+              <span id="lookingModelServer" class="muted small" hidden></span>
             </div>
             <label class="field">
               <span>Temperature</span>
@@ -966,11 +983,22 @@
                 and in LM Studio turn on CORS in the server settings.
               </p>
               <div class="models-row">
-                <button id="testConnectionButton" type="button" class="button ghost">
+                <button id="testConnectionButton" type="button" class="button ghost test-button">
+                  <span class="test-spinner" aria-hidden="true"></span>
                   Test connection
                 </button>
               </div>
-              <ul id="connectionReport" class="connection-report" aria-live="polite" hidden></ul>
+              <div id="connectionReport" class="connection-status" role="status">
+                <div class="connection-result" hidden>
+                  <span class="connection-result-icon" aria-hidden="true"></span>
+                  <div class="connection-result-body">
+                    <p class="connection-result-heading"></p>
+                    <ul class="connection-result-lines"></ul>
+                    <p class="connection-result-advice" hidden></p>
+                    <p class="connection-result-detail" hidden></p>
+                  </div>
+                </div>
+              </div>
             </section>
             <section class="settings-section" aria-labelledby="modelsTitle">
               <h3 id="modelsTitle">Models</h3>
@@ -997,6 +1025,118 @@
                 <input id="fallbackMaxImagesInput" type="number" min="1" max="100" step="1" />
               </label>
             </section>
+            <section class="settings-section" aria-labelledby="lookingTitle">
+              <h3 id="lookingTitle">Looking model</h3>
+              <p class="muted small">
+                A second model that looks at the pictures of a chat and describes them, so the model
+                that writes the replies can be one that only reads text.
+              </p>
+              <div class="field">
+                <span id="defaultLookingPickerLabel">Looking model for new chats</span>
+                <div
+                  id="defaultLookingPicker"
+                  role="group"
+                  aria-labelledby="defaultLookingPickerLabel"
+                ></div>
+              </div>
+              <label class="checkbox-field">
+                <input
+                  id="lookingOwnServerInput"
+                  type="checkbox"
+                  aria-controls="lookingServerFields"
+                />
+                <span>Use a different server for looking</span>
+              </label>
+              <div id="lookingServerFields" class="looking-server" hidden>
+                <div
+                  class="base-url-presets"
+                  role="group"
+                  aria-label="Fill in the looking server's base URL"
+                >
+                  <button
+                    type="button"
+                    class="model-chip"
+                    data-looking-url="https://api.venice.ai/api/v1"
+                  >
+                    Venice
+                  </button>
+                  <button
+                    type="button"
+                    class="model-chip"
+                    data-looking-url="https://openrouter.ai/api/v1"
+                  >
+                    OpenRouter
+                  </button>
+                  <button
+                    type="button"
+                    class="model-chip"
+                    data-looking-url="https://api.openai.com/v1"
+                  >
+                    OpenAI
+                  </button>
+                  <button
+                    type="button"
+                    class="model-chip"
+                    data-looking-url="http://localhost:11434/v1"
+                  >
+                    Ollama
+                  </button>
+                  <button
+                    type="button"
+                    class="model-chip"
+                    data-looking-url="http://localhost:1234/v1"
+                  >
+                    LM Studio
+                  </button>
+                </div>
+                <label class="field">
+                  <span>Looking server base URL</span>
+                  <input
+                    id="lookingBaseUrlInput"
+                    type="url"
+                    spellcheck="false"
+                    placeholder="Pick one above or type a URL"
+                  />
+                </label>
+                <label class="field">
+                  <span>Looking server API key</span>
+                  <input
+                    id="lookingApiKeyInput"
+                    type="password"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                </label>
+                <p class="muted small">
+                  The key is kept in this browser's localStorage and sent only to this base URL.
+                </p>
+                <div class="models-row">
+                  <button id="refreshLookingButton" type="button" class="button ghost">
+                    Refresh looking models
+                  </button>
+                  <span id="lookingModelsStatus" class="muted" role="status"></span>
+                </div>
+              </div>
+              <p id="lookingChanged" class="small is-error" role="status" hidden></p>
+              <p id="lookingDestination" class="muted small" hidden></p>
+              <div class="models-row">
+                <button id="testLookingButton" type="button" class="button ghost test-button">
+                  <span class="test-spinner" aria-hidden="true"></span>
+                  Test looking model
+                </button>
+              </div>
+              <div id="lookingReport" class="connection-status" role="status">
+                <div class="connection-result" hidden>
+                  <span class="connection-result-icon" aria-hidden="true"></span>
+                  <div class="connection-result-body">
+                    <p class="connection-result-heading"></p>
+                    <ul class="connection-result-lines"></ul>
+                    <p class="connection-result-advice" hidden></p>
+                    <p class="connection-result-detail" hidden></p>
+                  </div>
+                </div>
+              </div>
+            </section>
           </div>
           <div class="settings-column">
             <section class="settings-section" aria-labelledby="displayTitle">
@@ -1017,7 +1157,7 @@
               </label>
               <label class="field">
                 <span>Ask first for videos larger than (GB)</span>
-                <input id="askAboveInput" type="number" min="0.1" step="0.5" />
+                <input id="askAboveInput" type="number" min="0.1" step="0.1" />
               </label>
               <section class="stored-videos" aria-labelledby="storedVideosTitle">
                 <h4 id="storedVideosTitle">Stored videos</h4>
@@ -1405,6 +1545,7 @@
             <div class="model-list-column">
               <ul class="model-list" role="listbox" aria-label="Models"></ul>
               <p class="model-empty" hidden>No models match.</p>
+              <p class="model-text-note" hidden></p>
               <p class="model-hint">
                 <kbd>&uarr;</kbd> <kbd>&darr;</kbd> to move, <kbd>Enter</kbd> to choose,
                 <kbd>F</kbd> to star

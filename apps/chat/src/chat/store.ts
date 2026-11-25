@@ -249,6 +249,22 @@ class IndexedDbChatStore implements ChatStore {
     return this.write([CHATS], (transaction) => transaction.objectStore(CHATS).put(chat));
   }
 
+  changeChat(
+    id: string,
+    change: (stored: Chat, hasMessages: boolean) => Chat,
+  ): Promise<Chat | undefined> {
+    return this.transact([CHATS, MESSAGES], "readwrite", async (transaction) => {
+      const chats = transaction.objectStore(CHATS);
+      const [stored, count] = await Promise.all([
+        requestResult(chats.get(id) as IDBRequest<Chat | undefined>),
+        requestResult(transaction.objectStore(MESSAGES).index(BY_CHAT).count(id)),
+      ]);
+      const changed = stored && change(stored, count > 0);
+      if (changed && changed !== stored) chats.put(changed);
+      return changed;
+    });
+  }
+
   deleteChat(id: string): Promise<void> {
     return this.write([CHATS, MESSAGES, VIDEO_HANDLES], (transaction) => {
       transaction.objectStore(CHATS).delete(id);
@@ -367,7 +383,7 @@ class IndexedDbChatStore implements ChatStore {
   async releaseImages(dropped: ImageUse, unsaved: UnsavedUse): Promise<void> {
     this.newImages.settle(dropped.images);
     if (!unsaved("before")) return;
-    await this.transact("readwrite", async (transaction) => {
+    await this.transact(IMAGE_USERS, "readwrite", async (transaction) => {
       const stored = await readStoredUse(transaction);
       const inUse = unsaved("inside");
       if (inUse) applyPlan(transaction, planRelease(stored, dropped, inUse));
@@ -375,7 +391,7 @@ class IndexedDbChatStore implements ChatStore {
   }
 
   async countUnusedImages(unsaved: () => ImageUse): Promise<UnusedImages> {
-    const unused = await this.transact("readonly", (transaction) =>
+    const unused = await this.transact(IMAGE_USERS, "readonly", (transaction) =>
       readSweep(transaction, () => this.newImages.with(unsaved())),
     );
     return unused ?? NONE_UNUSED;
@@ -386,7 +402,7 @@ class IndexedDbChatStore implements ChatStore {
     unsaved: UnsavedUse,
   ): Promise<UnusedImages | undefined> {
     if (!unsaved("before")) return undefined;
-    return this.transact("readwrite", async (transaction) => {
+    return this.transact(IMAGE_USERS, "readwrite", async (transaction) => {
       const inUse = () => {
         const held = unsaved("inside");
         return held && this.newImages.with(held);
@@ -438,10 +454,11 @@ class IndexedDbChatStore implements ChatStore {
   }
 
   private async transact<T>(
+    storeNames: string[],
     mode: IDBTransactionMode,
     work: (transaction: IDBTransaction) => Promise<T>,
   ): Promise<T> {
-    const transaction = this.begin(IMAGE_USERS, mode);
+    const transaction = this.begin(storeNames, mode);
     const [result] = await Promise.all([work(transaction), transactionDone(transaction)]);
     return result;
   }
@@ -462,6 +479,7 @@ export function createMemoryStore(): ChatStore {
     listChats: () => Promise.resolve([...chats.values()].map(copy).sort(newestFirst)),
     getChat: (id) => Promise.resolve(copyOptional(chats.get(id))),
     putChat: (chat) => resolved(() => chats.set(chat.id, copy(chat))),
+    changeChat: memoryChangeChat(chats, messages),
     deleteChat: (id) =>
       resolved(() => {
         chats.delete(id);
@@ -585,6 +603,19 @@ function memoryVideoKeys(
   messages: MemoryMessages,
 ): Map<string, string[]> {
   return videoKeysByChat([...chats.values()], memoryRecords(messages));
+}
+
+function memoryChangeChat(
+  chats: Map<string, Chat>,
+  messages: MemoryMessages,
+): ChatStore["changeChat"] {
+  return (id, change) =>
+    settledBy(() => {
+      const stored = copyOptional(chats.get(id));
+      const changed = stored && change(stored, (messages.get(id)?.size ?? 0) > 0);
+      if (changed) chats.set(id, copy(changed));
+      return changed;
+    });
 }
 
 // As in IndexedDB, what throws rejects.

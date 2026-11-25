@@ -3,9 +3,10 @@ import { formatTokens } from "../../chat/tokenEstimate";
 import type { ZoomSource } from "../../imageRefs";
 import { plural } from "../../text";
 import { formatSpan, formatTimestamp } from "../../time";
-import type { AssistantMessage, ImageRef, ToolCall, ToolMessage } from "../../types";
+import type { AssistantMessage, ImageRef, SeenNote, ToolCall, ToolMessage } from "../../types";
 import { seekButton } from "../shared/buttons";
 import { momentLabel } from "./captions";
+import { lookedLabel, picturesSeen, seenDetails, seenText, type SeenRender } from "./seenDetails";
 
 const MAX_LISTED_MOMENTS = 4;
 export const STALL_SECONDS = 90;
@@ -18,9 +19,17 @@ export function waitingStatus(request: RequestStart, seconds: number): string {
     request.round > 1
       ? `Round ${request.round} · waiting`
       : `Sent ${images}(≈${formatTokens(request.estimatedTokens)} tokens) · waiting for the model`;
+  return `${sent}${waited(seconds)}`;
+}
+
+function waited(seconds: number): string {
   const stalled =
     seconds >= STALL_SECONDS ? " · this is taking unusually long; you can Stop and Retry" : "";
-  return `${sent} · ${seconds}s${stalled}`;
+  return ` · ${seconds}s${stalled}`;
+}
+
+export function lookingStatus(images: number, modelName: string, seconds: number): string {
+  return `Looking at ${plural(images, "picture")} with ${modelName}${waited(seconds)}`;
 }
 
 export type TurnStep = AssistantMessage | ToolMessage;
@@ -30,6 +39,8 @@ export interface ActivityRender {
   live: boolean;
   thumbnail(ref: ImageRef, messageId: string, index: number): HTMLElement;
   seek(seconds: number): void;
+  // Absent where nothing was looked at by another model.
+  seen?: SeenRender;
 }
 
 // The reply shown as the turn's answer: its last assistant message, once it asks for no more tools.
@@ -48,10 +59,20 @@ export function prefacesOf(steps: readonly TurnStep[]): AssistantMessage[] {
   return assistants(steps).filter((step) => step !== answer && step.text !== "");
 }
 
-export function hasActivity(steps: readonly TurnStep[]): boolean {
-  return steps.some(
-    (step) => step.role === "tool" || (step.reasoning ?? "") !== "" || step.toolCalls.length > 0,
+export function hasActivity(
+  steps: readonly TurnStep[],
+  messageNotes: readonly SeenNote[] = [],
+): boolean {
+  return (
+    messageNotes.length > 0 ||
+    steps.some(
+      (step) => step.role === "tool" || (step.reasoning ?? "") !== "" || step.toolCalls.length > 0,
+    )
   );
+}
+
+function toolNotes(steps: readonly TurnStep[]): SeenNote[] {
+  return steps.flatMap((step) => (step.role === "tool" ? (step.seen ?? []) : []));
 }
 
 function parseArgs(text: string): Record<string, unknown> {
@@ -72,7 +93,8 @@ function momentsOf(call: ToolCall): number[] {
 }
 
 function namesOf(call: ToolCall): string[] {
-  const names = parseArgs(call.arguments)["names"];
+  const args = parseArgs(call.arguments);
+  const names = call.name === "ask" ? args["pictures"] : args["names"];
   return Array.isArray(names)
     ? names.filter((name): name is string => typeof name === "string")
     : [];
@@ -87,7 +109,17 @@ function counted(count: number, noun: string): string {
   return count === 0 ? "" : plural(count, noun);
 }
 
-export function activitySummary(steps: readonly TurnStep[]): string {
+export function activitySummary(
+  steps: readonly TurnStep[],
+  messageNotes: readonly SeenNote[] = [],
+): string {
+  const described = [...messageNotes, ...toolNotes(steps)].filter(
+    ({ kind }) => kind === "described",
+  );
+  const questions =
+    messageNotes.filter(({ kind }) => kind === "answered").length +
+    assistants(steps).flatMap((step) => step.toolCalls.filter((call) => call.name === "ask"))
+      .length;
   const calls = assistants(steps).flatMap((step) => step.toolCalls);
   const thought = assistants(steps).some((step) => (step.reasoning ?? "") !== "");
   const parts = [
@@ -99,6 +131,8 @@ export function activitySummary(steps: readonly TurnStep[]): string {
     ),
     counted(calls.filter((call) => call.name === "zoom").length, "zoom"),
     counted(calls.filter((call) => call.name === "note").length, "note"),
+    described.length === 0 ? "" : `${plural(picturesSeen(described), "picture")} described`,
+    counted(questions, "question"),
   ].filter((part) => part !== "");
   return parts.length > 0 ? parts.join(" · ") : "Worked on it";
 }
@@ -124,6 +158,9 @@ export function describeCall(call: ToolCall): string {
   }
   if (call.name === "note") return "Taking a note…";
   if (call.name === "zoom") return "Zooming in…";
+  if (call.name === "ask") {
+    return `Asking about ${plural(Math.max(1, namesOf(call).length), "picture")}…`;
+  }
   if (call.name === "recall") {
     return `Re-opening ${plural(Math.max(1, namesOf(call).length), "earlier image")}…`;
   }
@@ -211,6 +248,10 @@ function replyLabel(call: ToolCall, reply: ToolMessage, render: ActivityRender):
   if (zoom?.target.kind === "moment") {
     return ["Zoomed in at ", seekButton(zoom.target.seconds, (at) => render.seek(at))];
   }
+  if (call.name === "ask") {
+    const { question } = parseArgs(call.arguments);
+    return [typeof question === "string" ? `ask · ${question.trim()}` : "ask"];
+  }
   if (call.name === "recall") {
     const names = reply.images.map((ref) => ref.source.name);
     return [`recall · ${(names.length > 0 ? names : namesOf(call)).join(", ")}`];
@@ -248,19 +289,41 @@ function callLine(
     strip.append(...reply.images.map((ref, index) => render.thumbnail(ref, reply.id, index)));
     line.append(strip);
   }
+  line.append(...(reply?.seen ?? []).flatMap((note) => toolNote(note, reply?.id, render)));
   return line;
+}
+
+// An ask call's line already holds the question, so its answer needs no label.
+function toolNote(
+  note: SeenNote,
+  replyId: string | undefined,
+  { seen }: ActivityRender,
+): HTMLElement[] {
+  if (!seen) return [];
+  return note.kind === "answered"
+    ? [seenText(note, seen)]
+    : [seenDetails(lookedLabel(note, seen), [note], seen, replyId)];
+}
+
+function messageNote(note: SeenNote, { seen }: ActivityRender): HTMLElement[] {
+  if (!seen) return [];
+  const line = document.createElement("div");
+  line.className = "activity-call";
+  line.append(seenDetails(lookedLabel(note, seen), [note], seen));
+  return [line];
 }
 
 export function renderActivityBody(
   container: HTMLElement,
   steps: readonly TurnStep[],
   render: ActivityRender,
+  messageNotes: readonly SeenNote[] = [],
 ): void {
   const replies = new Map(
     steps.flatMap((step) => (step.role === "tool" ? [[step.toolCallId, step] as const] : [])),
   );
   const called = new Set(assistants(steps).flatMap((step) => step.toolCalls.map((c) => c.id)));
-  const nodes: HTMLElement[] = [];
+  const nodes: HTMLElement[] = messageNotes.flatMap((note) => messageNote(note, render));
   for (const step of steps) {
     if (step.role === "tool") {
       if (!called.has(step.toolCallId)) nodes.push(callLine(orphanCall(step), step, render));

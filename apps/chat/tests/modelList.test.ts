@@ -1,13 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { listModels } from "../src/api/client";
 import { VENICE_BASE_URL } from "../src/api/venice";
+import { followDefaults, withNewChatDefaults } from "../src/app/chatDefaults";
+import { sendBlocker } from "../src/app/sendBlocker";
 import { createModelList, shouldLoadModels, type ModelListDeps } from "../src/app/modelList";
 import { blankChat } from "../src/chat/chats";
 import { createMemoryStore } from "../src/chat/store";
 import { DEFAULT_SETTINGS, type GlobalSettings } from "../src/settings";
-import { createAppState, setChats, setCurrentChat, setModels, type AppState } from "../src/state";
-import type { ModelInfo } from "../src/types";
-import { model } from "./support/factories";
+import {
+  createAppState,
+  removeChat,
+  replaceChat,
+  setChats,
+  setCurrentChat,
+  setLookingModels,
+  setModels,
+  type AppState,
+} from "../src/state";
+import type { Chat, ChatMessage, ModelInfo } from "../src/types";
+import { model, user } from "./support/factories";
 
 const LOCAL: GlobalSettings = { ...DEFAULT_SETTINGS, baseUrl: "http://localhost:1234/v1" };
 
@@ -145,5 +156,272 @@ describe("onSettingsSaved", () => {
     expect(cleared.models).toEqual([]);
     expect(refreshBalance).toHaveBeenCalled();
     expect(refresh).toHaveBeenCalled();
+  });
+});
+
+describe("the looking model's own list", () => {
+  const OWN: GlobalSettings = {
+    ...LOCAL,
+    lookingBaseUrl: "http://localhost:5001/v1",
+    apiKeys: { "http://localhost:5001/v1": "looking-key" },
+    fallbackMaxImages: 3,
+  };
+
+  it("is loaded from its own server with its own key", async () => {
+    deps.state = createAppState(OWN);
+    const list = vi.fn(() => Promise.resolve([model("eyes")]));
+    withList(list);
+    createModelList(deps).loadLookingInBackground();
+    await vi.waitFor(() => expect(deps.state.lookingModels.map(({ id }) => id)).toEqual(["eyes"]));
+    expect(list).toHaveBeenCalledWith(
+      { baseUrl: "http://localhost:5001/v1", apiKey: "looking-key" },
+      { fallbackMaxImages: 3 },
+    );
+    expect(deps.state.models).toEqual([]);
+  });
+
+  it("is not loaded while it shares the chat's server", () => {
+    const list = vi.fn(() => Promise.resolve([model("eyes")]));
+    withList(list);
+    createModelList(deps).loadLookingInBackground();
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it("follows a change of its server or key, and empties when it has none", async () => {
+    const list = vi.fn(() => Promise.resolve([model("eyes")]));
+    withList(list);
+    deps.state = createAppState(OWN);
+    createModelList(deps).onSettingsSaved({ ...OWN, apiKeys: {} });
+    await vi.waitFor(() => expect(deps.state.lookingModels).toHaveLength(1));
+    createModelList(deps).onSettingsSaved(OWN);
+    expect(list).toHaveBeenCalledTimes(1);
+    const shared = createAppState(LOCAL);
+    setLookingModels(shared, [model("eyes")]);
+    deps.state = shared;
+    createModelList(deps).onSettingsSaved(OWN);
+    expect(shared.lookingModels).toEqual([]);
+  });
+
+  it("stays quiet about an older load that fails after a newer one", async () => {
+    deps.state = createAppState(OWN);
+    let fail: (error: Error) => void = () => {};
+    const failing = new Promise<ModelInfo[]>((_resolve, reject) => (fail = reject));
+    const lists = [() => failing, () => Promise.resolve([model("eyes")])];
+    withList(() => lists.shift()?.() ?? Promise.resolve([]));
+    const modelList = createModelList(deps);
+    modelList.loadLookingInBackground();
+    modelList.loadLookingInBackground();
+    await vi.waitFor(() => expect(deps.state.lookingModels).toHaveLength(1));
+    fail(new Error("timed out"));
+    await failing.catch(() => undefined);
+    await Promise.resolve();
+    expect(show).not.toHaveBeenCalled();
+  });
+
+  it("reports a load that fails", async () => {
+    deps.state = createAppState(OWN);
+    withList(() => Promise.reject(new Error("offline")));
+    createModelList(deps).loadLookingInBackground();
+    await vi.waitFor(() =>
+      expect(show).toHaveBeenCalledWith(
+        "Could not load the looking model's list: offline",
+        "error",
+      ),
+    );
+  });
+});
+
+describe("accept", () => {
+  const own = "http://localhost:5001/v1";
+
+  it("takes a list of the saved server, and of the saved looking server", () => {
+    deps.state = createAppState({ ...LOCAL, apiKey: "k", lookingBaseUrl: own });
+    const modelList = createModelList(deps);
+    modelList.accept({ baseUrl: `${LOCAL.baseUrl}/`, apiKey: "k" }, [model("a")]);
+    modelList.accept({ baseUrl: own, apiKey: "" }, [model("b")]);
+    expect(deps.state.models.map(({ id }) => id)).toEqual(["a"]);
+    expect(deps.state.lookingModels.map(({ id }) => id)).toEqual(["b"]);
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves everything alone for another server or key", () => {
+    const modelList = createModelList(deps);
+    modelList.accept({ baseUrl: LOCAL.baseUrl, apiKey: "typed" }, [model("a")]);
+    modelList.accept({ baseUrl: own, apiKey: "" }, [model("a")]);
+    expect(state.models).toEqual([]);
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("stands against an older load that settles late", async () => {
+    const slow = settle();
+    withList(() => slow.promise);
+    const modelList = createModelList(deps);
+    const loading = modelList.load(LOCAL);
+    modelList.accept(LOCAL, [model("tested")]);
+    slow.resolve([model("older")]);
+    await loading;
+    expect(state.models.map(({ id }) => id)).toEqual(["tested"]);
+  });
+});
+
+describe("an empty chat and the defaults", () => {
+  const blind = model("blind", { vision: false, privacy: "unknown" });
+  const sees = model("sees", { privacy: "unknown" });
+  const LOOKING: GlobalSettings = {
+    ...LOCAL,
+    defaultModelId: "blind",
+    defaultLookingModelId: "eyes",
+    defaultLookingBaseUrl: LOCAL.baseUrl,
+  };
+
+  async function filled(settings: GlobalSettings, chat: Chat, messages: ChatMessage[] = []) {
+    deps.state = createAppState(settings);
+    await deps.store.putChat(chat);
+    setChats(deps.state, [chat]);
+    setCurrentChat(deps.state, chat, messages);
+    withList(() => Promise.resolve([blind, sees]));
+    await createModelList(deps).load(settings);
+    await vi.waitFor(() => expect(deps.state.currentChat?.settings.modelId).not.toBe(""));
+    return deps.state.currentChat?.settings;
+  }
+
+  it("takes the default looking model and its server with the model", async () => {
+    expect(await filled(LOOKING, blankChat("", "chat", 1))).toMatchObject({
+      modelId: "blind",
+      lookingModelId: "eyes",
+      lookingBaseUrl: LOCAL.baseUrl,
+    });
+  });
+
+  it("keeps a looking model the user chose, or chose against, with a model to match", async () => {
+    const blank = blankChat("", "chat", 1);
+    const none: Chat = { ...blank, settings: { ...blank.settings, lookingPicked: true } };
+    const settings = await filled(LOOKING, none);
+    expect(settings?.modelId).toBe("sees");
+    expect(settings).not.toHaveProperty("lookingModelId");
+  });
+
+  it("gives a chat with messages a model that fits it, and no looking model", async () => {
+    const settings = await filled(LOOKING, blankChat("", "chat", 1), [user("u", "hi")]);
+    expect(settings?.modelId).toBe("sees");
+    expect(settings).not.toHaveProperty("lookingModelId");
+  });
+
+  it("keeps a looking model whose server is gone, rather than follow a default of none", async () => {
+    const gone = blankChat("sees", "chat", 1, "eyes", "http://gone:1/v1");
+    const withDefault = { ...LOOKING, defaultLookingModelId: "", defaultLookingBaseUrl: "" };
+    deps.state = createAppState(withDefault);
+    await deps.store.putChat(gone);
+    setChats(deps.state, [gone]);
+    setCurrentChat(deps.state, gone, []);
+    setModels(deps.state, [blind, sees]);
+    createModelList(deps).onSettingsSaved({ ...withDefault, lookingBaseUrl: "http://gone:1/v1" });
+    expect(deps.state.currentChat).toBe(gone);
+    expect(sendBlocker(deps.state)).toContain("picked on gone:1");
+    deps.state = createAppState(LOOKING);
+    setModels(deps.state, [blind, sees]);
+    expect(withNewChatDefaults(deps.state, gone, true).settings).toMatchObject({
+      lookingModelId: "eyes",
+      lookingBaseUrl: LOCAL.baseUrl,
+    });
+    const here = blankChat("sees", "chat", 1, "eyes", LOCAL.baseUrl);
+    deps.state = createAppState(withDefault);
+    setModels(deps.state, [blind, sees]);
+    expect(withNewChatDefaults(deps.state, here, true).settings).not.toHaveProperty(
+      "lookingModelId",
+    );
+  });
+
+  describe("that another tab has changed, used or deleted", () => {
+    const shown = blankChat("sees", "chat", 1);
+
+    async function followed(stored: Chat | undefined, messages: ChatMessage[] = []): Promise<void> {
+      deps.state = createAppState(LOOKING);
+      if (stored) await deps.store.putChat(stored);
+      for (const message of messages) await deps.store.putMessage("chat", message);
+      setChats(deps.state, [shown]);
+      setCurrentChat(deps.state, shown, []);
+      setModels(deps.state, [blind, sees]);
+      createModelList(deps).onSettingsSaved({ ...LOOKING, defaultLookingModelId: "" });
+      expect(deps.state.currentChat?.settings).toMatchObject({ lookingModelId: "eyes" });
+      refresh.mockClear();
+      await vi.waitFor(() => expect(refresh).toHaveBeenCalled());
+    }
+
+    it("is never brought back", async () => {
+      await followed(undefined);
+      expect(await deps.store.listChats()).toEqual([]);
+      expect(deps.state.currentChat?.settings).toEqual(shown.settings);
+    });
+
+    it("keeps everything else it was given there", async () => {
+      const video = { name: "v", fileKey: "k", durationSeconds: 1, width: 1, height: 1 };
+      const sceneLog = [{ timeSeconds: 1, text: "Waves" }];
+      await followed({ ...shown, title: "Renamed", video, sceneLog });
+      const stored = await deps.store.getChat("chat");
+      expect(stored).toMatchObject({ title: "Renamed", video, sceneLog });
+      expect(stored?.settings).toMatchObject({ lookingModelId: "eyes" });
+    });
+
+    it("keeps the looking model picked there, here too", async () => {
+      const other = blankChat("sees", "chat", 1, "other", "http://other:1/v1");
+      const settings = { ...other.settings, lookingPicked: true as const };
+      await followed({ ...other, settings });
+      expect((await deps.store.getChat("chat"))?.settings).toEqual(settings);
+      expect(deps.state.currentChat?.settings).toEqual(settings);
+    });
+
+    it("follows no looking model once it has messages", async () => {
+      await followed(shown, [user("u", "hi")]);
+      expect((await deps.store.getChat("chat"))?.settings).toEqual(shown.settings);
+      expect(deps.state.currentChat?.settings).toEqual(shown.settings);
+    });
+  });
+
+  it("starts from the chat as it is listed, and lists none that has gone", async () => {
+    deps.state = createAppState(LOOKING);
+    setModels(deps.state, [blind, sees]);
+    const stale = blankChat("sees", "chat", 1);
+    const renamed = { ...stale, title: "Renamed" };
+    await deps.store.putChat(renamed);
+    setCurrentChat(deps.state, stale, []);
+    expect(await followDefaults(deps.state, deps.store, "chat", true)).toBe(false);
+    expect(deps.state.chats).toEqual([]);
+    expect(await deps.store.getChat("chat")).toEqual(renamed);
+    setChats(deps.state, [renamed]);
+    expect(await followDefaults(deps.state, deps.store, "chat", true)).toBe(true);
+    expect(deps.state.chats).toMatchObject([
+      { title: "Renamed", settings: { lookingModelId: "eyes" } },
+    ]);
+    const following = followDefaults(deps.state, deps.store, "chat", true);
+    removeChat(deps.state, "chat");
+    expect(await following).toBe(false);
+    expect(deps.state.chats).toEqual([]);
+  });
+
+  it("leaves a setting changed here while the defaults were saved", async () => {
+    deps.state = createAppState(LOOKING);
+    setModels(deps.state, [blind, sees]);
+    const chat = blankChat("sees", "chat", 1);
+    setChats(deps.state, [chat]);
+    setCurrentChat(deps.state, chat, []);
+    createModelList(deps).onSettingsSaved({ ...LOOKING, defaultLookingModelId: "" });
+    const changed = { ...chat, settings: { ...chat.settings, temperature: 1 } };
+    replaceChat(deps.state, changed);
+    refresh.mockClear();
+    await vi.waitFor(() => expect(refresh).toHaveBeenCalled());
+    expect(deps.state.currentChat).toBe(changed);
+  });
+
+  it("follows a default set while it is open", async () => {
+    const chat = blankChat("sees", "chat", 1);
+    deps.state = createAppState(LOOKING);
+    await deps.store.putChat(chat);
+    setChats(deps.state, [chat]);
+    setCurrentChat(deps.state, chat, []);
+    createModelList(deps).onSettingsSaved({ ...LOOKING, defaultLookingModelId: "" });
+    await vi.waitFor(() =>
+      expect(deps.state.currentChat?.settings).toMatchObject({ lookingModelId: "eyes" }),
+    );
   });
 });

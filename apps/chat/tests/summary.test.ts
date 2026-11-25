@@ -290,3 +290,23 @@ describe("parseSceneNotes", () => {
     expect(parseSceneNotes("[0:50] beyond", 30)).toEqual([{ timeSeconds: 30, text: "beyond" }]);
   });
 });
+
+describe("summarizeStory with a looking model", () => {
+  it("folds what the pictures showed, only while it is on", async () => {
+    const seen = [
+      { kind: "described" as const, imageIds: ["sheet-1"], modelId: "eyes", text: "A red boat." },
+    ];
+    const first: ChatMessage = {
+      ...{ id: "u0", createdAt: 0, role: "user", text: "Look." },
+      images: [sheet],
+      seen,
+    };
+    const messages = [first, ...conversation(5)];
+    const settings = { ...chat().settings, lookingModelId: "eyes" };
+    const { deps, requests } = setup(["One.", "Two."]);
+    await summarizeStory(deps, { chat: chat({ settings }), messages });
+    await summarizeStory(deps, { chat: chat(), messages });
+    expect(userContent(requests[0])).toContain("What its pictures show: A red boat.");
+    expect(userContent(requests[1])).not.toContain("A red boat.");
+  });
+});

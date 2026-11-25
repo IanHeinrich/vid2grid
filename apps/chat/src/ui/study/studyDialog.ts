@@ -1,8 +1,8 @@
-import { resolveModel } from "../../chat/models";
+import { lookingModelId } from "../../chat/seen";
 import { formatTimestamp, parseTimestamp } from "../../time";
 import type { StudyPlanOptions } from "../../types";
 import type { StudyEstimate, StudyPlan } from "../../video/study";
-import { planFor, storage, type StudyContext } from "./context";
+import { pickedModel, planFor, storage, type StudyContext } from "./context";
 import { count } from "./studyProgress";
 
 // Light keeps one sheet a window and Dense allows up to four; Normal leaves planStudy's own choice.
@@ -117,7 +117,7 @@ export function openDialog(ctx: StudyContext, restart: boolean): void {
     return;
   }
   ctx.restart = restart;
-  ctx.choice.modelId = chat.settings.modelId;
+  ctx.choice.modelId = lookingModelId(chat) ?? chat.settings.modelId;
   const { fromInput, toInput, fromCurrentButton } = ctx.els;
   fromInput.value = "";
   toInput.value = "";
@@ -134,7 +134,7 @@ export function renderEstimate(ctx: StudyContext): void {
   const { windowInput, windowValue, planSummary, estimate, startButton } = ctx.els;
   windowValue.textContent = `${windowInput.value} s`;
   const settings = readSettings(ctx);
-  const model = resolveModel(ctx.state, ctx.choice.modelId);
+  const model = pickedModel(ctx, ctx.choice.modelId);
   const plan = settings && planFor(ctx, model, settings);
   startButton.disabled = !plan;
   planSummary.textContent = plan

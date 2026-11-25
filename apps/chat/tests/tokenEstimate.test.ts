@@ -5,6 +5,7 @@ import {
   formatTokens,
   replyUsageText,
   sheetSidesByUrl,
+  totalCostUsd,
   usageTotals,
 } from "../src/chat/tokenEstimate";
 import type { ChatMessage, ChatRequest, ImageRef } from "../src/types";
@@ -118,5 +119,29 @@ describe("contextLevel", () => {
     expect(contextLevel(70_001, 100_000)).toBe("warn");
     expect(contextLevel(90_001, 100_000)).toBe("danger");
     expect(contextLevel(90_001, undefined)).toBe("ok");
+  });
+});
+
+describe("totals with a looking model", () => {
+  const usage = { promptTokens: 1000, completionTokens: 100 };
+  const note = { kind: "described" as const, imageIds: ["i"], modelId: "eyes", text: "A dog." };
+  const looked: ChatMessage[] = [
+    { id: "u", createdAt: 0, role: "user", text: "hi", images: [], seen: [{ ...note, usage }] },
+    { id: "t", createdAt: 0, role: "tool", toolCallId: "c", text: "", images: [], seen: [note] },
+    reply("a", 2000, 200),
+  ];
+  const cheap = { inputPerMTok: 1, outputPerMTok: 10 };
+  const dear = { inputPerMTok: 100, outputPerMTok: 1000 };
+
+  it("adds its tokens, and nothing for a note that was reused", () => {
+    expect(usageTotals(looked)).toMatchObject({ promptTokens: 3000, completionTokens: 300 });
+  });
+
+  it("prices each model's tokens at its own price, where it is known", () => {
+    const eyes = (id: string) => (id === "eyes" ? dear : undefined);
+    expect(totalCostUsd(looked, cheap, eyes)).toBeCloseTo(0.004 + 0.2);
+    expect(totalCostUsd(looked, undefined, eyes)).toBeCloseTo(0.2);
+    expect(totalCostUsd(looked, cheap)).toBeCloseTo(0.004);
+    expect(totalCostUsd(looked, undefined)).toBeUndefined();
   });
 });

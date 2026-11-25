@@ -14,6 +14,7 @@ import {
   dispose,
   isLatest,
   newEntry,
+  seenRender,
   turnSeekHandler,
   turnTextOptions,
   underway,
@@ -37,6 +38,7 @@ import {
   rerunMode,
   verifyButton,
 } from "./replyControls";
+import { userNotes } from "./seenDetails";
 import { thumbnail } from "./thumbnails";
 import { startEdit } from "./userMessage";
 
@@ -225,12 +227,13 @@ export function renderActivity(
   streamed?: AssistantMessage,
 ): void {
   const view = turn.activity;
-  const visible = turn.live !== null || hasActivity(turn.steps);
+  const notes = userNotes(turn.user);
+  const visible = turn.live !== null || hasActivity(turn.steps, notes);
   view.el.hidden = !visible;
   if (!visible) return;
-  const tokens = replyUsageText(turn.steps);
+  const tokens = replyUsageText(turn.user ? [turn.user, ...turn.steps] : turn.steps);
   view.summary.textContent =
-    turn.live ?? `${activitySummary(turn.steps)}${tokens === "" ? "" : ` · ${tokens}`}`;
+    turn.live ?? `${activitySummary(turn.steps, notes)}${tokens === "" ? "" : ` · ${tokens}`}`;
   view.el.classList.toggle("is-live", turn.live !== null);
   if (!view.details.open) return;
   if (streamed && grewInPlace(turn, streamed)) return;
@@ -263,11 +266,17 @@ function renderActivityContent(ctx: ConversationContext, turn: TurnView): void {
   const images = newEntry("div", "");
   view.images = images;
   const seek = turnSeekHandler(ctx, turn);
-  renderActivityBody(view.body, turn.steps, {
-    live: turn.live !== null,
-    thumbnail: (ref, messageId, index) => thumbnail(ctx, images, ref, messageId, index),
-    seek,
-  });
+  renderActivityBody(
+    view.body,
+    turn.steps,
+    {
+      live: turn.live !== null,
+      thumbnail: (ref, messageId, index) => thumbnail(ctx, images, ref, messageId, index),
+      seek,
+      seen: seenRender(ctx, turnTextOptions(ctx, turn)),
+    },
+    userNotes(turn.user),
+  );
   view.dirty = false;
   view.renderedLive = turn.live !== null;
   const streaming = streamingStep(turn);

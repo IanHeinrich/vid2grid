@@ -1,6 +1,14 @@
-import { addUsage } from "../api/usage";
+import { addUsage, usageCostUsd } from "../api/usage";
 import { imagesOf } from "../imageRefs";
-import type { ChatMessage, ChatRequest, ImageRef, TokenUsage, WireMessage } from "../types";
+import type {
+  ChatMessage,
+  ChatRequest,
+  ImageRef,
+  ModelInfo,
+  TokenUsage,
+  WireMessage,
+} from "../types";
+import { seenNotes } from "./seen";
 
 export const CHARS_PER_TOKEN = 4;
 export const FALLBACK_IMAGE_TOKENS = 1500;
@@ -35,7 +43,7 @@ export function requestImageCount(request: ChatRequest): number {
 }
 
 // A zoom is not square, so it is priced as the square of the same area.
-function renderedSide({ source }: ImageRef): number | undefined {
+export function renderedSide({ source }: ImageRef): number | undefined {
   if (source.kind === "sheet") return source.resolution;
   return source.kind === "zoom" ? Math.ceil(Math.sqrt(source.width * source.height)) : undefined;
 }
@@ -91,11 +99,34 @@ export function formatCost(usd: number): string {
   return usd < 0.01 ? "< $0.01" : `$${usd.toFixed(2)}`;
 }
 
+function totalOf(usages: readonly (TokenUsage | undefined)[]): TokenUsage | undefined {
+  return usages.reduce((total, usage) => addUsage(total, usage), undefined);
+}
+
+function writerUsages(messages: readonly ChatMessage[]): (TokenUsage | undefined)[] {
+  return messages.map((message) => (message.role === "assistant" ? message.usage : undefined));
+}
+
+// The writer's tokens and the looking model's.
 export function usageTotals(messages: readonly ChatMessage[]): TokenUsage | undefined {
-  return messages.reduce<TokenUsage | undefined>(
-    (total, message) => (message.role === "assistant" ? addUsage(total, message.usage) : total),
-    undefined,
-  );
+  const looking = messages.flatMap(seenNotes).map((note) => note.usage);
+  return totalOf([...writerUsages(messages), ...looking]);
+}
+
+// Each model's tokens at its own price; whichever has no known price is left out.
+export function totalCostUsd(
+  messages: readonly ChatMessage[],
+  pricing: ModelInfo["pricing"],
+  lookingPricing: (modelId: string) => ModelInfo["pricing"] = () => undefined,
+): number | undefined {
+  const writer = totalOf(writerUsages(messages));
+  const costs = [
+    writer && usageCostUsd(writer, pricing),
+    ...messages
+      .flatMap(seenNotes)
+      .map(({ usage, modelId }) => usage && usageCostUsd(usage, lookingPricing(modelId))),
+  ].filter((cost) => cost !== undefined);
+  return costs.length === 0 ? undefined : costs.reduce((sum, cost) => sum + cost, 0);
 }
 
 export function replyUsageText(messages: readonly ChatMessage[]): string {

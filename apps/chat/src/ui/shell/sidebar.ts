@@ -22,7 +22,9 @@ import { downloadBlob, safeFilename } from "../shared/download";
 import { icon } from "../shared/icons";
 import { attachMenu } from "../shared/menu";
 import type { StatusLine } from "../shared/status";
+import { followDefaults } from "../../app/chatDefaults";
 import type { HeldImages, ImageCleanup } from "../../app/imageCleanup";
+import { lookingProblem } from "../../app/lookingConnection";
 import { offerUndo } from "../../app/undo";
 import type { Toast } from "../shared/toast";
 
@@ -46,6 +48,7 @@ export interface SidebarDeps {
   onDeleted(chat: Chat): void;
   // The undo window has passed, so what the chat alone held can be let go.
   onDeleteFinal(videoKeys: string[]): void;
+  onChatChanged?: () => void;
   onRenamed(): void;
   onOpenSettings(): void;
   onFocusComposer(): void;
@@ -98,7 +101,14 @@ export function initSidebar(
     closeMoveMenu: null,
   };
   const createChat = async (): Promise<Chat> => {
-    const chat = blankChat(defaultModelId(state), newId(ctx), now(ctx));
+    const { defaultLookingModelId, defaultLookingBaseUrl } = state.settings;
+    const chat = blankChat(
+      defaultModelId(state),
+      newId(ctx),
+      now(ctx),
+      defaultLookingModelId,
+      defaultLookingBaseUrl,
+    );
     await deps.store.putChat(chat);
     replaceChat(state, chat);
     renderList(ctx);
@@ -156,18 +166,32 @@ async function startNewChat(ctx: SidebarContext, createChat: () => Promise<Chat>
     state.messages.length === 0 &&
     currentPending(state).length === 0
   ) {
-    deps.onFocusComposer();
-    return;
+    if (await reuse(ctx, current.id)) {
+      deps.onFocusComposer();
+      return;
+    }
   }
   for (const chat of state.chats) {
     if (chat.id === current?.id || !isBlank(chat) || pendingFor(state, chat.id).length > 0)
       continue;
-    if ((await deps.store.listMessages(chat.id)).length === 0) {
+    if ((await deps.store.listMessages(chat.id)).length === 0 && (await reuse(ctx, chat.id))) {
       deps.onOpen(chat.id);
       return;
     }
   }
   deps.onOpen((await createChat()).id);
+}
+
+// An empty chat made earlier is as new as any, so it takes the defaults of now. One that still has
+// nowhere to send its pictures would be new in name only.
+async function reuse({ state, deps }: SidebarContext, chatId: string): Promise<boolean> {
+  const current = () => state.chats.find((entry) => entry.id === chatId);
+  const before = current();
+  if (!before || !isBlank(before)) return false;
+  const empty = await followDefaults(state, deps.store, chatId, true);
+  const chat = current();
+  if (chat !== before) deps.onChatChanged?.();
+  return empty && chat !== undefined && isBlank(chat) && lookingProblem(state, chat) === undefined;
 }
 
 function showError(ctx: SidebarContext, action: string, error: unknown): void {

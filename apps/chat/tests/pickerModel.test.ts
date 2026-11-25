@@ -176,3 +176,20 @@ describe("pickerSections", () => {
     expect(ids(pickerSections(MODELS, favouritesOnly, ["gemma-4"]))).toEqual([["gemma-4"]]);
   });
 });
+
+describe("models that cannot see images", () => {
+  const blind = model("blind", { vision: false, privacy: "unknown", contextTokens: 32768 });
+
+  it("are listed only where they can be used", () => {
+    expect(pickerSections([blind], VIEW, [])).toEqual([]);
+    expect(ids(pickerSections([blind], { ...VIEW, textOnly: true }, []))).toEqual([["blind"]]);
+  });
+
+  it("say so, with nothing about images", () => {
+    expect(modelBadges(blind).map(({ label }) => label)).toEqual(["Text only"]);
+    expect(modelDetails(blind)).toBe("32k");
+    const facts = new Map(modelFacts(blind));
+    expect(facts.get("Image input")).toBe("No");
+    expect(facts.has("Max images")).toBe(false);
+  });
+});

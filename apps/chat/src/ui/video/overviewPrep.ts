@@ -1,3 +1,4 @@
+import { pictureModel } from "../../app/lookingConnection";
 import { chatModel, sheetContext } from "../../app/toolContext";
 import { overviewFor, setOverviewStatus, shownVideo, type OverviewStatus } from "../../state";
 import { errorText } from "../../text";
@@ -38,7 +39,7 @@ export function startOverview(ctx: VideoPanelContext, chatId: string): void {
   let rendered = false;
   const renderFresh = ctx.deps.renderSheets ?? renderSheets;
   const toolCtx: ToolContext = {
-    ...sheetContext(chat, model, source, ctx.deps.store),
+    ...sheetContext(chat, pictureModel(ctx.state, chat, model), source, ctx.deps.store),
     render: (...args) => {
       rendered = true;
       return renderFresh(...args);

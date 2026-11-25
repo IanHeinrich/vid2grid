@@ -4,6 +4,7 @@ import { clamp } from "../spans";
 import { errorText } from "../text";
 import { formatTimestamp } from "../time";
 import type { ImageRef, RunTool, ToolResult, ToolSchema } from "../types";
+import { runAsk, type AskContext } from "./askTool";
 import { exactTimes, latestFrameTime } from "./exactTimes";
 import { runListen, type ListenContext } from "./listenTool";
 import { MAX_FRAMES_PER_SHEET, choosePerSheet, type SheetGeometry } from "./packing";
@@ -11,6 +12,7 @@ import { runRecall, type RecallContext } from "./recallTool";
 import { roundForLabel, sheetGeometry, sheetRefs, type SheetContext } from "./sheets";
 import {
   failure,
+  imagesDescribed,
   imagesFollow,
   integerArg,
   numberArg,
@@ -21,6 +23,7 @@ import {
 import { MAX_FRAMES_TIMES, MAX_LOOK_FRAMES } from "./toolSchemas";
 import { runZoom, type ZoomContext } from "./zoomTool";
 
+export type { AskContext } from "./askTool";
 export { MAX_LISTEN_LINES, type ListenContext } from "./listenTool";
 export { renderOverview, roundForLabel, sheetRefs, type SheetRenderExtras } from "./sheets";
 export { LISTEN_SCHEMA, toolOffer, type ToolOffer } from "./toolSchemas";
@@ -36,11 +39,25 @@ export interface ToolRunnerContext extends ZoomContext, Omit<RecallContext, "sto
   tools: readonly ToolSchema[];
   // Present only when the user turned audio on for this message.
   audio?: ListenContext;
+  // Present only when the chat has a looking model.
+  ask?: AskContext;
 }
 
 type VideoTool = (sheets: SheetContext) => ToolResult | Promise<ToolResult>;
 
 export function createToolRunner(ctx: ToolRunnerContext): RunTool {
+  const run = toolRunner(ctx);
+  return ctx.ask ? async (call) => describedBelow(await run(call)) : run;
+}
+
+function describedBelow(result: ToolResult): ToolResult {
+  const count = result.images.length;
+  const follow = imagesFollow(count);
+  if (!result.text.endsWith(follow)) return result;
+  return { ...result, text: result.text.slice(0, -follow.length) + imagesDescribed(count) };
+}
+
+function toolRunner(ctx: ToolRunnerContext): RunTool {
   return async (call) => {
     const args = parseArguments(call);
     if ("problem" in args) return failure(args.problem);
@@ -62,6 +79,8 @@ export function createToolRunner(ctx: ToolRunnerContext): RunTool {
         );
       case "recall":
         return runRecall(ctx, args.value);
+      case "ask":
+        return ctx.ask ? runAsk(ctx.ask, args.value) : unknownTool(ctx, "ask");
       case "zoom":
         return isOffered(ctx, "zoom") ? runZoom(ctx, args.value) : unknownTool(ctx, "zoom");
       default:

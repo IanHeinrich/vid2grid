@@ -4,6 +4,7 @@ import { formatTimestamp, parseMomentLine } from "../time";
 import type { Chat, ChatMessage, SceneNote, StorySoFar } from "../types";
 import { storyCut } from "./story";
 import { sceneLogLines } from "./prompts";
+import { lookingModelId, seenNotes } from "./seen";
 
 const SUMMARIZE_ABOVE_SHARE = 0.6;
 export const FALLBACK_CONTEXT_TOKENS = 32_768;
@@ -78,12 +79,22 @@ function messagesToFold({ chat, messages, keepTurns }: SummaryInput): readonly C
   return end === undefined || end <= start ? [] : messages.slice(start, end);
 }
 
+// Pictures themselves are never summarised, but what a looking model said of them can be.
+function textOf(message: ChatMessage, chat: Chat): string {
+  if (message.role === "assistant" || lookingModelId(chat) === undefined) {
+    return message.text.trim();
+  }
+  const described = seenNotes(message).filter((note) => note.kind === "described");
+  const pictures = described.map((note) => `What its pictures show: ${note.text}`);
+  return [message.text.trim(), ...pictures].filter((text) => text !== "").join("\n");
+}
+
 function transcriptOf(messages: readonly ChatMessage[], chat: Chat): string {
   const user = chat.settings.userName ?? "User";
   const assistant = chat.settings.characterName ?? "Assistant";
   return messages
     .flatMap((message) => {
-      const text = message.text.trim();
+      const text = textOf(message, chat);
       if (text === "") return [];
       switch (message.role) {
         case "user":

@@ -11,6 +11,7 @@ import {
   spies,
 } from "./support/conversation";
 import { assistant, user } from "./support/factories";
+import { described } from "./support/looking";
 
 beforeEach(resetConversation);
 
@@ -120,6 +121,27 @@ describe("keep going, continuations and running", () => {
     expect(buttonsLabelled("Branch: new chat from here").every((button) => button.disabled)).toBe(
       true,
     );
+  });
+});
+
+describe("a sent message with a transcript, a removed video and described pictures", () => {
+  it("shows all three, the removed video where it was attached", () => {
+    const removedVideo = {
+      ...{ name: "beach.mp4", fileKey: "k" },
+      ...{ durationSeconds: 60, width: 4, height: 3 },
+    };
+    const transcript = { fileKey: "k", spans: [{ startSeconds: 0, endSeconds: 60 }] };
+    const seen = [described(["i"], "A dog.")];
+    const message = { ...user("u1", "Who?"), audio: true as const, removedVideo, transcript, seen };
+    initConversation(els, deps()).reset([message]);
+    const parts = [...list().querySelectorAll(".transcript-tag, .inline-video, .seen-details")];
+    expect(parts.map(({ classList }) => classList[0])).toEqual([
+      "transcript-tag",
+      "inline-video",
+      "seen-details",
+    ]);
+    expect(parts[1]?.textContent).toContain("removed from this chat");
+    expect(parts[2]?.textContent).toContain("A dog.");
   });
 });
 

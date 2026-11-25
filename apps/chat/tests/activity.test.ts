@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AssistantMessage, ToolCall, ToolMessage, ZoomTarget } from "../src/types";
+import type { AssistantMessage, SeenNote, ToolCall, ToolMessage, ZoomTarget } from "../src/types";
 import {
   activitySummary,
   answerOf,
   hasActivity,
+  lookingStatus,
   prefacesOf,
   renderActivityBody,
   STALL_SECONDS,
@@ -257,5 +258,87 @@ describe("renderActivityBody", () => {
     expect(updateStreamingReasoning(body, { ...step, reasoning: "Hmm, the dog." })).toBe(true);
     expect(body.querySelector(".activity-thinking")).toBe(block);
     expect(block?.textContent).toBe("Hmm, the dog.");
+  });
+});
+
+describe("what another model looked at", () => {
+  const note = (kind: "described" | "answered", text: string, imageIds = ["a", "b"]): SeenNote => ({
+    ...{ kind, text, imageIds, modelId: "eyes" },
+  });
+  const onLookAgain = vi.fn();
+  const render = {
+    live: false,
+    thumbnail: () => document.createElement("img"),
+    seek: vi.fn(),
+    seen: { name: () => "Eyes", options: { onSeek: vi.fn() }, onLookAgain },
+  };
+  const asking = assistant("a1", [
+    call("c", "ask", { question: " Which breed? ", pictures: ["a", "b"] }),
+  ]);
+  const body = (
+    steps: Parameters<typeof renderActivityBody>[1],
+    how: Parameters<typeof renderActivityBody>[2],
+    notes: SeenNote[] = [],
+  ) => {
+    const container = document.createElement("div");
+    renderActivityBody(container, steps, how, notes);
+    return container;
+  };
+
+  it("counts described pictures and questions, the message's own included", () => {
+    const looked = { ...reply("ok"), seen: [note("described", "A dog.")] };
+    expect(activitySummary([assistant("a", [call("1", "look", {})]), looked])).toBe(
+      "1 look · 2 pictures described",
+    );
+    expect(activitySummary([asking], [note("described", "A dog.", ["z"])])).toBe(
+      "1 picture described · 1 question",
+    );
+    expect(activitySummary([], [note("answered", "Red.")])).toBe("1 question");
+    expect(hasActivity([], [note("described", "A dog.")])).toBe(true);
+    expect(hasActivity([])).toBe(false);
+  });
+
+  it("names the model while it looks", () => {
+    expect(lookingStatus(4, "Eyes", 12)).toBe("Looking at 4 pictures with Eyes · 12s");
+    expect(lookingStatus(1, "Eyes", STALL_SECONDS)).toContain("unusually long");
+  });
+
+  it("has an entry for each look of the message, its words behind a disclosure", () => {
+    const shown = body([], render, [note("described", "A dog."), note("answered", "Red.")]);
+    const entries = [...shown.querySelectorAll("details")];
+    expect(entries.map((entry) => entry.querySelector("summary")?.textContent)).toEqual([
+      "Looked at 2 pictures with Eyes",
+      "Asked Eyes about 2 pictures",
+    ]);
+    expect(entries[0]?.open).toBe(false);
+    expect(entries[0]?.querySelector(".seen-text")?.textContent).toBe("A dog.");
+  });
+
+  it("shows an ask's question, pictures and answer", () => {
+    const images = ["a", "b"].map((id) => ({
+      ...{ id, pinned: false },
+      source: { kind: "upload" as const, name: `${id}.png` },
+    }));
+    const answer = { ...reply("About a, b: Collie."), images, seen: [note("answered", "Collie.")] };
+    const shown = body([asking, answer], render);
+    expect(shown.querySelector(".activity-call-label")?.textContent).toBe("ask · Which breed?");
+    expect(shown.querySelectorAll(".activity-thumbs img")).toHaveLength(2);
+    expect(shown.querySelector(".seen-text")?.textContent).toBe("Collie.");
+    const pending = body([asking], { ...render, live: true });
+    expect(pending.textContent).toBe("Asking about 2 pictures…");
+    const failed = body([asking, reply("Error: offline")], render);
+    expect(failed.textContent).toBe("Error: offline");
+  });
+
+  it("lets a look's description be dropped, and only with a looking model on", () => {
+    const described = note("described", "A dog.");
+    const steps = [
+      assistant("a1", [call("c", "look", { start: 0, end: 5 })]),
+      { ...reply("ok"), seen: [described] },
+    ];
+    body(steps, render).querySelector<HTMLButtonElement>(".look-again")?.click();
+    expect(onLookAgain).toHaveBeenCalledWith("t", described);
+    const off = { name: render.seen.name, options: render.seen.options };
+    expect(body(steps, { ...render, seen: off }).querySelector(".look-again")).toBeNull();
   });
 });

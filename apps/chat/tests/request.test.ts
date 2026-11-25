@@ -5,6 +5,7 @@ import {
   ANSWER_NOW_NOTE,
   EXHAUSTIVE_GUIDANCE,
   FINAL_ROUND_NOTE,
+  NO_TOOLS_LOOKING_GUIDANCE,
 } from "../src/chat/prompts";
 import { buildRequest, type BuildRequestInput } from "../src/chat/request";
 import { keptImages, visibleMessages } from "../src/chat/story";
@@ -18,6 +19,7 @@ import type {
   VideoTimeline,
   WireMessage,
 } from "../src/types";
+import { answered, described } from "./support/looking";
 import {
   sheet,
   overviewSheet,
@@ -716,5 +718,147 @@ describe("buildRequest reasoning effort", () => {
       venice_parameters: { include_venice_system_prompt: false },
       prompt_cache_key: venice.chat.id,
     });
+  });
+});
+
+describe("with a looking model", () => {
+  const seen = [described(["a"], "A dog.")];
+  const looked = { ...user("u1", "Look.", [upload("a")]), seen };
+  const looking: Chat = {
+    ...baseChat,
+    settings: { ...baseChat.settings, lookingModelId: "eyes" },
+  };
+  const sendable = { kept: new Set(["a"]), dataUrls: new Map([["a", "data:a"]]) };
+
+  it("sends words in place of every picture, whatever the writer sees", () => {
+    const request = buildRequest(input({ chat: looking, messages: [looked], ...sendable }));
+    expect(request.messages.at(-1)).toEqual({
+      role: "user",
+      content:
+        "Look.\n\n[Note from the app, not written by the user: what the looking model saw in the pictures named here.]\n[image a.jpg]\nA dog.\n[End of the app's note.]",
+    });
+  });
+
+  it("sends the same in later turns and in both earlier image modes", () => {
+    const later = [looked, assistant("a1", "Nice."), user("u2", "And?")];
+    const sent = (earlierImages: "send" | "describe") => {
+      const chat = { ...looking, settings: { ...looking.settings, earlierImages } };
+      return buildRequest(input({ chat, messages: later, ...sendable })).messages;
+    };
+    expect(sent("send")).toEqual(sent("describe"));
+    expect(JSON.stringify(sent("send"))).toContain("A dog.");
+    expect(JSON.stringify(sent("send"))).not.toContain("image_url");
+  });
+
+  it("puts what a tool's pictures show in its reply", () => {
+    const reply = { ...tool("t1", "c1", [sheet("s1")]), seen: [described(["s1"], "A wave.")] };
+    const messages = [user("u1", "Look."), assistant("a1", "", ["c1"]), reply];
+    const request = buildRequest(input({ chat: looking, messages }));
+    expect(request.messages.at(-1)).toMatchObject({ role: "tool" });
+    expect(request.messages.at(-1)?.content).toMatch(/^result c1\n\n[^]*A wave\.\n\[End/);
+  });
+
+  it("carries the words for a pinned picture past a summary", () => {
+    const pinned = { ...looked, images: [upload("a", true)] };
+    const messages = [pinned, assistant("a1", "Nice."), user("u2", "And?")];
+    const storySoFar = { text: "They met.", throughMessageId: "a1", updatedAt: 1 };
+    const request = buildRequest(input({ chat: { ...looking, storySoFar }, messages }));
+    expect(JSON.stringify(request.messages[1])).toContain("A dog.");
+  });
+
+  it("tells a writer without tools that it cannot see, once there are pictures", () => {
+    const system = (messages: UserMessage[]) =>
+      buildRequest(input({ chat: looking, messages, allowTools: false, toolGuidance: "Tools." }))
+        .messages[0]?.content;
+    expect(system([looked])).toContain(NO_TOOLS_LOOKING_GUIDANCE);
+    expect(system([looked])).not.toContain("Tools.");
+    expect(system([user("u1", "Hi.")])).not.toContain(NO_TOOLS_LOOKING_GUIDANCE);
+  });
+
+  it("does not tell the writer to ask in a round that may call nothing", () => {
+    const unseen = user("u1", "Look.", [upload("a")]);
+    const sent = (extra: Partial<BuildRequestInput>) =>
+      JSON.stringify(buildRequest(input({ chat: looking, messages: [unseen], ...extra })));
+    expect(sent({})).toContain("call ask");
+    expect(sent({ finalRound: true })).toContain("Not looked at yet.]");
+    expect(sent({ answerNow: true })).not.toContain("call ask");
+  });
+
+  describe("and a transcript", () => {
+    const listenTool = { ...lookTool, function: { ...lookTool.function, name: "listen" } };
+    const heard = [{ startSeconds: 0, endSeconds: 125 }];
+    const carrier: UserMessage = {
+      ...looked,
+      audio: true,
+      transcript: { fileKey: "k", spans: heard },
+    };
+    const reply = assistant("a1", "Nice.");
+    const asked = answered(["a"], "Red.", { question: "And?" });
+
+    function build(messages: ChatMessage[], extra: Partial<BuildRequestInput> = {}) {
+      return buildRequest(
+        input({
+          chat: { ...videoChat, settings: looking.settings },
+          messages,
+          tools: [lookTool, listenTool],
+          speech: {
+            fileKey: "k",
+            speechSpans: heard,
+            speech: [{ start: 12, end: 15, text: "Hello there." }],
+          },
+          audioCoverage: { text: "analysed", canListen: true },
+          ...sendable,
+          ...extra,
+        }),
+      ).messages;
+    }
+
+    it("sends one string: the message, what its pictures show, then the transcript", () => {
+      expect(build([carrier]).at(-1)?.content).toMatch(
+        /^Look\.\n\n\[Note from the app[^]*\[image a\.jpg\]\nA dog\.\n\[End of the app's note\.\]\n\nTranscript of[^]*\n\[0:12\] Hello there\.$/,
+      );
+    });
+
+    it("sends the same on every round of the turn, its last included", () => {
+      const first = build([carrier]);
+      const round = [assistant("a0", "", ["c1"]), tool("t1", "c1")];
+      for (const extra of [{}, { finalRound: true }, { answerNow: true }]) {
+        expect(build([carrier, ...round], extra).slice(0, first.length)).toEqual(first);
+      }
+    });
+
+    it("puts the stub in its place on later turns", () => {
+      const [, sent] = build([carrier, reply, user("u2", "And?")]);
+      expect(sent?.content).toMatch(
+        /A dog\.\n\[End of the app's note\.\]\n\n\[Transcript of the video's speech up to 2:05\. Sent earlier; call listen[^]*\]$/,
+      );
+      expect(sent?.content).not.toContain("Hello there.");
+    });
+
+    it("keeps it in full for a writer without tools, beside what it was answered", () => {
+      const noTools = { model: { ...model, tools: false } };
+      const later = { ...user("u2", "And?"), seen: [asked] };
+      const wire = build([carrier, reply, later], noTools);
+      const [, , first] = build([carrier], noTools);
+      expect(first?.content).toContain("[0:12] Hello there.");
+      expect(wire[1]).toEqual(first);
+      expect(wire.at(-1)?.content).toMatch(/^And\?\n\n\[Note from the app[^]*\nRed\.\n\[End/);
+      expect(JSON.stringify(wire)).not.toContain("listen");
+    });
+
+    it("sends it after the answer when one message has both", () => {
+      const both = { ...carrier, text: "And?", images: [], seen: [asked] };
+      const [, , sent] = build([both], { model: { ...model, tools: false } });
+      expect(sent?.content).toMatch(/^And\?\n\n[^]*Red\.\n\[End[^]*\]\n\nTranscript of/);
+    });
+  });
+
+  it("ignores what was seen once it is off, so the request is what it always was", () => {
+    const plain = user("u1", "Look.", [upload("a")]);
+    const note = { ...plain, seen: [...seen, answered(["a"], "Red.", { question: "Look." })] };
+    const request = (message: UserMessage) =>
+      JSON.stringify(buildRequest(input({ messages: [message], ...sendable })));
+    expect(request(note)).toBe(request(plain));
+    expect(request(note)).toContain("data:a");
   });
 });

@@ -13,9 +13,11 @@ import {
   type AppState,
 } from "../src/state";
 import type {
+  ApiSettings,
   AssistantMessage,
   Chat,
   ChatMessage,
+  ChatRequest,
   ChatStore,
   ImageRef,
   StreamChat,
@@ -46,6 +48,7 @@ let onMessagesChanged: ReturnType<typeof vi.fn>;
 let timers: (() => void)[];
 let clipboard: { writeText: ReturnType<typeof vi.fn> };
 let streamChat: StreamChat;
+const confirm = vi.fn<(message: string) => boolean>();
 let toolContext: () => ToolContext | undefined;
 
 const U1: ChatMessage = { id: "U1", createdAt: 1, role: "user", text: "one", images: [] };
@@ -115,6 +118,7 @@ function setup(): MessageActions {
     toast: initToast(els, { set: (run) => timers.push(run), clear: vi.fn() }),
     images: idleImages(),
     streamChat: (...args) => streamChat(...args),
+    confirm,
     toolContext: () => toolContext(),
     onOpen,
     onChatsChanged: vi.fn(),
@@ -178,6 +182,20 @@ describe("checking timestamps across chats", () => {
 });
 
 describe("deleting", () => {
+  it("leaves a branch opened meanwhile as it is", async () => {
+    const branch = blankChat("m", "branch", 2);
+    const deleteMessages = store.deleteMessages.bind(store);
+    store.deleteMessages = async (chatId, deleted) => {
+      await deleteMessages(chatId, deleted);
+      replaceChat(state, branch);
+      setCurrentChat(state, branch, CHAT);
+    };
+    await setup().remove(U3);
+    expect(ids(await store.listMessages("chat"))).not.toContain("U3");
+    expect(state.messages).toEqual(CHAT);
+    expect(onMessagesChanged).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["U2", ["U1", "A1a", "T1", "A1", "A2", "U3"]],
     ["A1", ["U1", "U2", "A2", "U3"]],
@@ -462,5 +480,97 @@ describe("checking timestamps", () => {
     expect(await checking).toBeUndefined();
     const saved = (await store.listMessages("chat")).find((message) => message.id === "A2");
     expect(saved).toEqual(claimed);
+  });
+});
+
+describe("checking timestamps with a looking model", () => {
+  const own = "http://localhost:5001/v1";
+  const local = "http://localhost:1234/v1";
+
+  beforeEach(async () => {
+    await putClaimedReply();
+    confirm.mockReset();
+  });
+
+  function openLooking(server: string, audioOn?: string): void {
+    const settings = {
+      ...{ ...DEFAULT_SETTINGS, baseUrl: local },
+      ...{ lookingBaseUrl: own, apiKeys: { [own]: "key" } },
+    };
+    const looking = blankChat("model", "chat", 1, "eyes", server);
+    const messages = state.messages.map((message) =>
+      message.role === "user" && message.id === audioOn
+        ? { ...message, audio: true as const }
+        : message,
+    );
+    state = createAppState(settings);
+    replaceChat(state, looking);
+    setCurrentChat(state, looking, messages);
+  }
+
+  it.each([
+    ["the message it answers", "U2"],
+    ["an earlier message", "U1"],
+  ])("asks first when Audio was on for %s, and sends nothing if refused", async (_which, id) => {
+    openLooking(own, id);
+    const sent = vi.fn<StreamChat>(replyWith("1: confirmed: the door is open"));
+    streamChat = sent;
+    confirm.mockReturnValueOnce(false).mockReturnValueOnce(true);
+    expect(await setup().verify(claimed, new AbortController().signal)).toBeUndefined();
+    expect(confirm).toHaveBeenLastCalledWith(
+      "The sentences to check, which can repeat what was heard, will be sent to localhost:5001. Check them?",
+    );
+    expect(sent).not.toHaveBeenCalled();
+    expect(await setup().verify(claimed, new AbortController().signal)).toBeDefined();
+    expect(sent).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["its looking model is on the chat's own server", local, "U2"],
+    ["Audio was off", own, undefined],
+    ["Audio was only on for a later message", own, "U3"],
+  ])("asks nothing when %s", async (_what, server, audioOn) => {
+    openLooking(server, audioOn);
+    expect(await setup().verify(claimed, new AbortController().signal)).toBeDefined();
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it("sends the frames to it on its own connection", async () => {
+    openLooking(own);
+    const requests: ChatRequest[] = [];
+    const reply = replyWith("1: confirmed: the door is open", requests);
+    const apis: ApiSettings[] = [];
+    streamChat = (api, request, signal) => {
+      apis.push(api);
+      return reply(api, request, signal);
+    };
+    await setup().verify(claimed, new AbortController().signal);
+    expect(apis).toEqual([{ baseUrl: own, apiKey: "key" }]);
+    expect(requests[0]?.model).toBe("eyes");
+    expect(JSON.stringify(requests[0])).toContain("image_url");
+  });
+});
+
+describe("looking again", () => {
+  const note = { kind: "described" as const, imageIds: ["p"], modelId: "eyes", text: "A door." };
+
+  it("drops the description, saves it and calls no model", async () => {
+    const calls = vi.fn<StreamChat>();
+    streamChat = calls;
+    const looked: ChatMessage = { ...U3, seen: [note] };
+    setCurrentChat(state, chat, [...state.messages.filter(({ id }) => id !== "U3"), looked]);
+    await setup().lookAgain("U3", note);
+    const saved = (await store.listMessages("chat")).find(({ id }) => id === "U3");
+    expect(saved).toEqual({ ...U3, seen: [], lookAgain: true });
+    expect(state.messages.at(-1)).toEqual(saved);
+    expect(calls).not.toHaveBeenCalled();
+  });
+
+  it("does nothing while a reply is written", async () => {
+    const looked: ChatMessage = { ...U3, seen: [note] };
+    setCurrentChat(state, chat, [looked]);
+    setRunning(state, true);
+    await setup().lookAgain("U3", note);
+    expect(state.messages).toEqual([looked]);
   });
 });

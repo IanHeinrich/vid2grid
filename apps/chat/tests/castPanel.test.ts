@@ -3,7 +3,13 @@ import { blankChat } from "../src/chat/chats";
 import { createMemoryStore } from "../src/chat/store";
 import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
-import { createAppState, replaceChat, setCurrentChat, type AppState } from "../src/state";
+import {
+  createAppState,
+  replaceChat,
+  setCurrentChat,
+  setModels,
+  type AppState,
+} from "../src/state";
 import type {
   CastCard,
   Chat,
@@ -14,6 +20,7 @@ import type {
   VideoAttachment,
 } from "../src/types";
 import { initCastPanel, type CastPanelDeps } from "../src/ui/knowledge/castPanel";
+import { model } from "./support/factories";
 import { mountPage, stillToast } from "./support/page";
 import { replyWith } from "./support/streams";
 
@@ -312,5 +319,92 @@ describe("cast panel suggestions", () => {
     els.cast.suggestButton.click();
     await vi.waitFor(() => expect(els.cast.status.textContent).toContain("Wait for the overview"));
     expect(els.cast.status.classList.contains("is-error")).toBe(true);
+  });
+});
+
+describe("cast panel suggestions with a looking model", () => {
+  const own = "http://localhost:5001/v1";
+
+  async function openLooking(messages: ChatMessage[]): Promise<void> {
+    state = createAppState({ ...state.settings, lookingBaseUrl: own, apiKeys: { [own]: "key" } });
+    const chat: Chat = {
+      ...blankChat("model", "chat", 1, "eyes", own),
+      video: VIDEO,
+      sceneLog: [{ timeSeconds: 1, text: "Mara waves" }],
+    };
+    await store.putChat(chat);
+    replaceChat(state, chat);
+    setCurrentChat(state, chat, messages);
+  }
+
+  it("sends it the overview alone, on its own connection", async () => {
+    const id = await store.putImage(new Blob(["sheet"], { type: "image/jpeg" }));
+    const source = {
+      ...{ kind: "sheet" as const, call: "overview", name: "grid_0001" },
+      ...{ startSeconds: 0, endSeconds: 120, frameCount: 16 },
+    };
+    const images = [{ id, pinned: false, source }];
+    await openLooking([{ id: "u1", createdAt: 1, role: "user", text: "", images }]);
+    const sent: { baseUrl: string; model: string }[] = [];
+    const requests: ChatRequest[] = [];
+    const reply = replyWith("Mara | in red | 0:12", requests);
+    panel((api, request, signal) => {
+      sent.push({ baseUrl: api.baseUrl, model: request.model });
+      return reply(api, request, signal);
+    });
+    els.cast.suggestButton.click();
+    await vi.waitFor(() => expect(sent).toEqual([{ baseUrl: own, model: "eyes" }]));
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    expect(JSON.stringify(requests)).toContain("data:image/jpeg");
+    expect(JSON.stringify(requests)).not.toMatch(/Scene log|Mara waves/);
+  });
+
+  it("asks for the overview, whatever notes there are", async () => {
+    await openLooking([]);
+    const streamChat = vi.fn<StreamChat>();
+    panel(streamChat);
+    els.cast.suggestButton.click();
+    await vi.waitFor(() =>
+      expect(els.cast.status.textContent).toBe("Wait for the overview to finish."),
+    );
+    expect(streamChat).not.toHaveBeenCalled();
+  });
+});
+
+describe("cast panel suggestions from a long overview", () => {
+  async function sheetsSent(lookingId: string): Promise<number> {
+    const images = await Promise.all(
+      Array.from({ length: 5 }, async (_, index) => ({
+        id: await store.putImage(new Blob([String(index)], { type: "image/jpeg" })),
+        pinned: false,
+        source: {
+          kind: "sheet" as const,
+          call: "overview",
+          name: `grid_${index}`,
+          startSeconds: index,
+          endSeconds: index + 1,
+          frameCount: 4,
+        },
+      })),
+    );
+    setModels(state, [model("eyes", { maxImages: 2 })]);
+    const overview: ChatMessage = { id: "u1", createdAt: 1, role: "user", text: "", images };
+    const chat: Chat = { ...blankChat("model", "chat", 1, lookingId), video: VIDEO };
+    await store.putChat(chat);
+    replaceChat(state, chat);
+    setCurrentChat(state, chat, [overview]);
+    const requests: ChatRequest[] = [];
+    panel(replyWith("Mara | in red | 0:12", requests));
+    els.cast.suggestButton.click();
+    await vi.waitFor(() => expect(requests.length).toBeGreaterThan(0));
+    return JSON.stringify(requests[0]).split("data:image/jpeg").length - 1;
+  }
+
+  it("sends no more sheets than the looking model takes", async () => {
+    expect(await sheetsSent("eyes")).toBe(2);
+  });
+
+  it("sends them all to a chat's own model, as it always did", async () => {
+    expect(await sheetsSent("")).toBe(5);
   });
 });

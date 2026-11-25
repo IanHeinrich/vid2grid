@@ -288,3 +288,47 @@ describe("model picker keyboard and dismissal", () => {
     expect(panel().hidden).toBe(true);
   });
 });
+
+describe("a current model that is not listed", () => {
+  it("is not replaced by Enter, only by a row that was reached", () => {
+    current = "retired-model";
+    setup();
+    trigger().click();
+    const search = find<HTMLInputElement>(".model-search-input");
+    key(search, "Enter");
+    expect(onPick).not.toHaveBeenCalled();
+    expect(panel().hidden).toBe(false);
+    key(search, "ArrowDown");
+    key(document.activeElement, "Enter");
+    expect(onPick).toHaveBeenCalledWith(rowIds()[0]);
+  });
+
+  it("does not turn into None", () => {
+    current = "retired-model";
+    createModelPicker(
+      { mount, ...els.templates },
+      {
+        models: () => state.models,
+        current: () => current,
+        onPick,
+        settings: storedPickerSettings(state, localStorage),
+        none: { label: "None", details: "" },
+      },
+    );
+    trigger().click();
+    key(find(".model-search-input"), "Enter");
+    expect(onPick).not.toHaveBeenCalled();
+    expect(rowIds()[0]).toBe("");
+  });
+
+  it("still lets Enter take the first model searched for", () => {
+    current = "retired-model";
+    setup();
+    trigger().click();
+    const search = find<HTMLInputElement>(".model-search-input");
+    search.value = "gemma";
+    search.dispatchEvent(new Event("input"));
+    key(search, "Enter");
+    expect(onPick).toHaveBeenCalledWith("gemma-4");
+  });
+});

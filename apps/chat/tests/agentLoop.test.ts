@@ -1093,6 +1093,17 @@ describe("runTurn when the server refuses tools", () => {
     expect(requests[1]).not.toHaveProperty("tools");
   });
 
+  it("reads an error to its end, and reports only the start of one", async () => {
+    const long = `Template error: ${"x".repeat(2000)} tools`;
+    const { deps, requests } = setup([refuse(500, long), refuse(500, long)], optional);
+    const outcome = await runTurn(deps);
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).not.toHaveProperty("tools");
+    expect(outcome.status).toBe("error");
+    expect(outcome.error).toMatch(/^Template error: x+…$/);
+    expect(outcome.error).toHaveLength(501);
+  });
+
   it.each<[string, StreamEvent]>([
     ["text", { type: "text", delta: "A d" }],
     ["reasoning", { type: "reasoning", delta: "Hm." }],

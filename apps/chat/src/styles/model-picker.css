@@ -461,3 +461,15 @@
   font-size: 0.875rem;
   text-align: center;
 }
+
+.model-text-note {
+  margin: 0;
+  padding: 0.5rem 0.6rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.model-row.is-none {
+  padding-left: calc(0.5rem + 28px + 0.6rem);
+}

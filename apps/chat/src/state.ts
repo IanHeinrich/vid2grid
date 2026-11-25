@@ -26,6 +26,8 @@ export interface AppState {
   readonly settings: GlobalSettings;
   readonly models: readonly ModelInfo[];
   readonly modelsError: string | null;
+  // The models of the looking model's own server; empty while it shares the chat's.
+  readonly lookingModels: readonly ModelInfo[];
   readonly chats: readonly Chat[];
   readonly currentChat: Chat | null;
   readonly messages: readonly ChatMessage[];
@@ -44,6 +46,7 @@ export function createAppState(settings: GlobalSettings): AppState {
     settings,
     models: [],
     modelsError: null,
+    lookingModels: [],
     chats: [],
     currentChat: null,
     messages: [],
@@ -70,6 +73,10 @@ export function setModels(state: WritableAppState, models: readonly ModelInfo[])
 
 export function setModelsError(state: WritableAppState, message: string): void {
   state.modelsError = message;
+}
+
+export function setLookingModels(state: WritableAppState, models: readonly ModelInfo[]): void {
+  state.lookingModels = models;
 }
 
 export function setChats(state: WritableAppState, chats: readonly Chat[]): void {

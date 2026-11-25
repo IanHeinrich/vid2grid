@@ -11,6 +11,12 @@ export interface GlobalSettings {
   apiKeys: Record<string, string>;
   privateOnly: boolean;
   defaultModelId: string;
+  // Given to new chats as their looking model; empty means none.
+  defaultLookingModelId: string;
+  // The server that model was picked on.
+  defaultLookingBaseUrl: string;
+  // The looking model's own server, with its key in apiKeys; empty means the chat's server.
+  lookingBaseUrl: string;
   fallbackMaxImages: number;
   showThinking: boolean;
   keepVideoCopies: boolean;
@@ -49,6 +55,9 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   apiKeys: {},
   privateOnly: true,
   defaultModelId: "",
+  defaultLookingModelId: "",
+  defaultLookingBaseUrl: "",
+  lookingBaseUrl: "",
   fallbackMaxImages: 10,
   showThinking: false,
   keepVideoCopies: true,
@@ -132,6 +141,9 @@ export function loadSettings(storage: Storage = localStorage): GlobalSettings {
     privateOnly:
       typeof stored.privateOnly === "boolean" ? stored.privateOnly : DEFAULT_SETTINGS.privateOnly,
     defaultModelId: nonEmptyStringOr(stored.defaultModelId, DEFAULT_SETTINGS.defaultModelId),
+    defaultLookingModelId: stringOr(stored.defaultLookingModelId, "").trim(),
+    defaultLookingBaseUrl: stringOr(stored.defaultLookingBaseUrl, "").trim(),
+    lookingBaseUrl: stringOr(stored.lookingBaseUrl, "").trim(),
     fallbackMaxImages: positiveIntegerOr(
       stored.fallbackMaxImages,
       DEFAULT_SETTINGS.fallbackMaxImages,

@@ -69,6 +69,21 @@ describe("completedSteps", () => {
     expect(completedSteps(state, true).has("media")).toBe(true);
   });
 
+  it("counts a model that cannot see images only with a looking model", () => {
+    const blind = model("blind", { vision: false });
+    const looking = { ...DEFAULT_SETTINGS, defaultModelId: "blind", defaultLookingModelId: "eyes" };
+    const without = createAppState({ ...looking, defaultLookingModelId: "" });
+    setModels(without, [blind]);
+    expect(completedSteps(without, false).has("model")).toBe(false);
+    const withOne = createAppState(looking);
+    setModels(withOne, [blind]);
+    expect(completedSteps(withOne, false).has("model")).toBe(true);
+    setCurrentChat(withOne, blankChat("blind", "a", 1), []);
+    expect(completedSteps(withOne, false).has("model")).toBe(false);
+    setCurrentChat(withOne, blankChat("blind", "a", 1, "eyes"), []);
+    expect(completedSteps(withOne, false).has("model")).toBe(true);
+  });
+
   it("needs no key for a server that is not Venice", () => {
     setSettings(state, { ...state.settings, baseUrl: "http://localhost:1234/v1" });
     expect(completedSteps(state, false).has("key")).toBe(true);

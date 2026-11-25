@@ -1,3 +1,4 @@
+import { isAbortError } from "../abort";
 import type { ApiSettings } from "../types";
 import { asRecord } from "./json";
 
@@ -16,6 +17,24 @@ export function requestHeaders(settings: ApiSettings, json: boolean): Record<str
     ...(settings.apiKey ? { Authorization: `Bearer ${settings.apiKey}` } : {}),
     ...(json ? { "Content-Type": "application/json" } : {}),
   };
+}
+
+// Shorter ones are placeholders, and taking them out would garble the message.
+const MIN_KEY_CHARS = 4;
+
+function withoutKey(text: string, { apiKey }: Pick<ApiSettings, "apiKey">): string {
+  const key = apiKey.trim();
+  return key.length < MIN_KEY_CHARS ? text : text.replaceAll(key, "…");
+}
+
+// Some servers repeat the key they were sent. Left whole, since what is wrong can be told from any
+// part of it, and never with the first error as its cause, which would carry the key along.
+export function safeError(error: unknown, api: Pick<ApiSettings, "apiKey">): unknown {
+  if (!(error instanceof Error) || isAbortError(error)) return error;
+  const message = withoutKey(error.message, api);
+  if (message === error.message) return error;
+  if (error instanceof ApiError) return new ApiError(error.status, message);
+  return error instanceof SyntaxError ? new SyntaxError(message) : new Error(message);
 }
 
 function errorMessageFrom(body: string): string {

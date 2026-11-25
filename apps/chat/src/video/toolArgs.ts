@@ -36,6 +36,13 @@ export function timesArg(args: Args, name: string, max: number): Parsed<number[]
   return { problem: `${name} must be an array of 1 to ${max} numbers in seconds.` };
 }
 
+export function textArg(args: Args, name: string): Parsed<string> {
+  const value = args[name];
+  return isNonEmptyString(value)
+    ? { value: value.trim() }
+    : { problem: `${name} must be a non-empty string.` };
+}
+
 export function namesArg(args: Args, name: string): Parsed<string[]> {
   const value: unknown = args[name];
   if (Array.isArray(value) && value.length >= 1 && value.every(isNonEmptyString)) {
@@ -61,6 +68,11 @@ export function integerArg(args: Args, name: string, min: number, max: number): 
 
 export function imagesFollow(count: number): string {
   return count === 1 ? "1 image follows." : `${count} images follow.`;
+}
+
+// With a looking model, the writer reads what the images show in the same result.
+export function imagesDescribed(count: number): string {
+  return count === 1 ? "1 image, described below." : `${count} images, described below.`;
 }
 
 export function failure(problem: string): ToolResult {

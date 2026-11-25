@@ -1,5 +1,6 @@
 import { isVenice } from "../../api/venice";
 import { chatModelId, defaultModelId } from "../../chat/models";
+import { lookingModelId } from "../../chat/seen";
 import type { AppElements } from "../../dom";
 import type { AppState } from "../../state";
 import type { ChatStore } from "../../types";
@@ -60,10 +61,13 @@ export function keyStepLabel(state: AppState): string {
 export function completedSteps(state: AppState, testPassed: boolean): Set<WelcomeStep> {
   const chat = state.currentChat;
   const chosen = chat ? chatModelId(state, chat) : defaultModelId(state);
+  const looking = chat
+    ? lookingModelId(chat) !== undefined
+    : state.settings.defaultLookingModelId !== "";
   const done: Record<WelcomeStep, boolean> = {
     key: state.settings.baseUrl.trim() !== "" && !needsKey(state),
     test: testPassed,
-    model: state.models.some((model) => model.id === chosen),
+    model: state.models.some((model) => model.id === chosen && (looking || model.vision)),
     media: hasMedia(state),
   };
   return new Set(STEPS.filter((step) => done[step]));

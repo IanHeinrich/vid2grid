@@ -44,6 +44,10 @@ export const FINAL_ROUND_NOTE =
 export const ANSWER_NOW_NOTE =
   "Answer now, directly from what you have already seen, with no further deliberation and no tool calls, in the voice set above, without mentioning this.";
 
+// For a writer that is listed no tools; with tools, their guidance says this and how to ask.
+export const NO_TOOLS_LOOKING_GUIDANCE =
+  "You cannot see pictures yourself. A separate looking model looks at them, and what it says is written in their place. Rely only on what it says, and never invent what it does not.";
+
 const VOICE_STYLES: Record<Voice, string> = {
   analyst: "",
   character:

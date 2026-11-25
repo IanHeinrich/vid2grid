@@ -10,6 +10,7 @@ import {
   messageElement,
   newEntry,
   seekHandler,
+  seenRender,
   textOptions,
   type ConversationContext,
   type Draft,
@@ -19,6 +20,7 @@ import {
 import { focusWithin, replaceKeepingFocus } from "./focus";
 import { renderMarkdownInto } from "./markdown";
 import { branchButton, copyButton, deleteButton, editButton } from "./replyControls";
+import { userSeenDetails } from "./seenDetails";
 import { thumbnail, togglePin } from "./thumbnails";
 import { removedVideoLine, videoSlotFor } from "./videoSlot";
 
@@ -82,17 +84,15 @@ function userElement(ctx: ConversationContext, message: UserMessage, rerender: (
   if (message.transcript) entry.el.append(transcriptTag(message.transcript));
   const video = videoPart(ctx, message);
   if (video) entry.el.append(video);
+  const options = textOptions(ctx, message.id, seekHandler(ctx, message.id));
   if (message.text !== "") {
     const text = document.createElement("div");
     text.className = "message-text";
-    renderMarkdownInto(
-      text,
-      message.text,
-      textOptions(ctx, message.id, seekHandler(ctx, message.id)),
-    );
+    renderMarkdownInto(text, message.text, options);
     entry.el.append(text);
   }
   if (message.images.length > 0) entry.el.append(userThumbs(ctx, entry, message));
+  entry.el.append(...userSeenDetails(message, seenRender(ctx, options)));
   const actions = document.createElement("div");
   actions.className = "message-actions";
   actions.append(

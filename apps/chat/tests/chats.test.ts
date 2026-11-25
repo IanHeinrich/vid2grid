@@ -21,3 +21,13 @@ describe("titleFromMessage", () => {
     expect(title).toBe(`${"a".repeat(30)} ${"b".repeat(9)}…`);
   });
 });
+
+describe("blankChat with a looking model", () => {
+  it("takes one only when it is named", () => {
+    expect(blankChat("m", "id", 5, "eyes").settings.lookingModelId).toBe("eyes");
+    const own = "http://localhost:5001/v1";
+    expect(blankChat("m", "id", 5, "eyes", own).settings.lookingBaseUrl).toBe(own);
+    expect(blankChat("m", "id", 5, "", own).settings).not.toHaveProperty("lookingBaseUrl");
+    expect(blankChat("m", "id", 5, "").settings).not.toHaveProperty("lookingModelId");
+  });
+});

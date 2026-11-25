@@ -30,6 +30,10 @@ export interface ModelPickerDeps {
   current(): string | undefined;
   onPick(id: string): void;
   settings: PickerSettings;
+  // Present where a model that cannot see images can be used, given a looking model.
+  textOnly?: { offered(): boolean; note: string };
+  // The first row, which picks no model; absent where one has to be picked.
+  none?: { label: string; details: string };
 }
 
 export interface ModelPicker {
@@ -56,6 +60,7 @@ interface PickerParts {
   sortChips: HTMLElement;
   list: HTMLUListElement;
   empty: HTMLElement;
+  textNote: HTMLElement;
   pane: PaneParts;
 }
 
@@ -110,6 +115,7 @@ function mountParts(els: ModelPickerElements): PickerParts {
     sortChips: part(root, ".model-sort-chips", HTMLElement),
     list: part(root, ".model-list", HTMLUListElement),
     empty: part(root, ".model-empty", HTMLElement),
+    textNote: part(root, ".model-text-note", HTMLElement),
     pane: {
       monogram: part(root, ".model-pane .model-monogram", HTMLElement),
       name: part(root, ".model-pane-name", HTMLElement),
@@ -222,6 +228,7 @@ function onListClick(ctx: PickerContext, event: MouseEvent): void {
 }
 
 function toggleFavourite(ctx: PickerContext, id: string): void {
+  if (id === "") return;
   const { settings } = ctx.deps;
   const favourites = settings.favourites();
   settings.setFavourites(
@@ -243,7 +250,12 @@ function activeId(ctx: PickerContext): string | undefined {
 function view(ctx: PickerContext): PickerView {
   const filters = new Set(ctx.filters);
   if (ctx.deps.settings.privateOnly() && reportsPrivacy(ctx.deps.models())) filters.add("private");
-  return { query: ctx.query, favouritesOnly: ctx.favouritesOnly, filters, sort: ctx.sort };
+  const { query, favouritesOnly, sort } = ctx;
+  return { query, favouritesOnly, filters, sort, textOnly: textOnlyOffered(ctx) };
+}
+
+function textOnlyOffered({ deps }: PickerContext): boolean {
+  return deps.textOnly?.offered() === true;
 }
 
 function openPanel(ctx: PickerContext): void {
@@ -254,6 +266,7 @@ function openPanel(ctx: PickerContext): void {
   parts.panel.hidden = false;
   parts.trigger.setAttribute("aria-expanded", "true");
   renderList(ctx, ctx.deps.current());
+  clearActiveUnlessListed(ctx, ctx.deps.current());
   positionPanel(parts);
   parts.search.focus();
   scrollToActive(ctx);
@@ -387,6 +400,11 @@ function renderList(ctx: PickerContext, activeModelId: string | undefined): void
   ctx.rows = [];
   ctx.hovered = undefined;
   ctx.paneModelId = undefined;
+  const none = noneRow(ctx);
+  if (none) {
+    ctx.rows.push(none);
+    items.push(none);
+  }
   for (const section of pickerSections(ctx.deps.models(), view(ctx), [...favourites])) {
     if (section.label !== "") items.push(sectionHeading(section.label));
     for (const model of section.models) {
@@ -396,11 +414,47 @@ function renderList(ctx: PickerContext, activeModelId: string | undefined): void
     }
   }
   ctx.parts.list.replaceChildren(...items);
-  ctx.parts.empty.hidden = ctx.rows.length > 0;
+  ctx.parts.empty.hidden = ctx.rows.some((row) => row.dataset.id !== "");
+  renderTextNote(ctx);
   setActive(
     ctx,
     ctx.rows.findIndex((row) => row.dataset.id === activeModelId),
   );
+}
+
+// A current model that is not listed has no row, and Enter must not pick another in its place.
+function clearActiveUnlessListed(ctx: PickerContext, id: string | undefined): void {
+  if (!id || ctx.rows.some((row) => row.dataset.id === id)) return;
+  ctx.rows[ctx.active]?.classList.remove("is-active");
+  ctx.active = -1;
+  renderPane(ctx);
+}
+
+// Only over the whole list: a search or a filter asks for models.
+function noneRow(ctx: PickerContext): HTMLLIElement | undefined {
+  const { none } = ctx.deps;
+  if (!none || ctx.query.trim() !== "" || ctx.favouritesOnly || ctx.filters.size > 0) {
+    return undefined;
+  }
+  const row = emptyRow(ctx.rowTemplate);
+  const current = (ctx.deps.current() ?? "") === "";
+  row.dataset.id = "";
+  row.classList.add("is-none");
+  row.classList.toggle("is-current", current);
+  row.setAttribute("aria-selected", String(current));
+  part(row, ".model-row-name", HTMLElement).textContent = none.label;
+  part(row, ".model-row-meta", HTMLElement).textContent = none.details;
+  part(row, ".model-monogram", HTMLElement).remove();
+  part(row, ".model-star", HTMLButtonElement).remove();
+  return row;
+}
+
+function renderTextNote(ctx: PickerContext): void {
+  const { textOnly } = ctx.deps;
+  const note = ctx.parts.textNote;
+  const allSee = ctx.deps.models().every((model) => model.vision);
+  note.hidden = !textOnly || textOnlyOffered(ctx) || allSee;
+  note.textContent = textOnly?.note ?? "";
 }
 
 function renderControls(ctx: PickerContext): void {
@@ -443,14 +497,19 @@ function pill(badge: Badge): HTMLSpanElement {
   return span;
 }
 
+function emptyRow(template: HTMLTemplateElement): HTMLLIElement {
+  const row = document.importNode(template.content, true).firstElementChild;
+  if (!(row instanceof HTMLLIElement)) throw new Error("Missing model picker row template");
+  return row;
+}
+
 function modelRow(
   template: HTMLTemplateElement,
   model: ModelInfo,
   favourite: boolean,
   current: boolean,
 ): HTMLLIElement {
-  const row = document.importNode(template.content, true).firstElementChild;
-  if (!(row instanceof HTMLLIElement)) throw new Error("Missing model picker row template");
+  const row = emptyRow(template);
   row.dataset.id = model.id;
   row.classList.toggle("is-current", current);
   row.classList.toggle("is-favourite", favourite);
@@ -497,7 +556,8 @@ function renderTrigger(ctx: PickerContext): void {
   const model = ctx.deps.models().find((entry) => entry.id === id);
   fillMonogram(triggerMonogram, model ?? { id, name: id });
   triggerMonogram.hidden = id === "";
-  triggerName.textContent = model?.name ?? (id || "Choose a model");
+  const unset = ctx.deps.none?.label ?? "Choose a model";
+  triggerName.textContent = model?.name ?? (id || unset);
   trigger.title = model?.name ?? id;
   const privacy = model?.privacy ?? "unknown";
   triggerPrivacy.hidden = privacy === "unknown";

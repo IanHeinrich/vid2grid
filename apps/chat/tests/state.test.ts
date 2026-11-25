@@ -47,6 +47,7 @@ describe("createAppState", () => {
       settings: DEFAULT_SETTINGS,
       models: [],
       modelsError: null,
+      lookingModels: [],
       chats: [],
       currentChat: null,
       messages: [],

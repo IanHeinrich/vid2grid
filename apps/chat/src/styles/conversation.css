@@ -257,6 +257,42 @@
   height: 52px;
 }
 
+.seen-details {
+  margin-top: 0.35rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.seen-details > summary {
+  width: fit-content;
+  max-width: 100%;
+  cursor: pointer;
+}
+
+.seen-text {
+  margin-top: 0.3rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.seen-details .look-again {
+  margin-top: 0.3rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.seen-pending {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
 .message-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;

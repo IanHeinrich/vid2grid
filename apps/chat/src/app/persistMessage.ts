@@ -1,3 +1,4 @@
+import { withCurrentSeen } from "../chat/seen";
 import { upsertMessage, type AppState } from "../state";
 import type { ChatMessage, ChatStore } from "../types";
 
@@ -14,7 +15,8 @@ export async function persistMessage(
   const { state, store } = deps;
   const chat = state.currentChat;
   if (!chat) return;
-  upsertMessage(state, message);
+  const updated = withCurrentSeen(message, state.messages);
+  upsertMessage(state, updated);
   deps.onChanged();
-  await store.putMessage(chat.id, message);
+  await store.putMessage(chat.id, updated);
 }

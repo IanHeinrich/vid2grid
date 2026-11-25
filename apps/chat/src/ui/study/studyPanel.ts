@@ -1,4 +1,4 @@
-import { resolveModel } from "../../chat/models";
+import { lookingModelId } from "../../chat/seen";
 import { part, type AppElements } from "../../dom";
 import type { AppState } from "../../state";
 import { errorText } from "../../text";
@@ -17,20 +17,24 @@ import type { ToolContext } from "../../video/tools";
 import { headerLabel } from "../shared/buttons";
 import { icon, type IconName } from "../shared/icons";
 import { attachMenu } from "../shared/menu";
-import { createModelPicker } from "../modelPicker/modelPicker";
+import { createModelPicker, type ModelPicker } from "../modelPicker/modelPicker";
 import { storedPickerSettings } from "../modelPicker/pickerModel";
 import { removeVideoTitle } from "../video/overviewText";
-import { modelCallDeps } from "../../app/modelCallDeps";
+import { lookingProblem, lookingServerModels, pictureCallDeps } from "../../app/lookingConnection";
 import {
   changed,
   currentTimeline,
   finishedZoom,
   isRunningHere,
+  modelFor,
   now,
+  pickedModel,
   planFor,
+  rememberPick,
   shownVideo,
   studyState,
   videoKey,
+  wasPicked,
   zoomPlanFor,
   type RunningPass,
   type RunningStudy,
@@ -62,6 +66,31 @@ interface RunContext {
   chat: Chat;
 }
 
+function studyPicker(
+  els: Pick<AppElements, "study" | "templates">,
+  state: AppState,
+  deps: StudyDeps,
+  choice: StudyContext["choice"],
+  onPicked: () => void,
+): ModelPicker {
+  return createModelPicker(
+    { mount: els.study.modelPicker, ...els.templates },
+    {
+      models: () => {
+        const chat = state.currentChat;
+        const looking = chat !== null && lookingModelId(chat) !== undefined;
+        return looking ? lookingServerModels(state, chat) : state.models;
+      },
+      current: () => choice.modelId,
+      onPick: (id) => {
+        choice.modelId = id;
+        onPicked();
+      },
+      settings: storedPickerSettings(state, deps.storage),
+    },
+  );
+}
+
 export function initStudy(
   els: Pick<AppElements, "study" | "templates">,
   state: AppState,
@@ -91,18 +120,8 @@ export function initStudy(
     restart: false,
     pendingUndo: null,
     choice,
-    picker: createModelPicker(
-      { mount: els.study.modelPicker, ...els.templates },
-      {
-        models: () => state.models,
-        current: () => choice.modelId,
-        onPick: (id) => {
-          choice.modelId = id;
-          renderEstimate(ctx);
-        },
-        settings: storedPickerSettings(state, deps.storage),
-      },
-    ),
+    picked: new Map(),
+    picker: studyPicker(els, state, deps, choice, () => renderEstimate(ctx)),
     render: () => render(ctx),
   };
   ctx.els.windowInput.value = String(DEFAULT_WINDOW_SECONDS);
@@ -258,6 +277,14 @@ function statusText(ctx: StudyContext): string {
   return "Timeline ready";
 }
 
+// Asked before anything is confirmed or changed for pictures that have nowhere to go.
+function refused({ state, deps }: StudyContext): boolean {
+  const problem = lookingProblem(state, state.currentChat);
+  if (problem === undefined) return false;
+  deps.status.show(problem, "error");
+  return true;
+}
+
 async function start(
   ctx: StudyContext,
   modelId: string,
@@ -265,28 +292,32 @@ async function start(
   settings: StudyPlanOptions,
 ): Promise<void> {
   const key = videoKey(ctx);
-  const model = resolveModel(ctx.state, modelId);
+  const model = pickedModel(ctx, modelId);
   const plan = planFor(ctx, model, settings);
-  if (key === undefined || !plan || ctx.running) return;
+  if (key === undefined || !plan || ctx.running || refused(ctx)) return;
   const existing = ctx.timelines.get(key);
   const sameStudy = existing?.modelId === model.id && existing.windowCount === plan.windows.length;
   if (!restart && sameStudy && existing.nextWindow < existing.windowCount) {
     ctx.plans.set(key, plan);
+    rememberPick(ctx, key, model.id);
     await runFor(ctx, { ...existing, plan: settings }, plan, model);
     return;
   }
   const replacing = existing !== undefined && existing.entries.length > 0;
   if (replacing && !ctx.deps.confirm("Replace the existing timeline with a new study?")) return;
   ctx.plans.set(key, plan);
+  rememberPick(ctx, key, model.id);
   const fresh = { ...newTimeline(key, model.id, plan, now(ctx)), plan: settings };
   await runFor(ctx, fresh, plan, model);
 }
 
 async function resume(ctx: StudyContext): Promise<void> {
   const timeline = currentTimeline(ctx);
-  if (!timeline) return;
-  const model = resolveModel(ctx.state, timeline.modelId);
-  const plan = ctx.plans.get(timeline.fileKey) ?? planFor(ctx, model, timeline.plan);
+  if (!timeline || refused(ctx)) return;
+  const model = modelFor(ctx, timeline);
+  const { fileKey } = timeline;
+  const cached = wasPicked(ctx, fileKey, model.id) ? ctx.plans.get(fileKey) : undefined;
+  const plan = cached ?? planFor(ctx, model, timeline.plan);
   if (!plan || plan.windows.length !== timeline.windowCount) {
     ctx.deps.status.show("The study settings changed, so start the study again.");
     openDialog(ctx, true);
@@ -371,6 +402,7 @@ async function runFor(
     chatId: run.chat.id,
     fileKey: timeline.fileKey,
     controller: new AbortController(),
+    studied: timeline,
     timeline,
     merged: timeline.entries.length,
     plan,
@@ -396,10 +428,18 @@ async function runFor(
   });
 }
 
+// Only once a step of it is done is a timeline another model's work.
+function withRunModel({ studied, model }: RunningStudy, timeline: VideoTimeline): VideoTimeline {
+  if (studied.modelId === model.id) return timeline;
+  const mixed = studied.usage !== undefined || studied.mixedModels === true;
+  return { ...timeline, modelId: model.id, ...(mixed ? { mixedModels: true as const } : {}) };
+}
+
 async function startZoom(ctx: StudyContext): Promise<void> {
   const timeline = currentTimeline(ctx);
   const plan = timeline && zoomPlanFor(ctx, timeline);
-  if (!timeline || !plan) return;
+  if (!timeline || !plan || refused(ctx)) return;
+  const model = modelFor(ctx, timeline);
   const run = runContext(ctx);
   if (!run) return;
   const paused = finishedZoom(ctx);
@@ -409,8 +449,9 @@ async function startZoom(ctx: StudyContext): Promise<void> {
     chatId: run.chat.id,
     fileKey: timeline.fileKey,
     controller: new AbortController(),
+    studied: timeline,
     timeline,
-    model: resolveModel(ctx.state, timeline.modelId),
+    model,
     stopping: false,
     plan,
     carried,
@@ -428,7 +469,7 @@ async function startZoom(ctx: StudyContext): Promise<void> {
 function passDeps(ctx: StudyContext, running: RunningStudy, { toolCtx, chat }: RunContext) {
   const { model, timeline, controller } = running;
   return {
-    ...modelCallDeps(ctx.state, ctx.deps.streamChat, model.id, controller.signal),
+    ...pictureCallDeps(ctx.state, chat, ctx.deps.streamChat, model.id, controller.signal),
     ctx: {
       ...toolCtx,
       resolution: resolveSheetResolution(chat.settings.sheetResolution, model).px,
@@ -454,18 +495,17 @@ function runDeps(ctx: StudyContext, running: RunningPass, run: RunContext): RunD
 
 // runZoom builds each step on the shown timeline, so it is taken whole.
 function zoomDeps(ctx: StudyContext, running: RunningZoom, run: RunContext): ZoomDeps {
-  const show = (timeline: VideoTimeline) => {
+  const show = (zoomed: VideoTimeline): VideoTimeline => {
+    const timeline = withRunModel(running, zoomed);
     running.timeline = timeline;
     ctx.timelines.set(running.fileKey, timeline);
+    return timeline;
   };
   return {
     ...passDeps(ctx, running, run),
     plan: running.plan,
     current: () => ctx.timelines.get(running.fileKey) ?? running.timeline,
-    saveTimeline: (saved) => {
-      show(saved);
-      return ctx.deps.store.putTimeline(saved);
-    },
+    saveTimeline: (saved) => ctx.deps.store.putTimeline(show(saved)),
     onProgress: (progress) => {
       running.done += 1;
       show(progress);
@@ -481,7 +521,9 @@ function merge(ctx: StudyContext, running: RunningPass, studied: VideoTimeline):
   const fresh = studied.entries.slice(running.merged);
   running.merged = Math.max(running.merged, studied.entries.length);
   const shown = ctx.timelines.get(running.fileKey) ?? running.timeline;
-  const merged = { ...studied, entries: [...shown.entries, ...fresh] };
+  const stepped = studied.nextWindow > running.studied.nextWindow;
+  const entries = [...shown.entries, ...fresh];
+  const merged = stepped ? withRunModel(running, { ...studied, entries }) : { ...studied, entries };
   running.timeline = merged;
   ctx.timelines.set(running.fileKey, merged);
   return merged;

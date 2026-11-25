@@ -132,8 +132,9 @@ function actions(): MessageActions {
     status: silent,
     toast,
     images,
-    conversation: { reset: vi.fn() },
+    conversation: { reset: vi.fn(), show: vi.fn() },
     streamChat: replyWith("ok"),
+    confirm: () => true,
     toolContext: () => undefined,
     onOpen: vi.fn(),
     onChatsChanged: vi.fn(),
@@ -620,7 +621,7 @@ describe.each(stores)("%s: restoring a backup without images", (_name, open) => 
     await store.deleteChat("a");
     removeChat(state, "a");
     const odd = [
-      { ...user("odd", "hi"), video: 3, alternates: [null] },
+      { ...user("odd", "hi"), video: 3, images: [{ id: "y", source: { kind: "zoom" } }] },
       { ...user("odder", "hi"), video: null, images: [{ id: "x", source: { kind: "clip" } }] },
     ];
     const file = await backupOf(chat, [user("U", "hi"), ...odd]);
@@ -629,7 +630,7 @@ describe.each(stores)("%s: restoring a backup without images", (_name, open) => 
       await images.release({ refs: [sheet(id, 0, 1)] });
       expect(await stored(id)).toEqual([true]);
     });
-    await expect(restoring).rejects.toThrow("Cannot read properties of null");
+    await expect(restoring).rejects.toThrow("Cannot read properties of undefined");
     expect(await sweepNow()).toBe(1);
     expect(await stored(id)).toEqual([false]);
   });

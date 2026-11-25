@@ -8,6 +8,7 @@ import type {
   Folder,
   ImageRef,
   ImageSource,
+  SeenNote,
   ToolCall,
   ToolMessage,
   UserMessage,
@@ -51,6 +52,8 @@ export function chatToMarkdown(chat: Chat, messages: readonly ChatMessage[]): st
 
 function headerLines({ settings, video }: Chat): string {
   const lines = [`- Model: ${settings.modelId}`];
+  const looking = settings.lookingModelId;
+  if (looking) lines.push(`- Looking model: ${looking}`);
   if (video) lines.push(`- Video: ${video.name} (${formatTimestamp(video.durationSeconds)})`);
   return lines.join("\n");
 }
@@ -59,6 +62,7 @@ function userSection(message: UserMessage, name: string): string {
   const lines = [`## ${name}`];
   if (message.text.trim() !== "") lines.push(message.text.trim());
   for (const image of message.images) lines.push(`[image: ${imageCaption(image)}]`);
+  for (const note of message.seen ?? []) lines.push(`_Seen by ${note.modelId}:_ ${note.text}`);
   if (message.transcript) lines.push(`_${transcriptSentText(message.transcript)}_`);
   return lines.join("\n\n");
 }
@@ -402,12 +406,25 @@ function remapRefs(refs: readonly ImageRef[], imageIds: ReadonlyMap<string, stri
   }));
 }
 
+function remapSeen(
+  seen: readonly SeenNote[] | undefined,
+  imageIds: ReadonlyMap<string, string>,
+): { seen?: SeenNote[] } {
+  if (seen === undefined) return {};
+  const remapped = (id: string) => imageIds.get(id) ?? id;
+  return { seen: seen.map((note) => ({ ...note, imageIds: note.imageIds.map(remapped) })) };
+}
+
 function remapReply(
   message: AssistantMessage | ToolMessage,
   imageIds: ReadonlyMap<string, string>,
 ): AssistantMessage | ToolMessage {
   return message.role === "tool"
-    ? { ...message, images: remapRefs(message.images, imageIds) }
+    ? {
+        ...message,
+        images: remapRefs(message.images, imageIds),
+        ...remapSeen(message.seen, imageIds),
+      }
     : message;
 }
 
@@ -417,6 +434,7 @@ function remapImages(message: ChatMessage, imageIds: ReadonlyMap<string, string>
   return {
     ...message,
     images: remapRefs(message.images, imageIds),
+    ...remapSeen(message.seen, imageIds),
     ...(alternates !== undefined && {
       alternates: alternates.map((alt) => ({
         ...alt,
@@ -496,7 +514,30 @@ function isMessage(value: unknown): boolean {
     return false;
   }
   if (!VALID_ROLES.has(value.role)) return false;
-  return value.role === "assistant" || (Array.isArray(value.images) && value.images.every(isRef));
+  const { role, images, seen, alternates } = value;
+  if (seen !== undefined && !(Array.isArray(seen) && seen.every(isNote))) return false;
+  if (alternates !== undefined && !(Array.isArray(alternates) && alternates.every(isReply))) {
+    return false;
+  }
+  return role === "assistant" || (Array.isArray(images) && images.every(isRef));
+}
+
+function isReply(value: unknown): boolean {
+  return isRecord(value) && Array.isArray(value.messages) && value.messages.every(isMessage);
+}
+
+const NOTE_KINDS: readonly unknown[] = ["described", "answered"] satisfies SeenNote["kind"][];
+
+// At least as strict as the reader that decides what may be deleted.
+function isNote(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    NOTE_KINDS.includes(value.kind) &&
+    Array.isArray(value.imageIds) &&
+    value.imageIds.every((id) => typeof id === "string") &&
+    typeof value.modelId === "string" &&
+    typeof value.text === "string"
+  );
 }
 
 function isRef(value: unknown): boolean {

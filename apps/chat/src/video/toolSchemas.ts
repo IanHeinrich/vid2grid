@@ -97,6 +97,42 @@ const RECALL_SCHEMA: ToolSchema = {
   },
 };
 
+const ASK_SCHEMA: ToolSchema = {
+  type: "function",
+  function: {
+    name: "ask",
+    description:
+      "Ask the looking model about pictures from anywhere in this conversation. It sees the pictures themselves and answers in text.",
+    parameters: {
+      type: "object",
+      properties: {
+        question: { type: "string", description: "What to find out from the pictures." },
+        pictures: {
+          type: "array",
+          items: { type: "string" },
+          minItems: 1,
+          description:
+            'Picture names as their labels give them, e.g. "grid_0002 from look(60, 90)" or "beach.jpg".',
+        },
+      },
+      required: ["question", "pictures"],
+    },
+  },
+};
+
+const QUESTION = {
+  type: "string",
+  description: "Optional: what the looking model should find out from the new pictures.",
+};
+const TAKES_QUESTION: readonly string[] = ["look", "frames", "zoom"];
+
+function withQuestion(schema: ToolSchema): ToolSchema {
+  const { name, parameters } = schema.function;
+  if (!TAKES_QUESTION.includes(name)) return schema;
+  const properties = { ...(parameters["properties"] as object), question: QUESTION };
+  return { ...schema, function: { ...schema.function, parameters: { ...parameters, properties } } };
+}
+
 // Listed only on a message with audio turned on, so the model is never offered it otherwise.
 export const LISTEN_SCHEMA: ToolSchema = {
   type: "function",
@@ -165,6 +201,8 @@ function zoomSchema(videoLoaded: boolean): ToolSchema {
   };
 }
 
+const NOTE_GUIDANCE = "use note for anything worth remembering.";
+
 // How to use the tools, the same for every voice; history adds the voice's answer style.
 const VIDEO_GUIDANCE = [
   "The attached video is available through the look, frames and note tools.",
@@ -172,14 +210,25 @@ const VIDEO_GUIDANCE = [
   "Batch the specific moments you want into one frames call rather than one call per moment, and make several tool calls in one round rather than one per round.",
   "perSheet is adjusted to fill each sheet without blank space, and the result says what was actually rendered.",
   "Every frame has its timestamp printed on it.",
-  "Older images become text stubs; recall one by its stub's name, and use note for anything worth remembering.",
 ];
+
+const OLDER_IMAGES_GUIDANCE = `Older images become text stubs; recall one by its stub's name, and ${NOTE_GUIDANCE}`;
 
 const BEFORE_LOOKING_GUIDANCE =
   "If you write to the user before looking, keep it to one short line and claim nothing you have not seen yet.";
 
 const IMAGE_GUIDANCE =
   "Older images become text stubs; recall one by its stub's name to see it again.";
+
+const LOOKING_GUIDANCE = [
+  "You cannot see pictures yourself. A separate looking model looks at every picture, and what it says is written in the picture's place, with the picture's name.",
+  "Its descriptions leave things out. When a detail matters, call ask with a question and the pictures' names instead of guessing, about pictures from any earlier turn too. Never invent what it has not said.",
+  "Ask it only about what can be seen, and leave what was heard in the video out of your questions.",
+  "Do not mention the looking model to the user unless they ask about it.",
+];
+
+const LOOKING_QUESTION_GUIDANCE =
+  "Give look, frames and zoom a question when you know what you want to find out from the new pictures. To zoom, ask where something is in the picture first if you do not know.";
 
 const ZOOM_GUIDANCE =
   "When a detail is too small to read, use zoom. Its coordinates are of the picture as shown, 0 to 1000 each way. Prefer a generous area over a tight one.";
@@ -192,6 +241,8 @@ export interface ToolSituation {
   images: boolean;
   vision: boolean;
   listen: boolean;
+  // A looking model sees the images in the writer's place, whatever its own vision.
+  looking?: boolean;
 }
 
 export interface ToolOffer {
@@ -200,24 +251,35 @@ export interface ToolOffer {
 }
 
 export function toolOffer(situation: ToolSituation): ToolOffer {
-  const { images, vision } = situation;
+  const { images, vision, looking } = situation;
   if (situation.videoLoaded) return videoOffer(situation);
-  if (!images || !vision) return { tools: [], guidance: "" };
+  if (!images || (!vision && !looking)) return { tools: [], guidance: "" };
+  if (looking) {
+    return {
+      tools: [ASK_SCHEMA, withQuestion(zoomSchema(false))],
+      guidance: [...LOOKING_GUIDANCE, ZOOM_GUIDANCE].join("\n"),
+    };
+  }
   return {
     tools: [RECALL_SCHEMA, zoomSchema(false)],
     guidance: [IMAGE_GUIDANCE, ZOOM_GUIDANCE].join("\n"),
   };
 }
 
-function videoOffer({ vision, listen }: ToolSituation): ToolOffer {
-  const zoomGuidance = vision ? [`${ZOOM_GUIDANCE} ${ZOOM_GRID_GUIDANCE}`] : [];
+function videoOffer({ vision, listen, looking }: ToolSituation): ToolOffer {
+  const zoom = vision || looking === true;
+  const zoomGuidance = zoom ? [`${ZOOM_GUIDANCE} ${ZOOM_GRID_GUIDANCE}`] : [];
+  const tools = [
+    ...VIDEO_SCHEMAS,
+    looking ? ASK_SCHEMA : RECALL_SCHEMA,
+    ...(zoom ? [zoomSchema(true)] : []),
+    ...(listen ? [LISTEN_SCHEMA] : []),
+  ];
+  const seeing = looking
+    ? [...LOOKING_GUIDANCE, LOOKING_QUESTION_GUIDANCE, `Also ${NOTE_GUIDANCE}`]
+    : [OLDER_IMAGES_GUIDANCE];
   return {
-    tools: [
-      ...VIDEO_SCHEMAS,
-      RECALL_SCHEMA,
-      ...(vision ? [zoomSchema(true)] : []),
-      ...(listen ? [LISTEN_SCHEMA] : []),
-    ],
-    guidance: [...VIDEO_GUIDANCE, ...zoomGuidance, BEFORE_LOOKING_GUIDANCE].join("\n"),
+    tools: looking ? tools.map(withQuestion) : tools,
+    guidance: [...VIDEO_GUIDANCE, ...seeing, ...zoomGuidance, BEFORE_LOOKING_GUIDANCE].join("\n"),
   };
 }

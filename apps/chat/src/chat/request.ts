@@ -23,7 +23,9 @@ import {
   buildSystemPrompt,
   CONTEXT_HEADING,
   FINAL_ROUND_NOTE,
+  NO_TOOLS_LOOKING_GUIDANCE,
 } from "./prompts";
+import { imagesById, lookingModelId, seenText, withSeenNotes, type SeenContext } from "./seen";
 import { sentView, type SentView } from "./story";
 import { effortFor, lowestEffort } from "./thoroughness";
 import {
@@ -100,6 +102,8 @@ interface ImagePlacement {
   holders: ReadonlyMap<string, ChatMessage>;
   // Messages before the current turn, whose images describe mode leaves as stubs.
   earlier: ReadonlySet<string>;
+  // Present with a looking model on, whose words are sent in place of every image.
+  seen?: SeenContext;
 }
 
 function imageParts(
@@ -131,8 +135,9 @@ function userWire(
   placement: ImagePlacement,
   transcript = "",
 ): WireMessage {
-  if (message.images.length === 0) {
-    const texts = [message.text, transcript].filter((text) => text.length > 0);
+  if (placement.seen || message.images.length === 0) {
+    const text = placement.seen ? seenText(message, placement.seen) : message.text;
+    const texts = [text, transcript].filter((part) => part.length > 0);
     return { role: "user", content: texts.join("\n\n") };
   }
   return {
@@ -167,9 +172,10 @@ function turnWire(
     ...replies.map((reply): WireMessage => ({
       role: "tool",
       tool_call_id: reply.toolCallId,
-      content: reply.text,
+      content: placement.seen ? seenText(reply, placement.seen) : reply.text,
     })),
   ];
+  if (placement.seen) return wire;
   const parts = replies.flatMap((reply) => imageParts(reply, input, placement));
   if (parts.length > 0) wire.push({ role: "user", content: parts });
   return wire;
@@ -182,6 +188,25 @@ interface WireHistory {
 
 function listsTools({ allowTools, model, tools }: BuildRequestInput): boolean {
   return allowTools && model.tools && tools.length > 0;
+}
+
+function mayCallTools(input: BuildRequestInput): boolean {
+  return listsTools(input) && !input.finalRound && input.answerNow !== true;
+}
+
+function seenContext(input: BuildRequestInput): SeenContext | undefined {
+  if (lookingModelId(input.chat) === undefined) return undefined;
+  return { images: imagesById(input.messages), canAsk: mayCallTools(input) };
+}
+
+// Pictures are described with or without tools, so a writer that has none is still told so.
+function guidanceFor(input: BuildRequestInput, seen: SeenContext | undefined): string {
+  if (listsTools(input)) return input.toolGuidance;
+  return seen && seen.images.size > 0 ? NO_TOOLS_LOOKING_GUIDANCE : "";
+}
+
+function carriedImages(view: SentView, { seen }: ImagePlacement, input: BuildRequestInput) {
+  return view.carried && seen ? withSeenNotes(view.carried, input.messages) : view.carried;
 }
 
 function offersListen(input: BuildRequestInput): boolean {
@@ -213,14 +238,17 @@ function wireHistory(
   transcripts: TranscriptTexts,
 ): WireHistory {
   const earlierImages = input.chat.settings.earlierImages ?? "describe";
+  const seen = seenContext(input);
   const placement: ImagePlacement = {
+    ...(seen ? { seen } : {}),
     holders: latestHolders(view.sent),
     earlier: earlierMessageIds(view.sent, earlierImages),
   };
-  const system = buildSystemPrompt(input.chat, listsTools(input) ? input.toolGuidance : "");
+  const system = buildSystemPrompt(input.chat, guidanceFor(input, seen));
   const messages: WireMessage[] = system.length > 0 ? [{ role: "system", content: system }] : [];
   // Right after the system prompt: it changes only when the cut moves, so the cache holds.
-  if (view.carried) messages.push(userWire(view.carried, input, placement));
+  const carried = carriedImages(view, placement, input);
+  if (carried) messages.push(userWire(carried, input, placement));
   let contextAt: number | undefined;
   for (const block of sanitise(view.visible)) {
     if ("role" in block) {
@@ -247,11 +275,10 @@ function requestOptions(input: BuildRequestInput): Omit<ChatRequest, "model" | "
   const { temperature } = chat.settings;
   const reasoningEffort = requestEffort(input);
   const listTools = listsTools(input);
-  const noTools = input.finalRound || input.answerNow === true;
   return {
     // Tools stay listed on the final round so history with tool calls still matches the template.
     ...(listTools ? { tools: [...tools] } : {}),
-    ...(listTools && noTools ? { tool_choice: "none" as const } : {}),
+    ...(listTools && !mayCallTools(input) ? { tool_choice: "none" as const } : {}),
     ...(temperature !== undefined ? { temperature } : {}),
     ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
     stream: true,

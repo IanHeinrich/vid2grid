@@ -18,6 +18,8 @@ import {
   setLoadedVideo,
   setModels,
   setRunning,
+  setSettings,
+  upsertMessage,
   type AppState,
 } from "../src/state";
 import { errorText } from "../src/text";
@@ -49,6 +51,7 @@ import { resolveSheetResolution } from "../src/video/resolution";
 import { conversationDeps } from "./support/conversationDeps";
 import { model } from "./support/factories";
 import { idleImages } from "./support/images";
+import { described } from "./support/looking";
 import { mountPage, stillToast } from "./support/page";
 import { waitForAbort } from "./support/streams";
 
@@ -245,6 +248,38 @@ describe("editing", () => {
     await editing;
     expect((await store.listMessages("chat")).map(({ text }) => text)).toContain("Typed at length");
     expect(editor()).toBeFalsy();
+  });
+
+  it("goes back in the editor when the looking server is gone, then saves on the newest copy", async () => {
+    const settings = { ...blankChat(MODEL, "chat", 1).settings, lookingModelId: "eyes" };
+    const lookingBaseUrl = "http://localhost:5001/v1";
+    await seed([{ ...U1, video: VIDEO }, A1], { settings: { ...settings, lookingBaseUrl } });
+    const { list } = els.conversation;
+    const editor = () => list.querySelector<HTMLTextAreaElement>(".message-editor textarea");
+    const saveEdit = () => list.querySelector<HTMLButtonElement>(".editor-save")?.click();
+    list.querySelector<HTMLElement>(".edit-action")?.click();
+    const input = editor();
+    if (!input) throw new Error("No editor");
+    input.value = "Typed at length";
+    const { video, ...bare } = { ...U1, video: VIDEO };
+    const removed = { ...bare, removedVideo: video };
+    const seen = [described(["i"], "A dog.")];
+    conversation.show(removed);
+    upsertMessage(state, { ...removed, seen });
+    saveEdit();
+    expect(editor()?.value).toBe("Typed at length");
+    await editing;
+    expect(document.activeElement).toBe(editor());
+    expect(list.querySelector(".error-line")?.textContent).toContain("no longer set up");
+    expect((await store.listMessages("chat"))[0]?.text).toBe("one");
+    expect(streamChat).not.toHaveBeenCalled();
+    setSettings(state, { ...state.settings, lookingBaseUrl });
+    saveEdit();
+    await editing;
+    expect(editor()).toBeNull();
+    const [saved, reply] = await store.listMessages("chat");
+    expect(saved).toEqual({ ...removed, text: "Typed at length", seen });
+    expect(reply).toMatchObject({ text: "New reply" });
   });
 
   it("goes back in the editor when a reply has begun meanwhile or no chat is open", async () => {
@@ -561,6 +596,81 @@ function castOf(description: string): VideoCast {
   };
 }
 
+describe("another chat opened while a message is being saved", () => {
+  // A branch, whose messages have the ids of those it was copied from.
+  const elsewhere: ChatMessage[] = [{ ...U1, text: "Elsewhere" }, A1, { ...U2, text: "Too" }, A2];
+
+  // As opening a chat does: the turn is stopped, and its messages are read from the store.
+  function leaveOn(step: "putMessage" | "deleteMessages", running: Turns) {
+    const other = blankChat(MODEL, "other", 2);
+    const reset = vi.spyOn(conversation, "reset");
+    const show = vi.spyOn(conversation, "show");
+    const save = store[step].bind(store) as (id: string, what: unknown) => Promise<void>;
+    (store[step] as unknown) = async (id: string, what: unknown) => {
+      await save(id, what);
+      if (state.currentChat?.id !== "chat") return;
+      running.stop();
+      replaceChat(state, other);
+      setCurrentChat(state, other, elsewhere);
+      reset.mockClear();
+      show.mockClear();
+    };
+    return { reset, show };
+  }
+
+  async function expectUntouched({ reset, show }: ReturnType<typeof leaveOn>): Promise<void> {
+    await vi.waitFor(() => expect(state.runningChats.size).toBe(0));
+    expect(state.messages).toEqual(elsewhere);
+    expect(reset).not.toHaveBeenCalled();
+    expect(show).not.toHaveBeenCalled();
+    expect(streamChat).not.toHaveBeenCalled();
+  }
+
+  const steps: ("putMessage" | "deleteMessages")[] = ["putMessage", "deleteMessages"];
+
+  it.each(steps)("keeps a replay's archived reply, on %s", async (step) => {
+    await seed([U1, A1]);
+    const running = turns();
+    const left = leaveOn(step, running);
+    await running.replay();
+    await expectUntouched(left);
+    const messages = await store.listMessages("chat");
+    expect(messages).toMatchObject([{ id: "U1", alternates: [{ messages: [{ id: "A1" }] }] }]);
+  });
+
+  it.each(steps)("keeps a comparison's archived reply, on %s", async (step) => {
+    setModels(state, [smallModel(), { ...smallModel(), id: "other-model" }]);
+    await seed([U1, A1]);
+    const running = turns();
+    const left = leaveOn(step, running);
+    await running.compare({ ...smallModel(), id: "other-model" });
+    await vi.waitFor(async () => expect(await stored()).toEqual(["U1"]));
+    await expectUntouched(left);
+    const [user] = await store.listMessages("chat");
+    expect(user).toMatchObject({ alternates: [{ messages: [{ id: "A1" }] }] });
+  });
+
+  it.each(steps)("saves an edit and deletes the reply it replaces, on %s", async (step) => {
+    await seed([U1, A1, U2, A2]);
+    const running = turns();
+    const left = leaveOn(step, running);
+    const onUnsaved = vi.fn();
+    await running.edit(U2, "two, edited", onUnsaved);
+    await expectUntouched(left);
+    expect(await store.listMessages("chat")).toEqual([U1, A1, { ...U2, text: "two, edited" }]);
+    expect(onUnsaved).not.toHaveBeenCalled();
+  });
+
+  it("saves an edit of an earlier message", async () => {
+    await seed([U1, A1, U2, A2]);
+    const running = turns();
+    const left = leaveOn("putMessage", running);
+    await running.edit(U1, "one, edited");
+    await expectUntouched(left);
+    expect((await store.listMessages("chat"))[0]).toEqual({ ...U1, text: "one, edited" });
+  });
+});
+
 describe("comparing with another model", () => {
   it("runs the turn with the other model, its resolution and its image tokens", async () => {
     const other: ModelInfo = { ...smallModel(), id: "claude-opus-4-7", contextTokens: 1_000_000 };
@@ -855,6 +965,7 @@ describe("transcript", () => {
         conversation,
         images: idleImages(),
         streamChat,
+        confirm: () => true,
         toolContext: () => undefined,
         onOpen: vi.fn(),
         onChatsChanged: vi.fn(),

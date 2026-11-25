@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ApiError, streamChat } from "../src/api/client";
+import { ApiError, getBalance, listModels, streamChat } from "../src/api/client";
+import { safeError } from "../src/api/http";
 import { VENICE_BASE_URL } from "../src/api/venice";
 import type { ChatRequest, StreamEvent } from "../src/types";
 import { fakeFetch, jsonResponse, localSettings, veniceSettings } from "./support/apiFakes";
@@ -407,5 +408,54 @@ describe("streamChat usage", () => {
   it("yields no usage when the server never sends it", async () => {
     const events = await run([deltaChunk({ content: "Hi" }, "stop"), sse("[DONE]")]);
     expect(events.map((event) => event.type)).toEqual(["text", "done"]);
+  });
+});
+
+describe("errors that repeat the key", () => {
+  const api = { baseUrl: VENICE_BASE_URL, apiKey: " sk-secret-1 " };
+  const body = {
+    error: { code: 401, message: `Bad key sk-secret-1: ${"x".repeat(2000)} tools sk-secret-1` },
+  };
+  async function streamed(response: () => Response): Promise<unknown> {
+    const { fetch } = fakeFetch(response);
+    const reply = streamChat(api, request, new AbortController().signal, fetch);
+    return reply.next().catch((error: unknown) => error);
+  }
+
+  function expectSafe(error: unknown): void {
+    if (!(error instanceof Error)) throw new Error("Expected an error");
+    expect(error.message).toMatch(/^Bad key …/);
+    // Whole, so that what it is about can be told from its end too.
+    expect(error.message).toMatch(/ tools …$/);
+    expect(error.cause).toBeUndefined();
+    expect(JSON.stringify(error, Object.getOwnPropertyNames(error))).not.toContain("sk-secret-1");
+  }
+
+  it("are cleaned before anyone sees them, with their status", async () => {
+    const error = await streamed(() => jsonResponse(body, 401));
+    expectSafe(error);
+    expect(error).toMatchObject({ name: "ApiError", status: 401 });
+  });
+
+  it("are cleaned when they come in the stream", async () => {
+    expectSafe(await streamed(() => new Response(`data: ${JSON.stringify(body)}\n\n`)));
+  });
+
+  it("are cleaned for the model list and the balance", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse(body, 500));
+    expectSafe(await listModels(api, { fetch }).catch((error: unknown) => error));
+    const balance = await getBalance(api, fetch);
+    expect(JSON.stringify(balance)).not.toContain("sk-secret-1");
+    const html = fakeFetch(() => new Response("sk-secret-1 is not JSON"));
+    const broken = await listModels(api, { fetch: html.fetch }).catch((error: unknown) => error);
+    expect(broken).toBeInstanceOf(SyntaxError);
+    expect(String(broken)).not.toContain("sk-secret-1");
+  });
+
+  it("leaves a placeholder key and a stop alone", () => {
+    const plain = new Error("a key");
+    expect(safeError(plain, { apiKey: "key" })).toBe(plain);
+    const stop = new DOMException("stopped", "AbortError");
+    expect(safeError(stop, api)).toBe(stop);
   });
 });

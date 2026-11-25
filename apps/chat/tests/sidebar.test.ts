@@ -3,7 +3,16 @@ import { blankChat } from "../src/chat/chats";
 import { createMemoryStore } from "../src/chat/store";
 import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
-import { createAppState, replaceChat, setChats, setCurrentChat, type AppState } from "../src/state";
+import {
+  createAppState,
+  removeChat,
+  replaceChat,
+  setChats,
+  setCurrentChat,
+  setSettings,
+  updateChat,
+  type AppState,
+} from "../src/state";
 import type { Chat, ChatMessage, ChatStore, Folder, VideoAttachment } from "../src/types";
 import { initSidebar, type SidebarDeps } from "../src/ui/shell/sidebar";
 import { initToast } from "../src/ui/shared/toast";
@@ -15,6 +24,10 @@ const SETTINGS = {
   ...DEFAULT_SETTINGS,
   baseUrl: "http://localhost:1234/v1",
   defaultModelId: "qwen3-6-27b",
+};
+const EYES_BY_DEFAULT = {
+  defaultLookingModelId: "eyes",
+  defaultLookingBaseUrl: SETTINGS.baseUrl,
 };
 
 let els: AppElements;
@@ -131,6 +144,34 @@ describe("initSidebar", () => {
     await vi.waitFor(() => expect(spies.onOpen).toHaveBeenCalledWith("chat-1"));
     expect(titles()).toEqual(["New chat", "Old chat"]);
     expect((await store.getChat("chat-1"))?.settings.modelId).toBe("qwen3-6-27b");
+  });
+
+  it("gives a new chat the default looking model", async () => {
+    setSettings(state, { ...state.settings, ...EYES_BY_DEFAULT });
+    initSidebar(els, state, deps);
+    els.sidebar.newChatButton.click();
+    await vi.waitFor(() => expect(spies.onOpen).toHaveBeenCalledWith("chat-1"));
+    expect((await store.getChat("chat-1"))?.settings.lookingModelId).toBe("eyes");
+  });
+
+  it("gives a reused empty chat the default looking model of now", async () => {
+    const onChatChanged = vi.fn();
+    deps.onChatChanged = onChatChanged;
+    await seed("old", 1, "Old chat");
+    setSettings(state, {
+      ...state.settings,
+      defaultLookingModelId: "eyes",
+      defaultLookingBaseUrl: "http://localhost:5001/v1",
+      lookingBaseUrl: "http://localhost:5001/v1",
+    });
+    initSidebar(els, state, deps);
+    els.sidebar.newChatButton.click();
+    await vi.waitFor(() => expect(spies.onOpen).toHaveBeenCalledWith("old"));
+    expect((await store.getChat("old"))?.settings).toMatchObject({
+      lookingModelId: "eyes",
+      lookingBaseUrl: "http://localhost:5001/v1",
+    });
+    expect(onChatChanged).toHaveBeenCalled();
   });
 
   it("renames a chat inline and saves the new title", async () => {
@@ -343,6 +384,115 @@ describe("new chat reuse", () => {
     els.sidebar.newChatButton.click();
     await vi.waitFor(() => expect(spies.onOpen).toHaveBeenCalledWith("empty"));
     expect(state.chats).toHaveLength(2);
+  });
+
+  it("makes a new chat rather than reuse one deleted in another tab", async () => {
+    await seed("gone", 1, "New chat");
+    await seed("open", 2, "New chat");
+    setCurrentChat(state, state.chats.find(({ id }) => id === "open") ?? null, []);
+    await store.deleteChat("gone");
+    await store.deleteChat("open");
+    setSettings(state, { ...state.settings, ...EYES_BY_DEFAULT });
+    const show = vi.fn();
+    initSidebar(els, state, { ...deps, status: { ...deps.status, show } });
+    els.sidebar.newChatButton.click();
+    await vi.waitFor(() => expect(spies.onOpen).toHaveBeenCalledWith("chat-1"));
+    expect((await store.listChats()).map(({ id }) => id)).toEqual(["chat-1"]);
+    expect(spies.onFocusComposer).not.toHaveBeenCalled();
+    expect(show).not.toHaveBeenCalled();
+  });
+
+  it("does not take the open chat for empty once another tab has written in it", async () => {
+    await seed("open", 1, "New chat");
+    const open = state.chats[0] ?? null;
+    setCurrentChat(state, open, []);
+    const hello = { id: "m", createdAt: 1, role: "user" as const, text: "hi", images: [] };
+    await store.putMessage("open", hello);
+    setSettings(state, { ...state.settings, ...EYES_BY_DEFAULT });
+    initSidebar(els, state, deps);
+    els.sidebar.newChatButton.click();
+    await vi.waitFor(() => expect(spies.onOpen).toHaveBeenCalledWith("chat-1"));
+    expect((await store.getChat("open"))?.settings).toEqual(open?.settings);
+    expect(state.currentChat?.settings).toEqual(open?.settings);
+  });
+
+  describe("with a chat changed here while its messages are read", () => {
+    async function pressNewWhile(change: () => Promise<void>): Promise<void> {
+      await seed("empty", 1, "New chat");
+      setSettings(state, { ...state.settings, ...EYES_BY_DEFAULT });
+      const listMessages = store.listMessages.bind(store);
+      store.listMessages = async (id) => {
+        const messages = await listMessages(id);
+        await change();
+        return messages;
+      };
+      initSidebar(els, state, deps);
+      els.sidebar.newChatButton.click();
+    }
+
+    const changeEmpty = (change: Partial<Chat>) => () =>
+      updateChat(state, store, "empty", (chat) => ({ ...chat, ...change })).then(() => undefined);
+
+    it("keeps its new name", async () => {
+      await pressNewWhile(changeEmpty({ title: "Renamed" }));
+      await vi.waitFor(() => expect(spies.onOpen).toHaveBeenCalledWith("empty"));
+      expect(state.chats).toMatchObject([
+        { title: "Renamed", settings: { lookingModelId: "eyes" } },
+      ]);
+      expect(await store.getChat("empty")).toEqual(state.chats[0]);
+    });
+
+    it("does not list it again once deleted", async () => {
+      await pressNewWhile(async () => {
+        removeChat(state, "empty");
+        await store.deleteChat("empty");
+      });
+      await vi.waitFor(() => expect(spies.onOpen).toHaveBeenCalledWith("chat-1"));
+      expect(state.chats.map(({ id }) => id)).toEqual(["chat-1"]);
+    });
+
+    it("does not reuse it once it has a video", async () => {
+      const video = { name: "v", fileKey: "k", durationSeconds: 1, width: 1, height: 1 };
+      await pressNewWhile(changeEmpty({ video }));
+      await vi.waitFor(() => expect(spies.onOpen).toHaveBeenCalledWith("chat-1"));
+      expect(await store.getChat("empty")).toMatchObject({ video });
+      expect((await store.getChat("empty"))?.settings).not.toHaveProperty("lookingModelId");
+    });
+  });
+
+  it("makes a new chat rather than reuse one whose looking server is gone", async () => {
+    const gone = blankChat(SETTINGS.defaultModelId, "x", 1, "eyes", "http://gone:1/v1").settings;
+    await seed("other", 1, "New chat", { settings: gone });
+    await seed("open", 2, "New chat", { settings: gone });
+    setCurrentChat(state, state.chats.find(({ id }) => id === "open") ?? null, []);
+    initSidebar(els, state, deps);
+    els.sidebar.newChatButton.click();
+    await vi.waitFor(() => expect(spies.onOpen).toHaveBeenCalledWith("chat-1"));
+    expect(spies.onFocusComposer).not.toHaveBeenCalled();
+    expect((await store.getChat("chat-1"))?.settings).not.toHaveProperty("lookingModelId");
+    for (const id of ["open", "other"]) {
+      expect((await store.getChat(id))?.settings).toEqual(gone);
+    }
+    setSettings(state, { ...state.settings, ...EYES_BY_DEFAULT });
+    els.sidebar.newChatButton.click();
+    await vi.waitFor(() => expect(spies.onFocusComposer).toHaveBeenCalled());
+    expect((await store.getChat("open"))?.settings.lookingBaseUrl).toBe(SETTINGS.baseUrl);
+  });
+
+  it("keeps what another tab gave an empty chat it reuses", async () => {
+    await seed("a", 1, "New chat");
+    setCurrentChat(state, state.chats[0] ?? null, []);
+    const here = await store.getChat("a");
+    if (!here) throw new Error("No chat");
+    await store.putChat({ ...here, title: "Named there" });
+    setSettings(state, { ...state.settings, ...EYES_BY_DEFAULT });
+    initSidebar(els, state, deps);
+    els.sidebar.newChatButton.click();
+    await vi.waitFor(() => expect(spies.onFocusComposer).toHaveBeenCalled());
+    expect(await store.getChat("a")).toMatchObject({
+      title: "Named there",
+      settings: { lookingModelId: "eyes" },
+    });
   });
 
   it("opens settings from the sidebar", () => {
