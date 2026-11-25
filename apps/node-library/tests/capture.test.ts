@@ -78,11 +78,6 @@ function ffmpegProcesses(): ChildProcess[] {
   return spawned.filter((child) => child.spawnfile === ffmpegPath);
 }
 
-// Linux's ffmpeg crashes seeking in MPEG-TS, and captures then start again without a seek.
-function didNotCrash(child: ChildProcess): boolean {
-  return child.killed || child.signalCode === null;
-}
-
 beforeEach(() => {
   spawned.length = 0;
   dying.when = () => false;
@@ -453,8 +448,8 @@ const SPARSE_CASES: SparseCase[] = [
   },
   { name: "one keyframe", clip: () => encodeClip("single.mp4", ["-g", "9999"]), seeks: false },
   {
-    name: "seeks that land between keyframes",
-    clip: () => remux(closedMp4, "stream.ts", [], []),
+    name: "seeks that land at no known time",
+    clip: () => remux(closedMp4, "stream.avi", [], []),
     seeks: false,
   },
 ];
@@ -472,7 +467,7 @@ describe("captureFrames on a sparse plan", () => {
     const path = clip();
     const frames = await captureAll(path, planAt(times), ANY_INFO);
 
-    expect(ffmpegProcesses().filter(didNotCrash).length > 1).toBe(seeks);
+    expect(ffmpegProcesses().length > 1).toBe(seeks);
     expect(frames).toHaveLength(times.length);
     expect(picked(frames)).toEqual(picked(await captureDecodingThrough(path, times)));
   });

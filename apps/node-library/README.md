@@ -87,6 +87,8 @@ The library also exports:
 - A sparse plan decodes straight through, which is slow on a long video, when
   a seek does not land on a keyframe with a known time (MPEG-TS, AVI) or the
   video has too few keyframes to skip to.
+- On Linux, the bundled ffmpeg can crash opening an MPEG-TS file. Remux it to MP4
+  or MKV first.
 - A file with no seek index (MKV without cues, FLV) is read from its start on
   every seek. Once seeks take longer than decoding the video they skip, the
   rest is decoded straight through.
