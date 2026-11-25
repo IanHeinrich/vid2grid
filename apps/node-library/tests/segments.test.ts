@@ -13,15 +13,20 @@ function landingsEvery(gopSeconds: number, planned: number[]): Map<number, numbe
 }
 
 describe("minSkippedSeconds", () => {
+  const atRate = (framesPerSecond: number | undefined) =>
+    minSkippedSeconds({ framesPerSecond, isFlv: false });
+
   it("asks for more seconds the fewer frames they hold", () => {
-    expect(minSkippedSeconds(60)).toBe(5);
-    expect(minSkippedSeconds(30)).toBe(5);
-    expect(minSkippedSeconds(10)).toBe(15);
-    expect(minSkippedSeconds(1)).toBe(150);
+    expect([60, 30, 10, 1].map(atRate)).toEqual([5, 5, 15, 150]);
   });
 
   it("goes by seconds alone when the frame rate is unknown", () => {
-    expect(minSkippedSeconds(undefined)).toBe(MIN_SKIPPED_SECONDS);
+    expect(atRate(undefined)).toBe(MIN_SKIPPED_SECONDS);
+  });
+
+  it("asks for more of FLV", () => {
+    expect(minSkippedSeconds({ framesPerSecond: 30, isFlv: true })).toBe(30);
+    expect(minSkippedSeconds({ framesPerSecond: 1, isFlv: true })).toBe(150);
   });
 });
 

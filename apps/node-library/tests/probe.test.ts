@@ -124,13 +124,24 @@ describe("readSeekLandings", () => {
 describe("readSeekFacts", () => {
   it("reads the frame rate, and that mov seeks are not backed off", async () => {
     const facts = await readSeekFacts(fixtureVideo("keyframes-20s.mp4"));
-    expect(facts).toEqual({ startsWithPts: true, framesPerSecond: 10, backOffSeconds: 0 });
+    expect(facts).toEqual({
+      startsWithPts: true,
+      framesPerSecond: 10,
+      isFlv: false,
+      backOffSeconds: 0,
+    });
   });
 
   it("allows for ffmpeg backing seeks off in other containers", async () => {
     const matroska = join(scratch, "facts.mkv");
     ffmpeg(["-i", fixtureVideo("keyframes-20s.mp4"), "-c", "copy", matroska]);
     expect(await readSeekFacts(matroska)).toMatchObject({ backOffSeconds: 0.131 });
+  });
+
+  it("tells an FLV", async () => {
+    const flv = join(scratch, "facts.flv");
+    ffmpeg(["-i", fixtureVideo("keyframes-20s.mp4"), "-c", "copy", flv]);
+    expect(await readSeekFacts(flv)).toMatchObject({ isFlv: true });
   });
 
   it("tells when the first packet has no pts", async () => {

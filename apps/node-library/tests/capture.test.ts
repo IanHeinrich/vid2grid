@@ -18,14 +18,13 @@ import {
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { captureFrames, type RgbaFrame } from "../src/capture";
 import { probeVideo, readKeyframeTimes } from "../src/probe";
-import type * as SeekJudgeModule from "../src/seekJudge";
 import { fixtureVideo } from "../../../packages/core/tests/fixturePaths";
 
 const TINY_MP4 = fixtureVideo("tiny.mp4");
 const KEYFRAMES_MP4 = fixtureVideo("keyframes-20s.mp4");
 
 const spawned = vi.hoisted((): ChildProcess[] => []);
-// Says which spawns to replace with a process that dies on a signal.
+// Says which spawns to replace with a process that crashes.
 const dying = vi.hoisted((): { when: (file: string, args: string[]) => boolean } => ({
   when: () => false,
 }));
@@ -41,22 +40,6 @@ vi.mock("node:child_process", async (importOriginal) => {
     return child;
   };
   return { ...actual, spawn };
-});
-
-// The seek, counting from 1, at which decoding straight through is tried, and how that goes.
-const tries = vi.hoisted(() => ({ atSeek: Infinity, decodingWins: true, measured: 0 }));
-
-vi.mock("../src/seekJudge", async (importOriginal) => {
-  const actual = await importOriginal<typeof SeekJudgeModule>();
-  const createSeekJudge: typeof actual.createSeekJudge = () => {
-    let seeks = 0;
-    return {
-      seekTook: () => ++seeks === tries.atSeek,
-      decoded: (videoSeconds) => (tries.measured += videoSeconds),
-      decodingWon: () => tries.decodingWins,
-    };
-  };
-  return { ...actual, createSeekJudge };
 });
 
 function dyingProcess(file: string, args: string[]): ChildProcess {
@@ -78,15 +61,9 @@ function ffmpegProcesses(): ChildProcess[] {
   return spawned.filter((child) => child.spawnfile === ffmpegPath);
 }
 
-// Linux's ffmpeg crashes seeking in MPEG-TS, and captures then start again without a seek.
-function didNotCrash(child: ChildProcess): boolean {
-  return child.killed || child.signalCode === null;
-}
-
 beforeEach(() => {
   spawned.length = 0;
   dying.when = () => false;
-  Object.assign(tries, { atSeek: Infinity, decodingWins: true, measured: 0 });
 });
 
 let scratch: string;
@@ -453,8 +430,8 @@ const SPARSE_CASES: SparseCase[] = [
   },
   { name: "one keyframe", clip: () => encodeClip("single.mp4", ["-g", "9999"]), seeks: false },
   {
-    name: "seeks that land between keyframes",
-    clip: () => remux(closedMp4, "stream.ts", [], []),
+    name: "seeks that land at no known time",
+    clip: () => remux(closedMp4, "stream.avi", [], []),
     seeks: false,
   },
 ];
@@ -472,7 +449,7 @@ describe("captureFrames on a sparse plan", () => {
     const path = clip();
     const frames = await captureAll(path, planAt(times), ANY_INFO);
 
-    expect(ffmpegProcesses().filter(didNotCrash).length > 1).toBe(seeks);
+    expect(ffmpegProcesses().length > 1).toBe(seeks);
     expect(frames).toHaveLength(times.length);
     expect(picked(frames)).toEqual(picked(await captureDecodingThrough(path, times)));
   });
@@ -487,34 +464,12 @@ describe("captureFrames on a sparse plan", () => {
     expect(picked(frames)).toEqual(picked(await captureDecodingThrough(path, SPARSE_TIMES)));
   });
 
-  // Each seek starts a process, and so does the plan itself.
-  it.each([
-    { atSeek: 1, decodingWins: true, processes: 2 },
-    { atSeek: 2, decodingWins: true, processes: 3 },
-    { atSeek: 1, decodingWins: false, processes: 3 },
-    { atSeek: 2, decodingWins: false, processes: 3 },
-    { atSeek: 3, decodingWins: true, processes: 4 },
-  ])("picks the same frames with a try at decoding on: %o", async ({ processes, ...tried }) => {
-    Object.assign(tries, tried);
-    const frames = await captureAll(closedMp4, planAt(SPARSE_TIMES), ANY_INFO);
+  it("seeks less readily in FLV, which has no seek index", async () => {
+    const flv = remux(closedMp4, "closed.flv", [], []);
+    const frames = await captureAll(flv, planAt(SPARSE_TIMES), ANY_INFO);
 
-    expect(ffmpegProcesses()).toHaveLength(processes);
-    expect(picked(frames)).toEqual(picked(await captureDecodingThrough(closedMp4, SPARSE_TIMES)));
-  });
-
-  it("measures a try from the segment's own last frame to the next segment's first", async () => {
-    Object.assign(tries, { atSeek: 1, decodingWins: false });
-    await captureAll(closedMp4, planAt([0, 8, 16]), ANY_INFO);
-
-    expect(tries.measured).toBeCloseTo(8, 0);
-  });
-
-  it("ends where the stream does when decoding on", async () => {
-    tries.atSeek = 1;
-    const frames = await captureAll(closedMp4, planAt([0, 8, 16, 24, 40, 48]), ANY_INFO);
-
-    expect(frames.map((frame) => frame.decodedTimestampSeconds)).toEqual([0, 8, 16, 24]);
-    expect(ffmpegProcesses()).toHaveLength(2);
+    expect(ffmpegProcesses()).toHaveLength(1);
+    expect(picked(frames)).toEqual(picked(await captureDecodingThrough(flv, SPARSE_TIMES)));
   });
 
   it("picks the frames a full decode does on keyframes-20s.mp4", async () => {
@@ -550,7 +505,7 @@ function seeks(args: string[]): boolean {
   return args.includes("-ss");
 }
 
-describe("captureFrames when a seeking process dies on a signal", () => {
+describe("captureFrames when a seeking process crashes", () => {
   const isProbe = (file: string) => file !== ffmpegPath;
 
   async function expectFullDecodeFrames(frames: RgbaFrame[]): Promise<void> {

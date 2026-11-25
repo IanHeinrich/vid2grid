@@ -11,7 +11,7 @@ import {
   type VideoInfo,
 } from "@vid2grid/core";
 import { onAbort, throwIfAborted } from "./abort";
-import { diedOnSignal, exitFailure } from "./processExit";
+import { exitFailure, isCrash } from "./processExit";
 
 interface FfprobeStream {
   width?: number;
@@ -38,7 +38,9 @@ interface Packet {
 export interface SeekFacts {
   // False when the first packet has no pts: ffmpeg then makes up times a seek would not.
   startsWithPts: boolean;
+  // Undefined when ffprobe does not know it.
   framesPerSecond: number | undefined;
+  isFlv: boolean;
   // How much earlier than asked ffmpeg may seek.
   backOffSeconds: number;
 }
@@ -89,13 +91,13 @@ export async function readSeekFacts(path: string, signal?: AbortSignalLike): Pro
   const entries = "packet=pts:stream=avg_frame_rate:format=format_name";
   const query = ["-read_intervals", "%+#1", "-show_entries", entries];
   const { packets, streams, format } = await readJson(path, query, signal);
-  // "0/0" when ffprobe does not know it.
   const rate = parseRatio(streams?.[0]?.avg_frame_rate, "/");
-  const seeksByPts = format?.format_name?.split(",").includes("mov") === true;
+  const formatNames = format?.format_name?.split(",") ?? [];
   return {
     startsWithPts: packets?.[0]?.pts !== undefined,
     framesPerSecond: rate ? rate.numerator / rate.denominator : undefined,
-    backOffSeconds: seeksByPts ? 0 : DECODE_TIME_BACK_OFF_SECONDS,
+    isFlv: formatNames.includes("flv"),
+    backOffSeconds: formatNames.includes("mov") ? 0 : DECODE_TIME_BACK_OFF_SECONDS,
   };
 }
 
@@ -134,7 +136,7 @@ async function readPacketAtEach(
     return await readPackets(path, ["-read_intervals", intervals], () => true, signal);
   } catch (error) {
     // Some ffprobe builds crash seeking in some containers; those seeks have no landing.
-    if (diedOnSignal(error)) return [];
+    if (isCrash(error)) return [];
     throw error;
   }
 }
