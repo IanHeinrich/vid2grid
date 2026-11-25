@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { listModels } from "../src/api/client";
 import { VENICE_BASE_URL } from "../src/api/venice";
-import { withNewChatDefaults } from "../src/app/chatDefaults";
+import { followDefaults, withNewChatDefaults } from "../src/app/chatDefaults";
 import { sendBlocker } from "../src/app/sendBlocker";
 import { createModelList, shouldLoadModels, type ModelListDeps } from "../src/app/modelList";
 import { blankChat } from "../src/chat/chats";
@@ -9,6 +9,7 @@ import { createMemoryStore } from "../src/chat/store";
 import { DEFAULT_SETTINGS, type GlobalSettings } from "../src/settings";
 import {
   createAppState,
+  removeChat,
   replaceChat,
   setChats,
   setCurrentChat,
@@ -375,6 +376,27 @@ describe("an empty chat and the defaults", () => {
       expect((await deps.store.getChat("chat"))?.settings).toEqual(shown.settings);
       expect(deps.state.currentChat?.settings).toEqual(shown.settings);
     });
+  });
+
+  it("starts from the chat as it is listed, and lists none that has gone", async () => {
+    deps.state = createAppState(LOOKING);
+    setModels(deps.state, [blind, sees]);
+    const stale = blankChat("sees", "chat", 1);
+    const renamed = { ...stale, title: "Renamed" };
+    await deps.store.putChat(renamed);
+    setCurrentChat(deps.state, stale, []);
+    expect(await followDefaults(deps.state, deps.store, "chat", true)).toBe(false);
+    expect(deps.state.chats).toEqual([]);
+    expect(await deps.store.getChat("chat")).toEqual(renamed);
+    setChats(deps.state, [renamed]);
+    expect(await followDefaults(deps.state, deps.store, "chat", true)).toBe(true);
+    expect(deps.state.chats).toMatchObject([
+      { title: "Renamed", settings: { lookingModelId: "eyes" } },
+    ]);
+    const following = followDefaults(deps.state, deps.store, "chat", true);
+    removeChat(deps.state, "chat");
+    expect(await following).toBe(false);
+    expect(deps.state.chats).toEqual([]);
   });
 
   it("leaves a setting changed here while the defaults were saved", async () => {

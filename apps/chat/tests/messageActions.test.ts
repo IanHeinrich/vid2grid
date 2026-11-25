@@ -492,22 +492,27 @@ describe("checking timestamps with a looking model", () => {
     confirm.mockReset();
   });
 
-  function openLooking(server: string, audio: boolean): void {
+  function openLooking(server: string, audioOn?: string): void {
     const settings = {
       ...{ ...DEFAULT_SETTINGS, baseUrl: local },
       ...{ lookingBaseUrl: own, apiKeys: { [own]: "key" } },
     };
     const looking = blankChat("model", "chat", 1, "eyes", server);
     const messages = state.messages.map((message) =>
-      message.id === "U2" && audio ? { ...message, audio: true as const } : message,
+      message.role === "user" && message.id === audioOn
+        ? { ...message, audio: true as const }
+        : message,
     );
     state = createAppState(settings);
     replaceChat(state, looking);
     setCurrentChat(state, looking, messages);
   }
 
-  it("asks first when heard words could go to another server, and sends nothing if refused", async () => {
-    openLooking(own, true);
+  it.each([
+    ["the message it answers", "U2"],
+    ["an earlier message", "U1"],
+  ])("asks first when Audio was on for %s, and sends nothing if refused", async (_which, id) => {
+    openLooking(own, id);
     const sent = vi.fn<StreamChat>(replyWith("1: confirmed: the door is open"));
     streamChat = sent;
     confirm.mockReturnValueOnce(false).mockReturnValueOnce(true);
@@ -521,16 +526,17 @@ describe("checking timestamps with a looking model", () => {
   });
 
   it.each([
-    ["its looking model is on the chat's own server", local, true],
-    ["Audio was off", own, false],
-  ])("asks nothing when %s", async (_what, server, audio) => {
-    openLooking(server, audio);
+    ["its looking model is on the chat's own server", local, "U2"],
+    ["Audio was off", own, undefined],
+    ["Audio was only on for a later message", own, "U3"],
+  ])("asks nothing when %s", async (_what, server, audioOn) => {
+    openLooking(server, audioOn);
     expect(await setup().verify(claimed, new AbortController().signal)).toBeDefined();
     expect(confirm).not.toHaveBeenCalled();
   });
 
   it("sends the frames to it on its own connection", async () => {
-    openLooking(own, false);
+    openLooking(own);
     const requests: ChatRequest[] = [];
     const reply = replyWith("1: confirmed: the door is open", requests);
     const apis: ApiSettings[] = [];

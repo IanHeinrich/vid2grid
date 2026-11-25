@@ -47,23 +47,26 @@ function sameSettings(a: ChatSettings, b: ChatSettings): boolean {
 export async function followDefaults(
   state: AppState,
   store: Pick<ChatStore, "changeChat">,
-  chat: Chat,
+  chatId: string,
   empty: boolean,
 ): Promise<boolean> {
+  const current = () => state.chats.find((entry) => entry.id === chatId);
+  const chat = current();
+  if (!chat) return false;
   const shown = withNewChatDefaults(state, chat, empty);
   if (shown !== chat) replaceChat(state, shown);
   let used = false;
-  const saved = await store.changeChat(chat.id, (stored, hasMessages) => {
+  const saved = await store.changeChat(chatId, (stored, hasMessages) => {
     used = hasMessages;
     return withNewChatDefaults(state, stored, empty && !hasMessages);
   });
   const { settings } = saved ?? chat;
-  const latest = state.chats.find((entry) => entry.id === chat.id);
+  const latest = current();
   // Left as it is when the user has changed it since.
   if (latest?.settings === shown.settings && !sameSettings(shown.settings, settings)) {
     replaceChat(state, { ...latest, settings });
   }
-  return saved !== undefined && !(empty && used);
+  return saved !== undefined && latest !== undefined && !(empty && used);
 }
 
 function modelFor(state: Defaults, looking: boolean): string {

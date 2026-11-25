@@ -152,10 +152,10 @@ function lookingChanged(previous: GlobalSettings, settings: GlobalSettings): boo
 export function fillChatModel(deps: FillChatModelDeps): void {
   const { state, store, status } = deps;
   const chat = state.currentChat;
-  if (!chat || !state.chats.some((entry) => entry.id === chat.id)) return;
+  if (!chat) return;
   const empty = state.messages.length === 0 && !isRunningIn(state, chat.id);
   if (withNewChatDefaults(state, chat, empty) === chat) return;
-  followDefaults(state, store, chat, empty).then(
+  followDefaults(state, store, chat.id, empty).then(
     () => deps.refresh(),
     (error: unknown) =>
       status.show(`Could not save the chat's model: ${errorText(error)}`, "error"),

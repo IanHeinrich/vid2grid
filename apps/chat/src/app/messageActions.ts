@@ -291,10 +291,10 @@ async function loadImage(store: ImageStore, ref: ImageRef): Promise<string> {
   return blobToDataUrl(blob);
 }
 
-function askedWithAudio(messages: readonly ChatMessage[], reply: AssistantMessage): boolean {
+// What was heard for an earlier message is still in what the writer read for a later one.
+function followsAudio(messages: readonly ChatMessage[], reply: AssistantMessage): boolean {
   const at = messages.findIndex((entry) => entry.id === reply.id);
-  const asked = messages.slice(0, at).filter((entry) => entry.role === "user");
-  return asked.at(-1)?.audio === true;
+  return messages.slice(0, at).some((entry) => entry.role === "user" && entry.audio === true);
 }
 
 // What was heard can be in the sentences to check, and the looking model is otherwise never sent it.
@@ -304,7 +304,7 @@ function refusedCheck(
   reply: AssistantMessage,
 ): boolean {
   const host = otherLookingHost(state, chat);
-  if (host === undefined || !askedWithAudio(state.messages, reply)) return false;
+  if (host === undefined || !followsAudio(state.messages, reply)) return false;
   return !deps.confirm(
     `The sentences to check, which can repeat what was heard, will be sent to ${host}. Check them?`,
   );
