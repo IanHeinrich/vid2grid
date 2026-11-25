@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   BACKUP_FORMAT,
   BACKUP_VERSION,
@@ -119,6 +119,22 @@ describe("chatToMarkdown", () => {
     const markdown = chatToMarkdown(chat("c"), [swiped, ...messages.slice(1)]);
     expect(markdown).toContain("At [1:10] she leaves.");
     expect(markdown).not.toContain("Old reply.");
+  });
+
+  it("says how far the transcript sent with a message went", () => {
+    const transcript = { fileKey: video.fileKey, spans: [{ startSeconds: 0, endSeconds: 125 }] };
+    const sent: ChatMessage = {
+      id: "u1",
+      createdAt: 1,
+      role: "user",
+      text: "What is said?",
+      images: [],
+      audio: true,
+      transcript,
+    };
+    expect(chatToMarkdown(chat("c"), [sent])).toContain(
+      "What is said?\n\n_Transcript to 2:05 sent_",
+    );
   });
 
   it("writes a readable transcript", () => {
@@ -293,6 +309,36 @@ describe("importBackup", () => {
   });
 });
 
+describe("importing while another tab deletes chats", () => {
+  it("leaves out a chat deleted meanwhile and restores the rest", async () => {
+    const { store } = await seededStore();
+    await store.putChat({ ...chat("c2"), updatedAt: 0 });
+    await store.putMessage("c2", { id: "m", createdAt: 1, role: "user", text: "hi", images: [] });
+    const blob = await asFile(await exportBackup(store));
+    const target = createMemoryStore();
+    const putMessage = target.putMessage.bind(target);
+    target.putMessage = async (chatId, message) => {
+      await putMessage(chatId, message);
+      if (chatId === "c1") await target.deleteChat("c1");
+    };
+    const letGo = vi.fn();
+    const counts = await importBackup(target, blob, { hold: () => ({ letGo }) });
+    expect(counts).toMatchObject({ chats: 1, messages: 1, timelines: 1 });
+    expect((await target.listChats()).map(({ id }) => id)).toEqual(["c2"]);
+    expect(await target.listMessages("c1")).toEqual([]);
+    expect(await target.listMessages("c2")).toHaveLength(1);
+    expect(letGo).toHaveBeenCalledTimes(1);
+  });
+
+  it("still stops when a message of a chat that is there cannot be saved", async () => {
+    const { store } = await seededStore();
+    const blob = await asFile(await exportBackup(store));
+    const target = createMemoryStore();
+    target.putMessage = () => Promise.reject(new Error("Disk full"));
+    await expect(importBackup(target, blob)).rejects.toThrow("Disk full");
+  });
+});
+
 describe("importing malformed backups", () => {
   it("rejects malformed files with a clear message", async () => {
     const store = createMemoryStore();
@@ -411,6 +457,36 @@ describe("backups with casts and earlier videos", () => {
     expect(await target.getTimeline(earlierVideo.fileKey)).toBeDefined();
     expect(await target.getCast("unrelated")).toBeUndefined();
     expect(await target.getTimeline("unrelated")).toBeUndefined();
+  });
+
+  it("round-trips a removed video no message names and what is known about it", async () => {
+    const source = createMemoryStore();
+    const removedVideos = [{ video: earlierVideo, throughCreatedAt: 1 }];
+    const bare: Chat = { ...chat("c1"), removedVideos };
+    delete bare.video;
+    await source.putChat(bare);
+    await source.putTimeline({ ...timeline, fileKey: earlierVideo.fileKey });
+    const target = createMemoryStore();
+    const counts = await importBackup(target, await asFile(await exportBackup(source)));
+    expect(counts).toMatchObject({ timelines: 1 });
+    expect((await target.getChat("c1"))?.removedVideos).toEqual(removedVideos);
+  });
+
+  it("round-trips a removed video's message and what is known about it", async () => {
+    const source = await storeWithTwoVideos();
+    const removed: ChatMessage = {
+      id: "u0",
+      createdAt: 0,
+      role: "user",
+      text: "First clip.",
+      images: [],
+      removedVideo: earlierVideo,
+    };
+    await source.putMessage("c1", removed);
+    const target = createMemoryStore();
+    const counts = await importBackup(target, await asFile(await exportBackup(source)));
+    expect(counts).toMatchObject({ timelines: 2, casts: 2 });
+    expect(await target.listMessages("c1")).toEqual([removed]);
   });
 
   it("keeps a cast already in the store", async () => {

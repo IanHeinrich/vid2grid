@@ -1,5 +1,7 @@
 import { messageThoroughness } from "../../chat/thoroughness";
-import type { AssistantMessage, UserMessage } from "../../types";
+import { sentSpans, transcriptSentText } from "../../chat/transcript";
+import { spanListText } from "../../time";
+import type { AssistantMessage, SentTranscript, UserMessage } from "../../types";
 import { editKeys, pinToggle, smallButton } from "../shared/buttons";
 import { answerOf } from "./activity";
 import { imageCaption } from "./captions";
@@ -14,11 +16,11 @@ import {
   type Entry,
   type TurnView,
 } from "./context";
-import { focusWithin } from "./focus";
+import { focusWithin, replaceKeepingFocus } from "./focus";
 import { renderMarkdownInto } from "./markdown";
 import { branchButton, copyButton, deleteButton, editButton } from "./replyControls";
 import { thumbnail, togglePin } from "./thumbnails";
-import { videoSlotFor } from "./videoSlot";
+import { removedVideoLine, videoSlotFor } from "./videoSlot";
 
 const EMPTY_REPLY_HINT = "A reply needs some text. Cancel keeps the old one.";
 const THOROUGHNESS_TAGS = { thorough: "Thorough", exhaustive: "Exhaustive" } as const;
@@ -26,12 +28,16 @@ const THOROUGHNESS_TAGS = { thorough: "Thorough", exhaustive: "Exhaustive" } as 
 export function renderUser(ctx: ConversationContext, turn: TurnView): void {
   const message = turn.user;
   const previous = turn.userEntry;
-  if (!message || !previous || ctx.editor?.id === message.id) return;
+  if (!message || !previous) return;
+  if (ctx.editor?.id === message.id) {
+    refreshVideo(ctx, previous.el, message);
+    return;
+  }
   dispose(previous);
   const entry = message.continuation
     ? continuationMarker(ctx, message)
     : userElement(ctx, message, () => renderUser(ctx, turn));
-  previous.el.replaceWith(entry.el);
+  replaceKeepingFocus(previous.el, entry.el);
   turn.userEntry = entry;
 }
 
@@ -39,7 +45,9 @@ function continuationMarker(ctx: ConversationContext, message: UserMessage): Ent
   const entry = newEntry("li", "message continuation-marker");
   const label = document.createElement("span");
   label.textContent = "↻ Kept going";
-  entry.el.append(label, deleteButton(ctx, message));
+  entry.el.append(label);
+  if (message.transcript) entry.el.append(transcriptTag(message.transcript));
+  entry.el.append(deleteButton(ctx, message));
   return entry;
 }
 
@@ -47,6 +55,12 @@ function messageTag(className: string, text: string): HTMLSpanElement {
   const tag = document.createElement("span");
   tag.className = className;
   tag.textContent = text;
+  return tag;
+}
+
+function transcriptTag(transcript: SentTranscript): HTMLSpanElement {
+  const tag = messageTag("transcript-tag", transcriptSentText(transcript));
+  tag.title = `The speech heard from ${spanListText(sentSpans(transcript))} was given to the model as text`;
   return tag;
 }
 
@@ -65,7 +79,9 @@ function userElement(ctx: ConversationContext, message: UserMessage, rerender: (
     tag.title = "The model could read what is heard in the video";
     entry.el.append(tag);
   }
-  if (message.video) entry.el.append(videoSlotFor(ctx, message.id, message.video));
+  if (message.transcript) entry.el.append(transcriptTag(message.transcript));
+  const video = videoPart(ctx, message);
+  if (video) entry.el.append(video);
   if (message.text !== "") {
     const text = document.createElement("div");
     text.className = "message-text";
@@ -87,6 +103,20 @@ function userElement(ctx: ConversationContext, message: UserMessage, rerender: (
   );
   entry.el.append(actions);
   return entry;
+}
+
+function videoPart(ctx: ConversationContext, message: UserMessage): HTMLElement | undefined {
+  if (message.video) return videoSlotFor(ctx, message.id, message.video);
+  return message.removedVideo && removedVideoLine(message.removedVideo);
+}
+
+// All of an edited message that changes under its editor. A slot that stays keeps playing.
+function refreshVideo(ctx: ConversationContext, el: HTMLElement, message: UserMessage): void {
+  const slot = ctx.videoSlots.get(message.id);
+  if (slot && slot.video.fileKey === message.video?.fileKey) return;
+  ctx.videoSlots.delete(message.id);
+  const part = videoPart(ctx, message);
+  if (part) el.querySelector(".inline-video")?.replaceWith(part);
 }
 
 function userThumbs(ctx: ConversationContext, entry: Entry, message: UserMessage): HTMLElement {
@@ -127,6 +157,20 @@ export function reopenEditor(ctx: ConversationContext, draft: Draft): void {
   }
 }
 
+// Those that cannot open yet wait for the open editor to close or for their chat to be shown.
+export function reopenUnsaved(ctx: ConversationContext, focused: boolean): void {
+  for (const [id, text] of ctx.unsavedEdits) {
+    if (ctx.editor) return;
+    reopenEditor(ctx, { id, text, focused });
+  }
+}
+
+function keepUnsaved(ctx: ConversationContext, id: string, text: string): void {
+  ctx.unsavedEdits.set(id, text);
+  ctx.pendingFocus = null;
+  reopenUnsaved(ctx, true);
+}
+
 export function editLast(ctx: ConversationContext): boolean {
   if (ctx.deps.isRunning() || ctx.editor) return false;
   for (const turn of [...ctx.turns].reverse()) {
@@ -160,15 +204,21 @@ export function startEdit(
   problem.hidden = true;
   const finish = (text: string | null) => {
     ctx.editor = null;
+    ctx.unsavedEdits.delete(message.id);
     el.classList.remove("is-editing");
     editor.remove();
     if (text !== null && text !== message.text) {
       ctx.pendingFocus = { kind: "message", id: message.id };
-      ctx.deps.onEdit(message, text);
-      return;
+      // The message may have changed under the editor, as when its video was removed.
+      const latest = ctx.messages.get(message.id);
+      ctx.deps.onEdit(latest && latest.role !== "tool" ? latest : message, text, () =>
+        keepUnsaved(ctx, message.id, text),
+      );
+    } else {
+      rerender();
+      focusWithin(ctx, messageElement(ctx, message.id));
     }
-    rerender();
-    focusWithin(ctx, messageElement(ctx, message.id));
+    reopenUnsaved(ctx, false);
   };
   const save = smallButton("button primary editor-save", "Save", () => {
     const text = textarea.value.trim();

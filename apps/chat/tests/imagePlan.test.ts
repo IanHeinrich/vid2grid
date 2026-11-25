@@ -36,8 +36,9 @@ async function seedChat(store: ChatStore, id: string, messages: ChatMessage[] = 
 
 async function orphan(store: ChatStore, text: string): Promise<string> {
   const id = await saveImage(store, text);
+  await store.putChat(blankChat("model", "gone", 1));
   await store.putMessage("gone", tool("t", "call", [sheet(id, 0, 1)]));
-  await store.deleteMessages("gone", ["t"]);
+  await store.deleteChat("gone");
   return id;
 }
 
@@ -133,7 +134,14 @@ describe.each(stores)("%s: what a release deletes", (_name, open) => {
 
   const users: [string, (store: ChatStore) => Promise<void>, string[]][] = [
     ["a chat", (store) => seedChat(store, "c"), []],
-    ["a message", (store) => store.putMessage("c", user("u", "hi", { video: VIDEO })), []],
+    [
+      "a message",
+      async (store) => {
+        await store.putChat(blankChat("model", "c", 1));
+        await store.putMessage("c", user("u", "hi", { video: VIDEO }));
+      },
+      [],
+    ],
     ["something unsaved", () => Promise.resolve(), [VIDEO.fileKey]],
   ];
   it.each(users)("keeps a video's sheets while %s refers to it", async (_user, refer, unsaved) => {
@@ -199,6 +207,7 @@ describe.each(stores)("%s: what a sweep deletes", (_name, open) => {
   it("deletes only what was counted, though more has become unused since", async () => {
     const store = await open();
     const [first, second] = [await orphan(store, "1"), await saveImage(store)];
+    await store.putChat(blankChat("model", "c", 1));
     await store.putMessage("c", tool("t", "call", [sheet(second, 0, 1)]));
     const counted = await store.countUnusedImages(() => NOTHING);
     await store.deleteMessages("c", ["t"]);
@@ -224,6 +233,7 @@ describe.each(stores)("%s: what a sweep deletes", (_name, open) => {
     const [used, cached] = [await orphan(store, "1"), await orphan(store, "2")];
     const counted = await store.countUnusedImages(() => NOTHING);
     expect(counted.images).toHaveLength(2);
+    await store.putChat(blankChat("model", "c", 1));
     await store.putMessage("c", tool("t", "call", [sheet(used, 0, 1)]));
     await store.putSheets(SHEETS_KEY, [sheet(cached, 0, 1)]);
     expect(await store.deleteUnusedImages(counted, () => NOTHING)).toMatchObject({ images: [] });
@@ -250,6 +260,7 @@ describe.each(stores)("%s: a record of a kind this version does not know", (_nam
     const store = await open();
     const id = await orphan(store, "1");
     const counted = await store.countUnusedImages(() => NOTHING);
+    await store.putChat(blankChat("model", "c", 1));
     await place(store, id);
     const refused = "so nothing is deleted";
     await expect(store.releaseImages(use([id]), () => NOTHING)).rejects.toThrow(refused);

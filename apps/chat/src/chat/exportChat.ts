@@ -15,8 +15,10 @@ import type {
   VideoCast,
   VideoTimeline,
 } from "../types";
-import { imageIdsIn } from "../imageIds";
+import { imageIdsIn, type ImageHolder } from "../imageIds";
+import { namedVideo } from "./messageVideo";
 import { sceneLogLines } from "./prompts";
+import { transcriptSentText } from "./transcript";
 
 export const BACKUP_FORMAT = "vid2grid-chat-backup";
 export const BACKUP_VERSION = 1;
@@ -57,6 +59,7 @@ function userSection(message: UserMessage, name: string): string {
   const lines = [`## ${name}`];
   if (message.text.trim() !== "") lines.push(message.text.trim());
   for (const image of message.images) lines.push(`[image: ${imageCaption(image)}]`);
+  if (message.transcript) lines.push(`_${transcriptSentText(message.transcript)}_`);
   return lines.join("\n\n");
 }
 
@@ -203,14 +206,13 @@ export async function exportBackup(store: ChatStore, options: ExportOptions = {}
   return new Blob([JSON.stringify(backup)], { type: "application/json" });
 }
 
-// A chat that swapped videos still names its earlier ones on the user messages that attached them.
+// A chat that swapped or removed videos still names them on the user messages that attached them.
 function videoFileKeys(chats: readonly BackupChat[]): Set<string> {
   return new Set(
     chats.flatMap(({ chat, messages }) => [
       ...(chat.video ? [chat.video.fileKey] : []),
-      ...messages.flatMap((message) =>
-        message.role === "user" && message.video ? [message.video.fileKey] : [],
-      ),
+      ...(chat.removedVideos ?? []).map(({ video }) => video.fileKey),
+      ...messages.flatMap((message) => namedVideo(message)?.fileKey ?? []),
     ]),
   );
 }
@@ -263,6 +265,8 @@ export interface ImportCounts {
 
 export interface ImportOptions {
   newId?: () => string;
+  // Keeps what the backup refers to until every record of it is saved.
+  hold?: (holder: ImageHolder) => { letGo(): void };
 }
 
 export async function importBackup(
@@ -271,12 +275,33 @@ export async function importBackup(
   options: ImportOptions = {},
 ): Promise<ImportCounts> {
   const backup = parseBackup(await file.text());
-  const newId = options.newId ?? (() => crypto.randomUUID());
   const blobs = decodeImages(backup.images);
+  const held = options.hold?.(backupHolder(backup.chats));
+  try {
+    return await saveBackup(store, backup, blobs, options.newId ?? (() => crypto.randomUUID()));
+  } finally {
+    held?.letGo();
+  }
+}
+
+function backupHolder(chats: readonly BackupChat[]): ImageHolder {
+  return {
+    messages: chats.flatMap(({ messages }) => messages),
+    videoKeys: [...videoFileKeys(chats)],
+  };
+}
+
+async function saveBackup(
+  store: ChatStore,
+  backup: ParsedBackup,
+  blobs: ReadonlyMap<string, Blob>,
+  newId: () => string,
+): Promise<ImportCounts> {
   const imageIds = new Map<string, string>();
   for (const [id, blob] of blobs) imageIds.set(id, await store.putImage(blob));
   const folderIds = await importFolders(store, backup.folders ?? []);
   const existing = new Set((await store.listChats()).map((chat) => chat.id));
+  let chatCount = 0;
   let messageCount = 0;
   for (const backupChat of backup.chats) {
     const { messages } = backupChat;
@@ -285,13 +310,13 @@ export async function importBackup(
     const imported = clash ? { ...chat, id: newId(), title: `${chat.title} (imported)` } : chat;
     existing.add(imported.id);
     await store.putChat(imported);
-    for (const message of messages) {
-      await store.putMessage(imported.id, remapImages(message, imageIds));
-      messageCount += 1;
-    }
+    const remapped = messages.map((message) => remapImages(message, imageIds));
+    if (!(await putMessages(store, imported.id, remapped))) continue;
+    chatCount += 1;
+    messageCount += messages.length;
   }
   return {
-    chats: backup.chats.length,
+    chats: chatCount,
     messages: messageCount,
     images: imageIds.size,
     timelines: await putMissing(
@@ -305,6 +330,21 @@ export async function importBackup(
       (cast) => store.putCast(cast),
     ),
   };
+}
+
+// False for a chat deleted in another tab meanwhile, which must not stop the rest.
+async function putMessages(
+  store: ChatStore,
+  chatId: string,
+  messages: readonly ChatMessage[],
+): Promise<boolean> {
+  try {
+    for (const message of messages) await store.putMessage(chatId, message);
+  } catch (error) {
+    if (await store.getChat(chatId)) throw error;
+    return false;
+  }
+  return true;
 }
 
 // A folder already in the store keeps its name and collapsed state, as with timelines and casts.
@@ -394,9 +434,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parseBackup(
-  text: string,
-): Pick<Backup, "chats" | "timelines" | "casts" | "folders" | "images"> {
+type ParsedBackup = Pick<Backup, "chats" | "timelines" | "casts" | "folders" | "images">;
+
+function parseBackup(text: string): ParsedBackup {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);

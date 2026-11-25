@@ -11,6 +11,7 @@ import {
   pendingFor,
   pendingImages,
   removeChat,
+  unlistChat,
   removeMessages,
   removePending,
   removePendingVideo,
@@ -83,6 +84,17 @@ describe("chat setters", () => {
     expect(state.currentChat).toBeNull();
     expect(state.messages).toEqual([]);
     expect(pendingFor(state, "a")).toEqual([]);
+  });
+
+  it("keeps what is being written in a chat that is only unlisted", () => {
+    const state = createAppState(DEFAULT_SETTINGS);
+    setChats(state, [chat("a", 1)]);
+    setCurrentChat(state, chat("a", 1), [userMessage("m", "hi")]);
+    addPending(state, "a", { kind: "image", ref: upload("i") });
+    unlistChat(state, "a");
+    expect(state.chats).toEqual([]);
+    expect(state.currentChat).toBeNull();
+    expect(pendingFor(state, "a")).toHaveLength(1);
   });
 
   it("drops the loaded video but keeps each chat's pending images when another chat opens", () => {

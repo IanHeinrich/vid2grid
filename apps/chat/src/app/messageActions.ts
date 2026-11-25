@@ -97,6 +97,12 @@ export function messageGroup(
   return messages.slice(start, end + 1);
 }
 
+function videoKeysIn(messages: readonly ChatMessage[]): string[] {
+  return messages.flatMap((message) =>
+    message.role === "user" && message.video ? [message.video.fileKey] : [],
+  );
+}
+
 async function branch(ctx: MessageActionsContext, message: ChatMessage): Promise<void> {
   const { state, deps } = ctx;
   const chat = state.currentChat;
@@ -148,7 +154,7 @@ async function remove(ctx: MessageActionsContext, message: ChatMessage): Promise
   if (group.length === 0) return;
   const ids = group.map((entry) => entry.id);
   // Held before anything is deleted, so the images are never without a use while Undo is open.
-  const held = deps.images.hold({ messages: group });
+  const held = deps.images.hold({ messages: group, videoKeys: videoKeysIn(group) });
   try {
     await deps.store.deleteMessages(chat.id, ids);
   } catch (error) {

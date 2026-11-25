@@ -1,9 +1,11 @@
 import { modelVisionProfile } from "@vid2grid/core";
+import { cachedAudio } from "../audio/videoAudio";
 import { currentModel } from "../chat/models";
 import { buildRequest } from "../chat/request";
-import { keptImages } from "../chat/story";
+import { keptImages, visibleMessages } from "../chat/story";
 import { estimateRequestTokens, sheetSidesByUrl } from "../chat/tokenEstimate";
-import { currentPending, pendingImages, type AppState } from "../state";
+import { transcriptToCarry, transcriptTokenCap, type HeardSpeech } from "../chat/transcript";
+import { currentPending, pendingImages, shownVideo, type AppState } from "../state";
 import type {
   AudioCoverage,
   Chat,
@@ -24,12 +26,13 @@ export interface TokenEstimateInput {
   videoLoaded: boolean;
   thoroughness?: Thoroughness;
   audioCoverage?: AudioCoverage | undefined;
+  speech?: HeardSpeech | undefined;
   timeline?: VideoTimeline | undefined;
   cast?: VideoCast | undefined;
 }
 
 export function estimateTokens(input: TokenEstimateInput): number {
-  const { chat, messages, model, thoroughness, audioCoverage, timeline, cast } = input;
+  const { chat, messages, model, thoroughness, audioCoverage, speech, timeline, cast } = input;
   const { tools, guidance } = conversationTools(model, messages, {
     videoLoaded: input.videoLoaded,
     listen: audioCoverage?.canListen === true,
@@ -50,6 +53,7 @@ export function estimateTokens(input: TokenEstimateInput): number {
     finalRound: false,
     ...(thoroughness ? { thoroughness } : {}),
     ...(audioCoverage !== undefined ? { audioCoverage } : {}),
+    ...(speech ? { speech } : {}),
     ...(timeline ? { timeline } : {}),
     ...(cast ? { cast } : {}),
   });
@@ -63,6 +67,11 @@ export function estimateTokens(input: TokenEstimateInput): number {
   );
 }
 
+function shownSpeech(state: AppState, chatId: string): HeardSpeech | undefined {
+  const fileKey = shownVideo(state, chatId)?.fileKey;
+  return fileKey === undefined ? undefined : cachedAudio(fileKey);
+}
+
 // What the next request would hold: the history plus whatever is waiting in the composer.
 export function estimateNextRequest(
   state: AppState,
@@ -73,6 +82,7 @@ export function estimateNextRequest(
   const chat = state.currentChat;
   const model = currentModel(state);
   if (!chat || !model) return undefined;
+  const speech = audioCoverage === undefined ? undefined : shownSpeech(state, chat.id);
   const next: UserMessage = {
     id: "next",
     createdAt: Number.MAX_SAFE_INTEGER,
@@ -80,13 +90,16 @@ export function estimateNextRequest(
     text: "",
     images: pendingImages(currentPending(state)),
   };
-  const messages = [...state.messages, next];
+  const visible = visibleMessages(chat, [...state.messages, next]);
+  const transcript = speech && transcriptToCarry(visible, speech, transcriptTokenCap(model));
+  const messages = [...state.messages, { ...next, ...(transcript ? { transcript } : {}) }];
   return estimateTokens({
     chat,
     messages,
     model,
     videoLoaded,
     timeline,
+    speech,
     ...(videoLoaded && audioCoverage !== undefined ? { audioCoverage } : {}),
   });
 }

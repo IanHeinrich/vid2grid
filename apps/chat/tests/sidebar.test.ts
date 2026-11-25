@@ -286,6 +286,7 @@ describe("undoing a deleted chat", () => {
       store,
       status: { show: vi.fn(), clear: vi.fn() },
       confirm: vi.fn(() => true),
+      isHeld: () => false,
       onProgress: vi.fn(),
       storage,
     });

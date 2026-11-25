@@ -4,6 +4,7 @@ import type {
   ChatMessage,
   ImageStore,
   ModelInfo,
+  RemovedVideo,
   ToolCall,
   UserMessage,
   VideoAttachment,
@@ -23,7 +24,8 @@ export interface ConversationDeps {
   onSeek(seconds: number, video?: VideoAttachment): void;
   onCue(seconds: number): void;
   onMessageChanged(message: ChatMessage): void;
-  onEdit(message: UserMessage | AssistantMessage, text: string): void;
+  // Calls onUnsaved when the edit could not be saved, so its text goes back to the editor.
+  onEdit(message: UserMessage | AssistantMessage, text: string, onUnsaved: () => void): void;
   onReplay(): void;
   onKeepGoing(): void;
   onBranch(message: ChatMessage): void;
@@ -33,6 +35,10 @@ export interface ConversationDeps {
   videoView(): VideoView;
   onPopOut(seconds: number): void;
   onReattach(): void;
+  onRemoveVideo(video: VideoAttachment): void;
+  // Why a video cannot be removed now, or undefined.
+  removeBlocker(): string | undefined;
+  removedVideos(): readonly RemovedVideo[];
   showThinking(): boolean;
   onPrefill(text: string): void;
   focusComposer(): void;
@@ -57,6 +63,7 @@ export interface VideoSlot {
   el: HTMLElement;
   video: VideoAttachment;
   shown: string;
+  remove: HTMLButtonElement;
   coverage: CoverageStrip | undefined;
 }
 
@@ -137,6 +144,8 @@ export interface ConversationContext {
   messages: Map<string, ChatMessage>;
   videoSlots: Map<string, VideoSlot>;
   editor: Editor | null;
+  // Text of refused edits by message id, kept until it has been back in an editor.
+  unsavedEdits: Map<string, string>;
   pendingFocus: FocusTarget | null;
   stickToBottom: boolean;
   waiting: Waiting | null;
@@ -190,7 +199,8 @@ export function videoAbout(
   ctx: ConversationContext,
   messageId: string | undefined,
 ): VideoAttachment | undefined {
-  return videoForMessage(ctx.messages.values(), messageId, ctx.deps.videoView().video);
+  const current = ctx.deps.videoView().video;
+  return videoForMessage(ctx.messages.values(), messageId, current, ctx.deps.removedVideos());
 }
 
 export function seekHandler(

@@ -29,8 +29,8 @@ import type {
 } from "../src/types";
 import { initComposer, type Composer, type ComposerDeps } from "../src/ui/composer/composer";
 import { initTurns } from "../src/app/turns";
-import { upload } from "./support/factories";
-import { idleImages } from "./support/images";
+import { upload, user } from "./support/factories";
+import { cleanupFor, idleImages, isStored, saveImage, uploadRef } from "./support/images";
 import { mountPage } from "./support/page";
 import { replyWith, textThenWait, waitForAbort } from "./support/streams";
 
@@ -308,6 +308,152 @@ describe("attachments and limits", () => {
     expect(els.composer.messageInput.value).toBe("Watch this");
     expect(currentPending(state)).toEqual([{ kind: "video", video: BEACH }]);
     expect(els.composer.sendButton.textContent).toBe("Send");
+  });
+});
+
+describe("a message that cannot be saved", () => {
+  beforeEach(() => {
+    URL.createObjectURL = vi.fn(() => "blob:x");
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  async function refused(spies: ReturnType<typeof makeSpies>, error: string): Promise<void> {
+    await vi.waitFor(() => expect(spies.status.show).toHaveBeenLastCalledWith(error, "error"));
+    await vi.waitFor(() => expect(els.composer.sendButton.textContent).toBe("Send"));
+  }
+
+  it("goes back in the composer with its attachments when its chat was deleted elsewhere", async () => {
+    const ids = [await saveImage(store), await saveImage(store)];
+    const [sent = "", original = ""] = ids;
+    addPending(state, "chat", { kind: "image", ref: uploadRef(sent, original) });
+    const draft = currentPending(state);
+    const spies = makeSpies();
+    const images = cleanupFor(state, store);
+    const streamChat = vi.fn<StreamChat>(reply);
+    setup(spies, { streamChat, images });
+    await store.deleteChat("chat");
+    const putMessage = store.putMessage.bind(store);
+    const swept: unknown[] = [];
+    store.putMessage = async (chatId, message) => {
+      swept.push(currentPending(state), await images.countToDelete());
+      await images.release({ refs: [uploadRef(sent, original)] });
+      return putMessage(chatId, message);
+    };
+    els.composer.messageInput.value = "Who is on the beach?";
+    pressEnter();
+    await refused(spies, "This chat has been deleted.");
+    expect(swept).toEqual([[], { refused: "running" }]);
+    expect(els.composer.messageInput.value).toBe("Who is on the beach?");
+    expect(currentPending(state)).toEqual(draft);
+    expect(els.composer.pendingList.children).toHaveLength(1);
+    expect(state.messages).toEqual([]);
+    expect(await store.listMessages("chat")).toEqual([]);
+    expect(streamChat).not.toHaveBeenCalled();
+    await images.release({ refs: [uploadRef(sent, original)] });
+    expect(await images.countToDelete()).toMatchObject({ counted: { images: [] } });
+    expect(await Promise.all(ids.map((id) => isStored(store, id)))).toEqual([true, true]);
+  });
+
+  it("goes back before what was typed and added meanwhile, with its video and overview", async () => {
+    setPendingVideo(state, "chat", BEACH);
+    addPending(state, "chat", { kind: "overview", refs: [upload("sheet")] });
+    const draft = currentPending(state);
+    const added = { kind: "image", ref: upload("later") } as const;
+    store.putMessage = () => {
+      els.composer.messageInput.value = "And now";
+      addPending(state, "chat", added);
+      return Promise.reject(new Error("quota"));
+    };
+    const spies = makeSpies();
+    setup(spies);
+    els.composer.messageInput.value = "Watch this";
+    pressEnter();
+    await refused(spies, "quota");
+    expect(els.composer.messageInput.value).toBe("Watch this\nAnd now");
+    expect(currentPending(state)).toEqual([...draft, added]);
+  });
+
+  it("keeps a video added meanwhile in place of its own", async () => {
+    const city = { ...BEACH, name: "city.mp4", fileKey: "city" };
+    const image = { kind: "image", ref: upload("i") } as const;
+    setPendingVideo(state, "chat", BEACH);
+    addPending(state, "chat", image);
+    store.putMessage = () => {
+      setPendingVideo(state, "chat", city);
+      return Promise.reject(new Error("quota"));
+    };
+    const spies = makeSpies();
+    setup(spies);
+    els.composer.messageInput.value = "Watch this";
+    pressEnter();
+    await refused(spies, "quota");
+    expect(currentPending(state)).toEqual([image, { kind: "video", video: city }]);
+  });
+
+  it.each([
+    ["not twice when more was typed after it", "Watch this and tell me", "Watch this and tell me"],
+    [
+      "when what replaced it only contains it",
+      "Do not Watch this",
+      "Watch this\nDo not Watch this",
+    ],
+    ["when it was replaced before it was cleared", "Something else", "Watch this\nSomething else"],
+  ])("goes back %s", async (_when, typed, shown) => {
+    setPendingVideo(state, "chat", BEACH);
+    const commit = () => {
+      els.composer.messageInput.value = typed;
+      return Promise.resolve();
+    };
+    store.putMessage = () => Promise.reject(new Error("quota"));
+    const spies = makeSpies();
+    setup(spies, { video: { ...noVideo, commit } });
+    els.composer.messageInput.value = "Watch this";
+    pressEnter();
+    await refused(spies, "quota");
+    expect(els.composer.messageInput.value).toBe(shown);
+  });
+
+  it("is not put back when it was saved and something fails after", async () => {
+    addPending(state, "chat", { kind: "image", ref: upload("i") });
+    const spies = makeSpies();
+    spies.conversation.show.mockImplementation(() => {
+      throw new Error("no room");
+    });
+    setup(spies);
+    els.composer.messageInput.value = "Hello";
+    pressEnter();
+    await refused(spies, "no room");
+    expect(await store.listMessages("chat")).toMatchObject([{ text: "Hello" }]);
+    expect(els.composer.messageInput.value).toBe("");
+    expect(currentPending(state)).toEqual([]);
+  });
+
+  it("can be sent again once it can be saved", async () => {
+    const spies = makeSpies();
+    setup(spies);
+    const chat = await store.getChat("chat");
+    await store.deleteChat("chat");
+    els.composer.messageInput.value = "Hello";
+    pressEnter();
+    await refused(spies, "This chat has been deleted.");
+    if (chat) await store.putChat(chat);
+    pressEnter();
+    await vi.waitFor(async () => expect(await store.listMessages("chat")).toHaveLength(2));
+    expect(els.composer.messageInput.value).toBe("");
+  });
+
+  it("leaves a message already sent as it was", async () => {
+    const spies = makeSpies();
+    const sent = user("u", "first");
+    await store.putMessage("chat", sent);
+    setCurrentChat(state, state.currentChat, [sent]);
+    setup(spies);
+    store.putMessage = () => Promise.reject(new Error("quota"));
+    els.composer.messageInput.value = "second";
+    pressEnter();
+    await refused(spies, "quota");
+    expect(state.messages).toEqual([sent]);
+    expect(spies.conversation.show).not.toHaveBeenCalled();
   });
 });
 

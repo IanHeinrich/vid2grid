@@ -81,6 +81,12 @@ export interface VideoAttachment {
   height: number;
 }
 
+// Stays what the messages up to then are about where none of them names a video.
+export interface RemovedVideo {
+  video: VideoAttachment;
+  throughCreatedAt: number;
+}
+
 export interface SceneNote {
   timeSeconds: number;
   text: string;
@@ -93,6 +99,8 @@ export interface Chat {
   updatedAt: number;
   settings: ChatSettings;
   video?: VideoAttachment;
+  // The chat's own videos that were removed, oldest first.
+  removedVideos?: RemovedVideo[];
   sceneLog: SceneNote[];
   storySoFar?: StorySoFar;
   // Absent means the chat is in no folder.
@@ -183,8 +191,19 @@ export interface VideoAudio {
 // What the model is told about a video's audio on a message with audio on.
 export interface AudioCoverage {
   text: string;
+  // Replaces text in a request that carries the transcript; absent while no speech has been heard.
+  besideTranscript?: string;
   // False when the video has no audio track, so listen is not offered.
   canListen: boolean;
+}
+
+// Which of a video's heard speech a message sent; the text is rebuilt from the stored speech.
+export interface SentTranscript {
+  fileKey: string;
+  // What had been heard by then, so speech heard later does not change the text.
+  spans: AudioSpan[];
+  // Where the text stopped at its size cap.
+  cutSeconds?: number;
 }
 
 // The people or characters in a video, kept per video like its timeline.
@@ -260,6 +279,8 @@ export interface UserMessage extends MessageBase {
   images: ImageRef[];
   // Where the video was attached, so the conversation shows it inline at that point.
   video?: VideoAttachment;
+  // The video attached here before it was removed from the chat: shown by name, and not in use.
+  removedVideo?: VideoAttachment;
   // Sent by "Keep going": shown as a small marker rather than a message bubble.
   continuation?: true;
   // How hard this message's reply investigates; absent means normal.
@@ -270,6 +291,8 @@ export interface UserMessage extends MessageBase {
   reasoningEffort?: string;
   // Audio: this message's reply may call listen and is told what has been heard so far.
   audio?: true;
+  // The transcript the message's reply was given, when it was given one.
+  transcript?: SentTranscript;
   // Swipes: the replies not shown, in swipe order. The shown reply sits at replyIndex among them.
   alternates?: AlternateReply[];
   replyIndex?: number;
@@ -397,8 +420,11 @@ export interface ImageUse {
   videos: ReadonlySet<string>;
 }
 
-// What is in use but not saved, or undefined to delete nothing; asked again inside the transaction.
-export type UnsavedUse = () => ImageUse | undefined;
+// Just before the transaction is created, and again inside it once everything stored is read.
+export type AskedWhen = "before" | "inside";
+
+// What is in use but not saved, or undefined to delete nothing.
+export type UnsavedUse = (when: AskedWhen) => ImageUse | undefined;
 
 export interface UnusedImages {
   images: readonly string[];
@@ -426,6 +452,7 @@ export interface ChatStore extends ImageStore, SheetCache, ImageRelease {
   putFolder(folder: Folder): Promise<void>;
   deleteFolder(id: string): Promise<void>;
   listMessages(chatId: string): Promise<ChatMessage[]>;
+  // Rejects when the chat is gone, since what its messages refer to could then never be deleted.
   putMessage(chatId: string, message: ChatMessage): Promise<void>;
   deleteMessages(chatId: string, ids: readonly string[]): Promise<void>;
   getTimeline(fileKey: string): Promise<VideoTimeline | undefined>;

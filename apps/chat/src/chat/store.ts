@@ -35,6 +35,8 @@ const BLOCKED_MESSAGE =
 const UPGRADED_MESSAGE =
   "A newer version of the app has opened the chat database in another tab. Reload this page.";
 
+const CHAT_GONE_MESSAGE = "This chat has been deleted.";
+
 const BY_CHAT = "byChat";
 const BY_MESSAGE = "byMessage";
 
@@ -185,7 +187,7 @@ async function readStoredUse(transaction: IDBTransaction): Promise<StoredUse> {
 
 async function readSweep(
   transaction: IDBTransaction,
-  unsaved: UnsavedUse,
+  unsaved: () => ImageUse | undefined,
   only?: DeletePlan,
 ): Promise<UnusedImages | undefined> {
   const images = transaction.objectStore(IMAGES);
@@ -207,6 +209,20 @@ function applyPlan(transaction: IDBTransaction, plan: DeletePlan): void {
   const images = transaction.objectStore(IMAGES);
   for (const key of plan.sheets) cache.delete(key);
   for (const id of plan.images) images.delete(id);
+}
+
+function putRecord(messages: IDBObjectStore, chatId: string, message: ChatMessage): void {
+  const existing = messages.index(BY_MESSAGE).getKey([chatId, message.id]);
+  existing.onsuccess = () => {
+    const seq = existing.result;
+    const record: MessageRecord = {
+      ...(typeof seq === "number" ? { seq } : {}),
+      chatId,
+      messageId: message.id,
+      message,
+    };
+    messages.put(record);
+  };
 }
 
 class IndexedDbChatStore implements ChatStore {
@@ -273,20 +289,15 @@ class IndexedDbChatStore implements ChatStore {
   }
 
   async putMessage(chatId: string, message: ChatMessage): Promise<void> {
-    await this.write([MESSAGES], (transaction) => {
-      const messages = transaction.objectStore(MESSAGES);
-      const existing = messages.index(BY_MESSAGE).getKey([chatId, message.id]);
-      existing.onsuccess = () => {
-        const seq = existing.result;
-        const record: MessageRecord = {
-          ...(typeof seq === "number" ? { seq } : {}),
-          chatId,
-          messageId: message.id,
-          message,
-        };
-        messages.put(record);
+    let chatGone = false;
+    await this.write([CHATS, MESSAGES], (transaction) => {
+      const chat = transaction.objectStore(CHATS).getKey(chatId);
+      chat.onsuccess = () => {
+        chatGone = chat.result === undefined;
+        if (!chatGone) putRecord(transaction.objectStore(MESSAGES), chatId, message);
       };
     });
+    if (chatGone) throw new Error(CHAT_GONE_MESSAGE);
     this.newImages.settleSaved({ messages: [message] });
   }
 
@@ -352,12 +363,13 @@ class IndexedDbChatStore implements ChatStore {
   }
 
   // One transaction over every store that names an image, so no other tab can save a use in between.
+  // Nothing may come between the first ask and its creation: later reads in any tab wait behind it.
   async releaseImages(dropped: ImageUse, unsaved: UnsavedUse): Promise<void> {
     this.newImages.settle(dropped.images);
-    if (!unsaved()) return;
+    if (!unsaved("before")) return;
     await this.transact("readwrite", async (transaction) => {
       const stored = await readStoredUse(transaction);
-      const inUse = unsaved();
+      const inUse = unsaved("inside");
       if (inUse) applyPlan(transaction, planRelease(stored, dropped, inUse));
     });
   }
@@ -373,10 +385,10 @@ class IndexedDbChatStore implements ChatStore {
     counted: UnusedImages,
     unsaved: UnsavedUse,
   ): Promise<UnusedImages | undefined> {
-    if (!unsaved()) return undefined;
+    if (!unsaved("before")) return undefined;
     return this.transact("readwrite", async (transaction) => {
       const inUse = () => {
-        const held = unsaved();
+        const held = unsaved("inside");
         return held && this.newImages.with(held);
       };
       const unused = await readSweep(transaction, inUse, counted);
@@ -463,7 +475,8 @@ export function createMemoryStore(): ChatStore {
     listMessages: (chatId) =>
       Promise.resolve([...(messages.get(chatId)?.values() ?? [])].map(copy).sort(byCreatedAt)),
     putMessage: (chatId, message) =>
-      resolved(() => {
+      settledBy(() => {
+        if (!chats.has(chatId)) throw new Error(CHAT_GONE_MESSAGE);
         const chatMessages = messages.get(chatId) ?? new Map<string, ChatMessage>();
         chatMessages.set(message.id, copy(message));
         messages.set(chatId, chatMessages);
@@ -544,13 +557,13 @@ function memoryImageRelease({
     releaseImages: (dropped, unsaved) =>
       settledBy(() => {
         newImages.settle(dropped.images);
-        const inUse = unsaved();
+        const inUse = unsaved("before");
         if (inUse) apply(planRelease(stored(), dropped, inUse));
       }),
     countUnusedImages: (unsaved) => settledBy(() => sweep(unsaved())),
     deleteUnusedImages: (counted, unsaved) =>
       settledBy(() => {
-        const inUse = unsaved();
+        const inUse = unsaved("before");
         if (!inUse) return undefined;
         const unused = sweep(inUse, counted);
         apply(unused);

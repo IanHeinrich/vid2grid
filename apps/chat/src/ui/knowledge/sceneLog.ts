@@ -4,7 +4,7 @@ import type { AppElements } from "../../dom";
 import { updateChat, type AppState } from "../../state";
 import { errorText } from "../../text";
 import { formatTimestamp, parseTimestamp, timedLine } from "../../time";
-import type { ChatStore, SceneNote, StreamChat } from "../../types";
+import type { Chat, ChatStore, SceneNote, StreamChat } from "../../types";
 import { editKeys, iconButton, seekButton, smallButton } from "../shared/buttons";
 import { modelCallDeps } from "../../app/modelCallDeps";
 import { createModelTask, type ModelTask } from "../shared/modelTask";
@@ -24,14 +24,18 @@ export interface SceneLogDeps {
   onChanged(): void;
 }
 
-interface CondensePreview {
+// The log is about the video the chat has, so what is begun for one is dropped with it.
+interface LogOwner {
   chatId: string;
+  videoKey: string | undefined;
+}
+
+interface CondensePreview extends LogOwner {
   from: readonly SceneNote[];
   notes: SceneNote[];
 }
 
-interface NoteEdit {
-  chatId: string;
+interface NoteEdit extends LogOwner {
   // The note being edited, or "new" for one being added.
   note: SceneNote | "new";
 }
@@ -86,7 +90,7 @@ function listen(ctx: SceneLogContext): void {
   addButton.addEventListener("click", () => {
     const chat = ctx.state.currentChat;
     if (ctx.editing !== null || !chat) return;
-    ctx.editing = { chatId: chat.id, note: "new" };
+    ctx.editing = { ...logOwner(chat), note: "new" };
     ctx.draftTime = ctx.deps.currentTime() ?? 0;
     render(ctx);
     renderList(ctx);
@@ -99,6 +103,15 @@ function listen(ctx: SceneLogContext): void {
     ctx.preview = null;
     render(ctx);
   });
+}
+
+function logOwner(chat: Chat): LogOwner {
+  return { chatId: chat.id, videoKey: chat.video?.fileKey };
+}
+
+function stillAbout(ctx: SceneLogContext, { chatId, videoKey }: LogOwner): boolean {
+  const chat = ctx.state.chats.find((entry) => entry.id === chatId);
+  return chat !== undefined && chat.video?.fileKey === videoKey;
 }
 
 function durationOf(ctx: SceneLogContext, notes: readonly SceneNote[]): number {
@@ -146,7 +159,7 @@ function finishEdit(ctx: SceneLogContext, saved: SceneNote | null): void {
   render(ctx);
   // The rebuilt list dropped the focused control; leaving focus on the body escapes the drawer.
   ctx.els.addButton.focus();
-  if (!saved || editing === null) return;
+  if (!saved || editing === null || !stillAbout(ctx, editing)) return;
   const { chatId, note } = editing;
   saveQuietly(ctx, chatId, (log) =>
     note === "new" ? [...log, saved] : log.map((entry) => (entry === note ? saved : entry)),
@@ -157,6 +170,7 @@ async function condense(ctx: SceneLogContext): Promise<void> {
   const chat = ctx.state.currentChat;
   if (!chat || chat.sceneLog.length < 2) return;
   const from = [...chat.sceneLog];
+  const owner = logOwner(chat);
   ctx.preview = null;
   const notes = await ctx.task.run("Condensing the scene log…", (signal) =>
     condenseSceneLog(
@@ -166,7 +180,8 @@ async function condense(ctx: SceneLogContext): Promise<void> {
     ),
   );
   if (!notes || ctx.state.currentChat?.id !== chat.id) return;
-  ctx.preview = { chatId: chat.id, from, notes };
+  // Dropped by render when the video it is about has gone meanwhile.
+  ctx.preview = { ...owner, from, notes };
   render(ctx);
 }
 
@@ -196,7 +211,10 @@ function render(ctx: SceneLogContext): void {
   ctx.task.sync();
   title.textContent = chat?.video ? `Scene log for ${chat.video.name}` : "Scene log";
   // An edit belongs to the chat it was started in, so switching chats drops it.
-  if (ctx.editing && ctx.editing.chatId !== chat?.id) ctx.editing = null;
+  if (ctx.editing && (ctx.editing.chatId !== chat?.id || !stillAbout(ctx, ctx.editing))) {
+    ctx.editing = null;
+  }
+  if (ctx.preview && !stillAbout(ctx, ctx.preview)) ctx.preview = null;
   const notes = chat?.sceneLog ?? [];
   const noun = notes.length === 1 ? "note" : "notes";
   const tokens = sceneLogTokens(notes).toLocaleString("en-US");
@@ -241,7 +259,7 @@ function noteItem(ctx: SceneLogContext, note: SceneNote): HTMLLIElement {
   const edit = smallButton("note-edit", "Edit", () => {
     const chat = ctx.state.currentChat;
     if (ctx.editing !== null || !chat) return;
-    ctx.editing = { chatId: chat.id, note };
+    ctx.editing = { ...logOwner(chat), note };
     render(ctx);
     renderList(ctx);
   });

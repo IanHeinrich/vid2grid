@@ -1,11 +1,13 @@
 import type { VideoInfo } from "@vid2grid/core";
 import {
   isRunningIn,
+  overviewFor,
   pendingFor,
   pendingHolder,
   pendingVideo,
   removePendingVideo,
   setLoadedVideo,
+  setOverviewStatus,
   setPendingVideo,
   updateChat,
 } from "../../state";
@@ -21,7 +23,7 @@ import {
   type VideoPanelContext,
 } from "./context";
 import { startOverview } from "./overviewPrep";
-import { readFrameTimesOf, setUrl } from "./playback";
+import { closePlayer, readFrameTimesOf, setUrl } from "./playback";
 
 const AGAIN_TEXT = "Click Reattach again to choose the file.";
 const VIDEO_PICKER_TYPES = [
@@ -45,6 +47,11 @@ async function saveChat(
   ctx.deps.onChatChanged();
 }
 
+// False once the video a reattach was begun for has been removed or replaced.
+function stillAttached(ctx: VideoPanelContext, chatId: string, fileKey: string): boolean {
+  return attachedVideo(ctx, chatId)?.fileKey === fileKey;
+}
+
 export async function restore(ctx: VideoPanelContext): Promise<void> {
   setUrl(ctx, null);
   ctx.render();
@@ -58,8 +65,13 @@ export async function restore(ctx: VideoPanelContext): Promise<void> {
   try {
     // A stored copy opens without any permission prompt, so it is tried before the saved handle.
     const copy = await ctx.deps.loadCopy(chat.video.fileKey);
+    if (!stillAttached(ctx, chat.id, chat.video.fileKey)) return;
     if (copy && (await reattachedFromCopy(ctx, chat.id, copy))) return;
+    // Read again: a changed copy whose save failed leaves its new key on the chat.
+    const wanted = attachedVideo(ctx, chat.id);
+    if (wanted?.name !== chat.video.name) return;
     const handle = await ctx.deps.store.getVideoHandle(chat.id);
+    if (!stillAttached(ctx, chat.id, wanted.fileKey)) return;
     if (!handle || ctx.skipHandle.has(chat.id)) {
       showStillMissing(ctx, chat.id, `This browser kept no copy of ${chat.video.name}.`);
       return;
@@ -69,11 +81,12 @@ export async function restore(ctx: VideoPanelContext): Promise<void> {
       showStillMissing(ctx, chat.id, why);
       return;
     }
-    if (!(await reattachFromHandle(ctx, chat.id, handle)) && isCurrent(ctx, chat.id)) {
+    const opened = await reattachFromHandle(ctx, chat.id, handle, wanted);
+    if (!opened && isCurrent(ctx, chat.id)) {
       ctx.deps.status.show(`${chat.video.name} was moved or renamed. Use Reattach to find it.`);
     }
   } catch (error) {
-    if (isCurrent(ctx, chat.id)) {
+    if (isCurrent(ctx, chat.id) && attachedVideo(ctx, chat.id)) {
       ctx.deps.status.show(`Could not reopen ${chat.video.name}: ${errorText(error)}`, "error");
     }
   }
@@ -109,13 +122,16 @@ async function fileFromHandle(handle: FileSystemFileHandle): Promise<File | unde
 }
 
 // False when the handle no longer leads to this chat's video, so the caller falls back to a picker.
+// Once the chat has another video or none, there is nothing left to open.
 async function reattachFromHandle(
   ctx: VideoPanelContext,
   chatId: string,
   handle: FileSystemFileHandle,
+  video: VideoAttachment,
 ): Promise<boolean> {
   const file = await fileFromHandle(handle);
-  if (!file || file.name !== attachedVideo(ctx, chatId)?.name) {
+  if (!stillAttached(ctx, chatId, video.fileKey)) return true;
+  if (!file || file.name !== video.name) {
     ctx.skipHandle.add(chatId);
     return false;
   }
@@ -134,6 +150,7 @@ export async function attach(
   if (chat.video?.fileKey === key) {
     dropPending(ctx, chat.id);
     if (handle) await saveHandle(ctx, chat.id, handle);
+    if (!stillAttached(ctx, chat.id, key)) return;
     load(ctx, chat.id, { file, info: infoFrom(chat.video) });
     return;
   }
@@ -200,6 +217,46 @@ export async function commit(
   ctx.deps.onCommitted(pending.file, video, previous);
 }
 
+// Called once the chat no longer names the videos. What is handed back lets putBack load the file.
+export function detach(
+  ctx: VideoPanelContext,
+  chatId: string,
+  keys: ReadonlySet<string>,
+): LoadedFile | undefined {
+  // An older video still being opened would otherwise start to play.
+  ctx.seekToken += 1;
+  const { older } = ctx.playing;
+  if (older && keys.has(older.video.fileKey)) closePlayer(ctx);
+  if (attachedVideo(ctx, chatId)) return undefined;
+  const loaded = ctx.files.get(chatId);
+  ctx.files.delete(chatId);
+  if (overviewFor(ctx.state, chatId) === undefined) {
+    setOverviewStatus(ctx.state, chatId, null);
+    ctx.renders.delete(chatId);
+  }
+  if (ctx.state.video?.chatId === chatId) {
+    setLoadedVideo(ctx.state, null);
+    setUrl(ctx, null);
+  }
+  ctx.render();
+  return loaded;
+}
+
+export async function putBack(
+  ctx: VideoPanelContext,
+  chatId: string,
+  loaded: LoadedFile | undefined,
+): Promise<void> {
+  const video = attachedVideo(ctx, chatId);
+  if (loaded) ctx.files.set(chatId, loaded);
+  ctx.skipHandle.delete(chatId);
+  // Dropped again meanwhile, it is the chat's own once more.
+  if (video && pendingFileOf(ctx, chatId)?.video.fileKey === video.fileKey) {
+    dropPending(ctx, chatId);
+  }
+  if (isCurrent(ctx, chatId)) await restore(ctx);
+}
+
 async function saveHandle(
   ctx: VideoPanelContext,
   chatId: string,
@@ -216,10 +273,11 @@ async function reattach(ctx: VideoPanelContext, chatId: string, file: File): Pro
     load(ctx, chatId, { file, info: infoFrom(chat.video) });
     return;
   }
+  const { fileKey: wanted } = chat.video;
   const probed = await probe(ctx, file);
-  const latest = ctx.state.currentChat;
-  if (!probed || latest?.id !== chatId) return;
+  if (!probed || !isCurrent(ctx, chatId) || !stillAttached(ctx, chatId, wanted)) return;
   await saveChat(ctx, chatId, (entry) => ({ ...entry, video: probed.attachment }));
+  if (!stillAttached(ctx, chatId, probed.attachment.fileKey)) return;
   load(ctx, chatId, { file, info: probed.info });
   ctx.deps.status.show(
     `${file.name} has changed since it was attached, so earlier sheets may not match it.`,
@@ -246,9 +304,10 @@ export async function requestReattach(ctx: VideoPanelContext): Promise<void> {
   const chat = ctx.state.currentChat;
   if (!chat?.video) return;
   try {
-    if (await reattachWithPermission(ctx, chat.id)) return;
+    if (await reattachWithPermission(ctx, chat.id, chat.video)) return;
     await pickVideo(ctx);
   } catch (error) {
+    if (!stillAttached(ctx, chat.id, chat.video.fileKey)) return;
     // The permission prompt can use up the click, so the picker may refuse to open.
     if (isDomError(error, "SecurityError", "NotAllowedError")) {
       ctx.skipHandle.add(chat.id);
@@ -259,17 +318,22 @@ export async function requestReattach(ctx: VideoPanelContext): Promise<void> {
   }
 }
 
-async function reattachWithPermission(ctx: VideoPanelContext, chatId: string): Promise<boolean> {
+async function reattachWithPermission(
+  ctx: VideoPanelContext,
+  chatId: string,
+  video: VideoAttachment,
+): Promise<boolean> {
   if (ctx.skipHandle.has(chatId)) return false;
   const handle = await ctx.deps.store.getVideoHandle(chatId);
-  if (!handle) return false;
+  if (!handle) return !stillAttached(ctx, chatId, video.fileKey);
   const permission = (await handle.requestPermission?.({ mode: "read" })) ?? "granted";
+  if (!stillAttached(ctx, chatId, video.fileKey)) return true;
   if (permission !== "granted") {
     ctx.skipHandle.add(chatId);
     ctx.deps.status.show(`Reading the saved file was not allowed. ${AGAIN_TEXT}`, "error");
     return true;
   }
-  return reattachFromHandle(ctx, chatId, handle);
+  return reattachFromHandle(ctx, chatId, handle, video);
 }
 
 async function pickVideo(ctx: VideoPanelContext): Promise<void> {

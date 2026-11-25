@@ -190,7 +190,8 @@
 
 .deep-tag,
 .effort-tag,
-.audio-tag {
+.audio-tag,
+.transcript-tag {
   display: inline-block;
   margin-bottom: 0.3rem;
   padding: 0 0.45rem;
@@ -200,7 +201,7 @@
   font-size: 0.875rem;
 }
 
-:is(.deep-tag, .effort-tag) + :is(.effort-tag, .audio-tag) {
+:is(.deep-tag, .effort-tag, .audio-tag) + :is(.effort-tag, .audio-tag, .transcript-tag) {
   margin-left: 0.3rem;
 }
 

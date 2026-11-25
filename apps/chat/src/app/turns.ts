@@ -9,10 +9,18 @@ import {
 } from "../chat/agentLoop";
 import { archiveCurrentReply, compareWithModel } from "../chat/alternates";
 import { NEW_CHAT_TITLE, titleFromMessage } from "../chat/chats";
+import { newestUserMessage } from "../chat/imageSelection";
 import { videoForImage } from "../chat/messageVideo";
 import { currentModel } from "../chat/models";
+import { visibleMessages } from "../chat/story";
 import { shouldSummarize, summarizeStory } from "../chat/summary";
 import { messageThoroughness, roundsFor } from "../chat/thoroughness";
+import {
+  sameTranscript,
+  transcriptToCarry,
+  transcriptTokenCap,
+  type HeardSpeech,
+} from "../chat/transcript";
 import { imagesOf } from "../imageRefs";
 import {
   isRunningIn,
@@ -68,6 +76,8 @@ export interface TurnRequest {
   audio?: boolean;
   // Writes the latest reply again with this model, keeping the shown one as a swipe.
   compareWith?: ModelInfo;
+  // The message could not be saved, so what it was made from goes back to the user.
+  onUnsaved?: () => void;
 }
 
 export interface Turns {
@@ -75,7 +85,11 @@ export interface Turns {
   run(prepare: (signal: AbortSignal) => Promise<TurnRequest | undefined>): Promise<void>;
   replay(): Promise<void>;
   compare(model: ModelInfo): Promise<void>;
-  edit(message: UserMessage | AssistantMessage, text: string): Promise<void>;
+  edit(
+    message: UserMessage | AssistantMessage,
+    text: string,
+    onUnsaved?: () => void,
+  ): Promise<void>;
   keepGoing(): Promise<void>;
   stop(): void;
   // Cuts the running round short: it answers from what it has seen, with no more tool calls.
@@ -135,6 +149,7 @@ interface TurnSetup {
   model: ModelInfo;
   thoroughness: Thoroughness;
   audioCoverage: AudioCoverage | undefined;
+  speech: HeardSpeech | undefined;
   timeline: VideoTimeline | undefined;
   cast: VideoCast | undefined;
   videoLoaded: boolean;
@@ -146,7 +161,7 @@ export function initTurns(state: AppState, deps: TurnsDeps): Turns {
     run: (prepare) => run(ctx, prepare),
     replay: () => replay(ctx),
     compare: (model) => compare(ctx, model),
-    edit: (message, text) => edit(ctx, message, text),
+    edit: (message, text, onUnsaved) => edit(ctx, message, text, onUnsaved),
     keepGoing: () => keepGoing(ctx),
     stop: () => currentTurn(ctx)?.controller.abort(),
     answerNow: () => currentTurn(ctx)?.answerNow.abort(),
@@ -180,7 +195,9 @@ async function run(
     const request = await prepare(signal);
     if (!request) return;
     // The composer has already cleared the message, so it is kept even when no reply follows.
-    if (request.message) await saveUserMessage(ctx, chat.id, request.message);
+    if (request.message) {
+      await saveUserMessage(ctx, chat.id, request.message, request.onUnsaved);
+    }
     const stopped = signal.aborted || ctx.state.currentChat?.id !== chat.id;
     if (stopped && !request.message) return;
     const turnChat = await touchChat(ctx, chat.id, request.message);
@@ -201,12 +218,22 @@ async function run(
   }
 }
 
+async function orUnsaved(saving: Promise<void>, onUnsaved?: () => void): Promise<void> {
+  try {
+    await saving;
+  } catch (error) {
+    onUnsaved?.();
+    throw error;
+  }
+}
+
 async function saveUserMessage(
   ctx: TurnsContext,
   chatId: string,
   message: UserMessage,
+  onUnsaved?: () => void,
 ): Promise<void> {
-  await ctx.deps.store.putMessage(chatId, message);
+  await orUnsaved(ctx.deps.store.putMessage(chatId, message), onUnsaved);
   if (ctx.state.currentChat?.id !== chatId) return;
   upsertMessage(ctx.state, message);
   ctx.deps.conversation.show(message);
@@ -316,7 +343,8 @@ function turnTools(ctx: TurnsContext, input: TurnToolsInput): TurnTools {
     maxImages,
     tools,
     knownImages: () => messages.flatMap(imagesOf),
-    videoOfImage: (id) => videoForImage(messages, id, toolCtx?.video ?? chat.video),
+    videoOfImage: (id) =>
+      videoForImage(messages, id, toolCtx?.video ?? chat.video, chat.removedVideos),
     ...(toolCtx ? { sheets: { ...toolCtx, resolution, maxImages } } : {}),
     ...(heard.on && heard.listen ? { audio: heard.listen } : {}),
   });
@@ -334,12 +362,35 @@ function answerNotice(outcome: TurnOutcome): string | undefined {
 function audioFor(
   ctx: TurnsContext,
   on: boolean,
-  toolCtx: ToolContext | undefined,
+  { chat, toolCtx }: { chat: Chat; toolCtx: ToolContext | undefined },
   signal: AbortSignal,
 ): Promise<TurnAudio> {
   const { store, status } = ctx.deps;
-  const fileKey = toolCtx?.video.fileKey;
-  return turnAudio({ on, fileKey, store, settings: ctx.state.settings, status, signal });
+  const { settings } = ctx.state;
+  const keys = { fileKey: toolCtx?.video.fileKey, chatVideoKey: chat.video?.fileKey };
+  return turnAudio({ on, ...keys, store, settings, status, signal });
+}
+
+async function recordTranscript(
+  { state, deps }: TurnsContext,
+  chat: Chat,
+  model: ModelInfo,
+  speech: HeardSpeech | undefined,
+): Promise<void> {
+  const visible = visibleMessages(chat, state.messages);
+  const newest = newestUserMessage(visible);
+  if (newest?.audio !== true) return;
+  const carried = speech && transcriptToCarry(visible, speech, transcriptTokenCap(model));
+  const own = newest.transcript?.fileKey === chat.video?.fileKey ? newest.transcript : undefined;
+  const transcript = carried ?? own;
+  if (sameTranscript(transcript, newest.transcript)) return;
+  const message: UserMessage = { ...newest };
+  if (transcript) message.transcript = transcript;
+  else delete message.transcript;
+  await deps.store.putMessage(chat.id, message);
+  if (state.currentChat?.id !== chat.id) return;
+  upsertMessage(state, message);
+  deps.conversation.show(message);
 }
 
 async function runChatTurn(
@@ -350,17 +401,28 @@ async function runChatTurn(
   compareWith?: ModelInfo,
 ): Promise<void> {
   const { state, deps } = ctx;
+  const ended = () => signal.aborted || state.currentChat?.id !== touched.id;
   const model = compareWith ?? currentModel(state);
-  if (model === null) return;
+  if (model === null || ended()) return;
   const toolCtx = toolContext(state, deps.store);
   const timeline = deps.timeline();
   const cast = await loadCast(ctx, touched);
-  const heard = await audioFor(ctx, audio, toolCtx, signal);
+  const heard = await audioFor(ctx, audio, { chat: touched, toolCtx }, signal);
+  if (ended()) return;
+  const { speech } = heard;
+  // A comparison asks exactly what the first model was asked.
+  const records = audio && !compareWith;
+  if (records) await recordTranscript(ctx, touched, model, speech);
+  if (ended()) return;
   const audioCoverage = heard.on ? heard.coverage : undefined;
   const videoLoaded = toolCtx !== undefined;
-  const setup = { chat: touched, model, thoroughness, audioCoverage, timeline, cast, videoLoaded };
+  const loaded = { audioCoverage, speech, timeline, cast, videoLoaded };
+  const setup: TurnSetup = { chat: touched, model, thoroughness, ...loaded };
   const chat = await withStorySoFar(ctx, setup, signal);
-  if (signal.aborted) return;
+  if (ended()) return;
+  // The summary may have folded away the message that carried the transcript.
+  if (records && chat !== touched) await recordTranscript(ctx, chat, model, speech);
+  if (ended()) return;
   const { api, veniceParameters } = modelCallDeps(state, deps.streamChat, model.id, signal);
   const resolution = resolveSheetResolution(chat.settings.sheetResolution, model).px;
   // Kept here rather than read from state, so recall still finds images if the user switches chats.
@@ -381,6 +443,7 @@ async function runChatTurn(
     ...withImageTokens(modelVisionProfile(model.id).imageTokens),
     thoroughness,
     ...(heard.on ? { audioCoverage: heard.coverage } : {}),
+    ...(speech ? { speech } : {}),
     maxRounds: roundsFor(thoroughness, chat.settings.maxRounds),
     ...(timeline ? { timeline } : {}),
     ...(cast ? { cast } : {}),
@@ -534,14 +597,18 @@ async function rerunEdited(
   chatId: string,
   message: UserMessage,
   index: number,
+  onUnsaved?: () => void,
 ): Promise<void> {
   let removed: readonly ChatMessage[] = [];
+  let saved = false;
   await run(ctx, async () => {
     await ctx.deps.store.putMessage(chatId, message);
+    saved = true;
     upsertMessage(ctx.state, message);
     removed = await truncateAfter(ctx, chatId, index);
     return { thoroughness: messageThoroughness(message), audio: message.audio === true };
   });
+  if (!saved) onUnsaved?.();
   // Not before the reply is written: nothing is released while one runs.
   await ctx.deps.images.release({ messages: removed });
 }
@@ -550,9 +617,13 @@ async function edit(
   ctx: TurnsContext,
   message: UserMessage | AssistantMessage,
   text: string,
+  onUnsaved?: () => void,
 ): Promise<void> {
   const chat = ctx.state.currentChat;
-  if (!chat || ctx.state.running) return;
+  if (!chat || ctx.state.running) {
+    onUnsaved?.();
+    return;
+  }
   if (message.role === "user" && text === "" && message.images.length === 0 && !message.video) {
     ctx.deps.status.show("A message needs some text or an image.", "error");
     ctx.deps.conversation.show(message);
@@ -561,10 +632,10 @@ async function edit(
   const updated = { ...message, text };
   const index = lastUserIndex(ctx);
   if (updated.role === "user" && ctx.state.messages[index]?.id === updated.id) {
-    await rerunEdited(ctx, chat.id, updated, index);
+    await rerunEdited(ctx, chat.id, updated, index, onUnsaved);
     return;
   }
-  await ctx.deps.store.putMessage(chat.id, updated);
+  await orUnsaved(ctx.deps.store.putMessage(chat.id, updated), onUnsaved);
   upsertMessage(ctx.state, updated);
   ctx.deps.conversation.show(updated);
 }

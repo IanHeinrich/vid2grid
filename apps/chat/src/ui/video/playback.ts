@@ -1,5 +1,6 @@
 import { readFrameTimes } from "@vid2grid/browser";
 import { errorText } from "../../text";
+import { wasRemoved } from "../../chat/messageVideo";
 import { formatTimestamp } from "../../time";
 import type { VideoAttachment } from "../../types";
 import {
@@ -93,9 +94,14 @@ export function openAtTimestamp(ctx: VideoPanelContext, seconds: number, play: b
 }
 
 export function seekMoment(ctx: VideoPanelContext, seconds: number, video?: VideoAttachment): void {
-  const target = video ?? ctx.state.currentChat?.video;
+  const { currentChat, messages } = ctx.state;
+  const target = video ?? currentChat?.video;
   if (!target || target.fileKey === currentShownVideo(ctx)?.fileKey) {
     openAtTimestamp(ctx, seconds, true);
+  } else if (currentChat && wasRemoved(currentChat, messages, target.fileKey)) {
+    ctx.deps.status.show(
+      `That moment is in ${target.name}, which was removed from this chat. Attach it again to jump there.`,
+    );
   } else {
     openOlder(ctx, target, seconds).catch((error: unknown) => {
       ctx.deps.status.show(`Could not open ${target.name}: ${errorText(error)}`, "error");

@@ -4,17 +4,17 @@ export const OPEN_TAB_PREFIX = "vid2grid-chat-open-tab/";
 export const CLEANUP_LOCK = "vid2grid-chat-cleanup";
 
 const JOIN_WAIT_MS = 3000;
-// Less than JOIN_WAIT_MS, so a tab that gives up waiting never overlaps work still under way.
-const WORK_MS = 2000;
+// Less than JOIN_WAIT_MS, so a deletion begins before a tab that gives up waiting reads anything.
+const BEGIN_MS = 2000;
 
 export type TabRefusal = "otherTabs" | "unsupported";
 
 export type AloneResult<T> = { done: T } | { refused: TabRefusal };
 
 export interface Tabs {
-  // False when this tab cannot say whether other tabs are open.
+  // False when this tab cannot say whether other tabs are open, or cannot yet.
   readonly supported: boolean;
-  // Runs the work only while no other tab of the app is open. It deletes nothing once out of time.
+  // Runs the work only while no other tab of the app is open. It begins no deletion once out of time.
   whileAlone<T>(work: (inTime: () => boolean) => Promise<T>): Promise<AloneResult<T>>;
 }
 
@@ -33,12 +33,26 @@ export async function joinTabs(
   waitMs = JOIN_WAIT_MS,
 ): Promise<Tabs> {
   if (!locks) return UNKNOWN_TABS;
+  let tabs = UNKNOWN_TABS;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const waited = new Promise<Tabs>((resolve) => {
-    timer = setTimeout(() => resolve(UNKNOWN_TABS), waitMs);
+  const waited = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, waitMs);
   });
-  const joined = join(locks).catch(() => UNKNOWN_TABS);
-  return Promise.race([joined, waited]).finally(() => clearTimeout(timer));
+  const joined = join(locks).then(
+    (joinedTabs) => {
+      tabs = joinedTabs;
+    },
+    () => undefined,
+  );
+  await Promise.race([joined, waited]);
+  clearTimeout(timer);
+  // A join that takes too long may still go through later.
+  return {
+    get supported() {
+      return tabs.supported;
+    },
+    whileAlone: (work) => tabs.whileAlone(work),
+  };
 }
 
 async function join(locks: LockManager): Promise<Tabs> {
@@ -68,7 +82,7 @@ async function whileAlone<T>(
     const started = Date.now();
     const refused = await refusal(locks, own);
     if (refused) return { refused };
-    return { done: await work(() => Date.now() - started < WORK_MS) };
+    return { done: await work(() => Date.now() - started < BEGIN_MS) };
   });
 }
 

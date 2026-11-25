@@ -103,6 +103,101 @@ describe("buildRequest context block", () => {
   });
 });
 
+describe("buildRequest transcript", () => {
+  const listenTool = { ...lookTool, function: { ...lookTool.function, name: "listen" } };
+  const speech = {
+    fileKey: "k",
+    speechSpans: [{ startSeconds: 0, endSeconds: 125 }],
+    speech: [{ start: 12, end: 15, text: "Hello there." }],
+  };
+  const carrier: UserMessage = {
+    ...user("u1", "what is said?"),
+    audio: true,
+    transcript: { fileKey: "k", spans: speech.speechSpans },
+  };
+  const audioCoverage = {
+    text: "analysed 0:00 to 2:05 (speech and sounds)",
+    besideTranscript: "the speech heard is in the transcript; sounds analysed 0:00 to 2:05",
+    canListen: true,
+  };
+
+  function build(messages: ChatMessage[], extra: Partial<BuildRequestInput> = {}) {
+    return buildRequest(
+      input({
+        chat: videoChat,
+        messages,
+        tools: [lookTool, listenTool],
+        speech,
+        audioCoverage,
+        ...extra,
+      }),
+    ).messages;
+  }
+
+  it("sends it after the overview, in the message that carries it", () => {
+    const overview = overviewSheet("ov");
+    const wire = build([{ ...carrier, images: [overview] }], {
+      kept: new Set(["ov"]),
+      dataUrls: new Map([["ov", "data:ov"]]),
+    }).at(-1);
+    expect(wire?.content).toEqual([
+      { type: "text", text: "what is said?" },
+      { type: "text", text: imageLabel(overview) },
+      { type: "image_url", image_url: { url: "data:ov" } },
+      { type: "text", text: expect.stringContaining("[0:12] Hello there.") as string },
+    ]);
+  });
+
+  it("stays plain text without images", () => {
+    expect(build([carrier]).at(-1)?.content).toMatch(
+      /^what is said\?\n\nTranscript of[\s\S]*\n\[0:12\] Hello there\.$/,
+    );
+  });
+
+  it("is the same on every round of the turn", () => {
+    const round = [assistant("a1", "", ["c1"]), tool("t1", "c1")];
+    const sent = build([carrier]);
+    expect(build([carrier, ...round]).slice(0, sent.length)).toEqual(sent);
+  });
+
+  it("keeps the audio note from repeating the speech heard", () => {
+    const context = build([carrier]).find(isContext)?.content;
+    expect(context).toContain(audioNote({ text: audioCoverage.besideTranscript, canListen: true }));
+    expect(context).not.toContain("speech and sounds");
+    const plain = build([user("u1", "hi")]).find(isContext)?.content;
+    expect(plain).toContain(audioNote(audioCoverage));
+  });
+
+  it("becomes a stub on later turns, whatever happens to earlier images", () => {
+    const settings = { ...videoChat.settings, earlierImages: "send" as const };
+    const later = [carrier, assistant("a1", "Hello."), user("u2", "and then?")];
+    const [, first] = build(later, { chat: { ...videoChat, settings } });
+    expect(first?.content).toBe(
+      "what is said?\n\n[Transcript of the video's speech up to 2:05. Sent earlier; call listen(start, end) to read any range again.]",
+    );
+    const [, off] = buildRequest(input({ chat: videoChat, messages: later })).messages;
+    expect(off?.content).not.toContain("listen");
+    expect(off?.content).not.toContain("Hello there.");
+  });
+
+  it("stays in full on later turns for a model without tools, and never names listen", () => {
+    const noTools = { model: { ...model, tools: false } };
+    const [, , first] = build([carrier], noTools);
+    expect(first?.content).toContain("[0:12] Hello there.");
+    const later = build([carrier, assistant("a1", "Hello."), user("u2", "and then?")], noTools);
+    expect(later[1]).toEqual(first);
+    const context = later.find(isContext)?.content;
+    expect(context).toContain(`Audio: ${audioCoverage.besideTranscript}.`);
+    expect(JSON.stringify([first, later])).not.toContain("listen");
+  });
+
+  it("never tells a model without tools to call listen, transcript or not", () => {
+    const wire = build([user("u1", "hi")], { model: { ...model, tools: false } });
+    expect(wire.find(isContext)?.content).toContain(`Audio: ${audioCoverage.text}.`);
+    expect(JSON.stringify(wire)).not.toContain("listen");
+  });
+});
+
 describe("buildRequest cast", () => {
   it("puts the cast in the context block, never in the system prompt", () => {
     const cast: VideoCast = {

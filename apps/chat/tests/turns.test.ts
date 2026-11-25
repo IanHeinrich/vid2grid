@@ -17,8 +17,10 @@ import {
   setCurrentChat,
   setLoadedVideo,
   setModels,
+  setRunning,
   type AppState,
 } from "../src/state";
+import { errorText } from "../src/text";
 import type {
   Chat,
   ChatMessage,
@@ -35,6 +37,7 @@ import type {
 } from "../src/types";
 import { initConversation, type Conversation } from "../src/ui/conversation/conversation";
 import { storedPickerSettings } from "../src/ui/modelPicker/pickerModel";
+import { initMessageActions } from "../src/app/messageActions";
 import {
   ANSWERED_NOW_NOTES,
   initTurns,
@@ -46,7 +49,7 @@ import { resolveSheetResolution } from "../src/video/resolution";
 import { conversationDeps } from "./support/conversationDeps";
 import { model } from "./support/factories";
 import { idleImages } from "./support/images";
-import { mountPage } from "./support/page";
+import { mountPage, stillToast } from "./support/page";
 import { waitForAbort } from "./support/streams";
 
 vi.mock("../src/chat/agentLoop", async (importOriginal) => {
@@ -69,6 +72,7 @@ let conversation: Conversation;
 let status: { show: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn> };
 let toast: { show: ReturnType<typeof vi.fn> };
 let streamChat: ReturnType<typeof vi.fn<StreamChat>>;
+let editing: Promise<void>;
 
 const U1: UserMessage = { id: "U1", createdAt: 1, role: "user", text: "one", images: [] };
 const A1: ChatMessage = {
@@ -145,6 +149,9 @@ beforeEach(() => {
       chatModelId: () => state.currentChat?.settings.modelId,
       pickerSettings: storedPickerSettings(state, localStorage),
       onVerify: () => Promise.resolve(undefined),
+      onEdit: (message, text, onUnsaved) => {
+        editing = turns().edit(message, text, onUnsaved);
+      },
     }),
   );
 });
@@ -200,6 +207,67 @@ describe("editing", () => {
     expect(messages[3]).toEqual(expect.objectContaining({ text: "New reply" }));
     expect(messages[2]).toEqual(expect.objectContaining({ text: "two, edited" }));
     expect(streamChat).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["the last message, which would run the turn again", "two"],
+    ["an earlier message", "one"],
+    ["a reply", "Old two"],
+  ])("goes back in the editor when it cannot be saved: %s", async (_what, shown) => {
+    await seed([U1, A1, U2, A2]);
+    await store.deleteChat("chat");
+    const { list } = els.conversation;
+    const message = () =>
+      [...list.querySelectorAll<HTMLElement>(".message")].find(
+        (el) => el.querySelector(".message-text")?.textContent.trim() === shown,
+      );
+    const editor = () => message()?.querySelector<HTMLTextAreaElement>(".message-editor textarea");
+    const save = () => message()?.querySelector<HTMLButtonElement>(".editor-save");
+    message()?.querySelector<HTMLElement>(".edit-action")?.click();
+    const input = editor();
+    if (!input) throw new Error("No editor");
+    input.value = "Typed at length";
+    save()?.click();
+    expect(editor()).toBeFalsy();
+    const error = await editing.then(
+      () => status.show.mock.calls.at(-1),
+      (reason: unknown) => [errorText(reason), "error"],
+    );
+    expect(error).toEqual(["This chat has been deleted.", "error"]);
+    expect(editor()?.value).toBe("Typed at length");
+    expect(document.activeElement).toBe(editor());
+    expect(save()?.disabled).toBe(false);
+    expect(state.messages).toEqual([U1, A1, U2, A2]);
+    expect(streamChat).not.toHaveBeenCalled();
+    const chat = state.currentChat;
+    if (chat) await store.putChat(chat);
+    save()?.click();
+    await editing;
+    expect((await store.listMessages("chat")).map(({ text }) => text)).toContain("Typed at length");
+    expect(editor()).toBeFalsy();
+  });
+
+  it("goes back in the editor when a reply has begun meanwhile or no chat is open", async () => {
+    await seed([U1, A1]);
+    const onUnsaved = vi.fn();
+    setRunning(state, true);
+    await turns().edit(U1, "one, edited", onUnsaved);
+    expect(onUnsaved).toHaveBeenCalledTimes(1);
+    setRunning(state, false);
+    setCurrentChat(state, null, []);
+    await turns().edit(U1, "one, edited", onUnsaved);
+    expect(onUnsaved).toHaveBeenCalledTimes(2);
+    expect(await store.listMessages("chat")).toEqual([U1, A1]);
+  });
+
+  it("is never handed back once it is saved", async () => {
+    await seed([U1, A1]);
+    const onUnsaved = vi.fn();
+    store.deleteMessages = () => Promise.reject(new Error("quota"));
+    await turns().edit(U1, "one, edited", onUnsaved);
+    expect(status.show).toHaveBeenLastCalledWith("quota", "error");
+    expect(onUnsaved).not.toHaveBeenCalled();
+    expect((await store.listMessages("chat"))[0]).toMatchObject({ text: "one, edited" });
   });
 
   it("only updates an earlier message or a reply", async () => {
@@ -410,6 +478,36 @@ describe("rolling summaries", () => {
     expect(streamChat).toHaveBeenCalledTimes(2);
   });
 
+  it("stops without sending another chat's messages when the chat changed meanwhile", async () => {
+    const other = blankChat(MODEL, "other", 1);
+    await seed(longHistory(6));
+    replaceChat(state, other);
+    streamChat.mockImplementation((_settings, request) => {
+      setCurrentChat(state, other, [{ ...U1, text: "A private aside" }]);
+      return answer(isSummaryRequest(request) ? "They went to the beach." : "New reply");
+    });
+    await turns().run(() => Promise.resolve({}));
+    expect(runTurn).not.toHaveBeenCalled();
+    expect(streamChat).toHaveBeenCalledTimes(1);
+    expect((await store.getChat("chat"))?.storySoFar?.text).toBe("They went to the beach.");
+    expect((await store.getChat("other"))?.storySoFar).toBeUndefined();
+    expect(status.clear).toHaveBeenCalled();
+    expect(isRunningIn(state, "chat")).toBe(false);
+  });
+
+  it("stops when the chat changed while the turn was being set up", async () => {
+    const other = blankChat(MODEL, "other", 1);
+    await seed([{ ...U1, audio: true }], { video: VIDEO });
+    const read = store.getAudio.bind(store);
+    vi.spyOn(store, "getAudio").mockImplementation((key) => {
+      setCurrentChat(state, other, [{ ...U1, text: "A private aside", audio: true }]);
+      return read(key);
+    });
+    await turns().run(() => Promise.resolve({ audio: true }));
+    expect(runTurn).not.toHaveBeenCalled();
+    expect(await store.listMessages("other")).toEqual([]);
+  });
+
   it("leaves a short chat alone", async () => {
     await seed([U1]);
     await turns().run(() => Promise.resolve({}));
@@ -570,6 +668,245 @@ describe("audio", () => {
     await seed([], { video: VIDEO });
     await turns().run(() => Promise.resolve({ message: { ...U1, audio: true } }));
     expect(lastTurnDeps()?.audioCoverage).toBeUndefined();
+  });
+});
+
+describe("transcript", () => {
+  const SPOKEN: VideoAudio = {
+    ...HEARD,
+    speech: [{ start: 12, end: 15, text: "Hello there." }],
+  };
+  const RECORD = { fileKey: VIDEO.fileKey, spans: HEARD.speechSpans };
+
+  async function transcripts(): Promise<unknown[]> {
+    const messages = await store.listMessages("chat");
+    return messages.flatMap((message) => (message.role === "user" ? [message.transcript] : []));
+  }
+
+  function sent(call = streamChat.mock.calls.length - 1): string {
+    return JSON.stringify(streamChat.mock.calls[call]?.[1].messages);
+  }
+
+  it("sends what has been heard with the message and records it there", async () => {
+    await store.putAudio(SPOKEN);
+    await seedWithVideo([]);
+    await turns().run(() => Promise.resolve({ message: { ...U1, audio: true } }));
+    expect(sent()).toContain("[0:12] Hello there.");
+    expect(await transcripts()).toEqual([RECORD]);
+    expect(els.conversation.list.querySelector(".transcript-tag")?.textContent).toBe(
+      "Transcript to 1:00 sent",
+    );
+  });
+
+  it("sends and records nothing when the toggle is off or no speech was heard", async () => {
+    await store.putAudio(SPOKEN);
+    await seedWithVideo([]);
+    await turns().run(() => Promise.resolve({ message: U1 }));
+    expect(sent()).not.toContain("Hello there.");
+    await store.putAudio(HEARD);
+    await seedWithVideo([]);
+    await turns().run(() => Promise.resolve({ message: { ...U1, audio: true } }));
+    expect(sent()).not.toContain("Transcript");
+    expect(await transcripts()).toEqual([undefined]);
+  });
+
+  it("leaves a stub on the next turn and does not send it again", async () => {
+    await store.putAudio(SPOKEN);
+    await seedWithVideo([{ ...U1, audio: true, transcript: RECORD }, A1]);
+    await turns().run(() => Promise.resolve({ message: { ...U2, audio: true } }));
+    expect(sent()).toContain("Sent earlier; call listen(start, end)");
+    expect(sent()).not.toContain("Hello there.");
+    expect(await transcripts()).toEqual([RECORD, undefined]);
+  });
+
+  it("sends it again once much more has been heard", async () => {
+    const spans = [{ startSeconds: 0, endSeconds: 120 }];
+    const more = { start: 70, end: 75, text: "And a good deal more." };
+    await store.putAudio({ ...SPOKEN, speechSpans: spans, speech: [...SPOKEN.speech, more] });
+    await seedWithVideo([{ ...U1, audio: true, transcript: RECORD }, A1]);
+    await turns().run(() => Promise.resolve({ message: { ...U2, audio: true } }));
+    expect(sent()).toContain("[1:10] And a good deal more.");
+    expect(await transcripts()).toEqual([RECORD, { ...RECORD, spans }]);
+  });
+
+  it("replays with what has been heard by then, and compares with what was sent", async () => {
+    await seedWithVideo([{ ...U1, audio: true }, A1]);
+    await store.putAudio(SPOKEN);
+    await turns().compare(model("other-model"));
+    expect(sent()).not.toContain("Hello there.");
+    await turns().replay();
+    expect(sent()).toContain("[0:12] Hello there.");
+    expect(await transcripts()).toEqual([RECORD]);
+  });
+
+  it("keeps the same text through Keep going, however much more has been heard", async () => {
+    const spans = [{ startSeconds: 0, endSeconds: 120 }];
+    const more = { start: 70, end: 75, text: "And a good deal more." };
+    await store.putAudio({ ...SPOKEN, speechSpans: spans, speech: [...SPOKEN.speech, more] });
+    await seedWithVideo([
+      { ...U1, audio: true, transcript: RECORD },
+      { ...A1, stoppedAtRoundLimit: true },
+    ]);
+    await turns().keepGoing();
+    expect(sent()).toContain("[0:12] Hello there.");
+    expect(sent()).not.toContain("good deal more");
+    expect(await transcripts()).toEqual([RECORD, undefined]);
+  });
+
+  it("does not save or show the message again when its record would not change", async () => {
+    await store.putAudio(SPOKEN);
+    await seedWithVideo([{ ...U1, audio: true, transcript: RECORD }, A1]);
+    const put = vi.spyOn(store, "putMessage");
+    const show = vi.spyOn(conversation, "show");
+    await turns().replay();
+    expect(sent()).toContain("[0:12] Hello there.");
+    expect(put.mock.calls.filter(([, message]) => message.id === "U1")).toHaveLength(1);
+    expect(show.mock.calls.filter(([message]) => message.id === "U1")).toHaveLength(0);
+  });
+
+  it.each([
+    ["nothing is stored for the new video", undefined],
+    ["no speech was heard in it", HEARD],
+  ])("drops another video's record on replay when %s", async (_when, audio) => {
+    if (audio) await store.putAudio(audio);
+    const stale = { ...RECORD, fileKey: "older-key" };
+    await seedWithVideo([{ ...U1, audio: true, transcript: stale }, A1]);
+    await turns().replay();
+    expect(await transcripts()).toEqual([undefined]);
+    expect(sent()).not.toContain("Transcript");
+    expect(els.conversation.list.querySelector(".transcript-tag")).toBeNull();
+  });
+
+  it("keeps its own record on replay when the stored speech is gone", async () => {
+    await seedWithVideo([{ ...U1, audio: true, transcript: RECORD }, A1]);
+    await turns().replay();
+    expect(await transcripts()).toEqual([RECORD]);
+  });
+
+  describe.each([
+    ["with tools", true],
+    ["without tools", false],
+  ])("for a model %s", (_kind, tools) => {
+    const carrier: UserMessage = { ...U1, audio: true, transcript: RECORD };
+    const question: UserMessage = { ...U2, audio: true, text: "And then?" };
+
+    async function seedFor(messages: ChatMessage[], extra: Partial<ModelInfo> = {}) {
+      await store.putAudio(SPOKEN);
+      await seedWithVideo(messages);
+      setModels(state, [{ ...smallModel(), contextTokens: 100_000, tools, ...extra }]);
+    }
+
+    function userTexts(): string[] {
+      const messages = streamChat.mock.lastCall?.[1].messages ?? [];
+      return messages.flatMap(({ role, content }) => {
+        if (role !== "user" || typeof content !== "string") return [];
+        return content.startsWith("Context for") ? [] : [content];
+      });
+    }
+
+    function expectTurnTwo(): void {
+      const [first, second] = userTexts();
+      expect(first).toContain(tools ? "Sent earlier; call listen" : "[0:12] Hello there.");
+      expect(second).toBe("And then?");
+    }
+
+    it("sends the stub or the full text at the same place on turn two", async () => {
+      await seedFor([carrier, A1]);
+      await turns().run(() => Promise.resolve({ message: question }));
+      expectTurnTwo();
+      expect(await transcripts()).toEqual([RECORD, undefined]);
+    });
+
+    it("sends no transcript text on a message with audio off", async () => {
+      await seedFor([carrier, A1]);
+      await turns().run(() => Promise.resolve({ message: { ...U2, text: "And then?" } }));
+      expect(sent()).not.toContain("Hello there.");
+      expect(sent()).not.toContain("listen");
+    });
+
+    it("carries it again once the message that carried it is folded away", async () => {
+      const [first, ...rest] = longHistory(6);
+      if (first?.role !== "user") throw new Error("Expected a user message");
+      await seedFor([{ ...first, audio: true, transcript: RECORD }, ...rest], {
+        contextTokens: 1600,
+      });
+      streamChat.mockImplementation((_settings, request) =>
+        answer(isSummaryRequest(request) ? "They went to the beach." : "New reply"),
+      );
+      const message = { ...question, createdAt: 100 };
+      await turns().run(() => Promise.resolve({ message }));
+      expect(state.currentChat?.storySoFar).toMatchObject({ throughMessageId: "a2" });
+      expect(userTexts().at(-1)).toMatch(/^And then\?\n\nTranscript[\s\S]*\[0:12\] Hello there\.$/);
+      const records = await transcripts();
+      expect(records.at(0)).toEqual(RECORD);
+      expect(records.at(-1)).toEqual(RECORD);
+
+      const next = { ...question, id: "U3", text: "Last?", createdAt: 200 };
+      await turns().run(() => Promise.resolve({ message: next }));
+      expect(userTexts().at(-1)).toBe("Last?");
+      expect(userTexts().some((text) => text.includes("Hello there."))).toBe(!tools);
+    });
+
+    async function openBranchAt(message: ChatMessage): Promise<void> {
+      const actions = initMessageActions(state, {
+        store,
+        status,
+        toast: stillToast(els),
+        conversation,
+        images: idleImages(),
+        streamChat,
+        toolContext: () => undefined,
+        onOpen: vi.fn(),
+        onChatsChanged: vi.fn(),
+        newId: () => "branch",
+      });
+      await actions.branch(message);
+      const copy = state.chats.find((chat) => chat.id === "branch");
+      if (!copy) throw new Error("No branch");
+      const loaded = state.video;
+      setCurrentChat(state, copy, await store.listMessages("branch"));
+      if (loaded) setLoadedVideo(state, { ...loaded, chatId: "branch" });
+    }
+
+    it("reads the same in a branch", async () => {
+      await seedFor([carrier, A1, U2, A2]);
+      await openBranchAt(A1);
+      await turns().run(() => Promise.resolve({ message: { ...question, id: "U3" } }));
+      expectTurnTwo();
+    });
+
+    it("carries it again in a branch whose summary covers the message that carried it", async () => {
+      await seedFor([carrier, A1, U2, A2]);
+      const chat = state.currentChat;
+      if (!chat) throw new Error("No chat");
+      const storySoFar = { text: "Hello was said.", throughMessageId: A1.id, updatedAt: 1 };
+      replaceChat(state, { ...chat, storySoFar });
+      setCurrentChat(state, { ...chat, storySoFar }, [...state.messages]);
+      await openBranchAt(A2);
+      await turns().run(() =>
+        Promise.resolve({ message: { ...question, id: "U3", createdAt: 9 } }),
+      );
+      expect(userTexts().at(-1)).toContain("[0:12] Hello there.");
+    });
+  });
+
+  it("keeps the full text on turn two while the video's file is not loaded", async () => {
+    await store.putAudio(SPOKEN);
+    setModels(state, [{ ...smallModel(), contextTokens: 100_000 }]);
+    await seed([{ ...U1, audio: true, transcript: RECORD }, A1], { video: VIDEO });
+    await turns().run(() => Promise.resolve({ message: { ...U2, audio: true } }));
+    expect(sent()).toContain("[0:12] Hello there.");
+    expect(sent()).not.toContain("listen");
+    expect(await transcripts()).toEqual([RECORD, undefined]);
+  });
+
+  it("sends stored speech while the video's file is not loaded, without listen", async () => {
+    await store.putAudio(SPOKEN);
+    setModels(state, [smallModel()]);
+    await seed([], { video: VIDEO });
+    await turns().run(() => Promise.resolve({ message: { ...U1, audio: true } }));
+    expect(sent()).toContain("[0:12] Hello there.");
+    expect(sent()).not.toContain("listen");
   });
 });
 

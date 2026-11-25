@@ -26,6 +26,12 @@ import {
 } from "./prompts";
 import { sentView, type SentView } from "./story";
 import { effortFor, lowestEffort } from "./thoroughness";
+import {
+  transcriptTexts,
+  transcriptTokenCap,
+  type HeardSpeech,
+  type TranscriptTexts,
+} from "./transcript";
 
 export interface BuildRequestInput {
   chat: Chat;
@@ -42,6 +48,8 @@ export interface BuildRequestInput {
   // Retry a round that thought too long: answer at once, with the lowest reasoning effort.
   answerNow?: boolean;
   audioCoverage?: AudioCoverage;
+  // Rebuilds the transcript the turn's message carries; absent when audio is off.
+  speech?: HeardSpeech;
   timeline?: VideoTimeline;
   cast?: VideoCast;
 }
@@ -113,15 +121,28 @@ function imageParts(
   });
 }
 
+function textParts(text: string): ContentPart[] {
+  return text.length > 0 ? [{ type: "text", text }] : [];
+}
+
 function userWire(
   message: UserMessage,
   input: BuildRequestInput,
   placement: ImagePlacement,
+  transcript = "",
 ): WireMessage {
-  if (message.images.length === 0) return { role: "user", content: message.text };
-  const textParts: ContentPart[] =
-    message.text.length > 0 ? [{ type: "text", text: message.text }] : [];
-  return { role: "user", content: [...textParts, ...imageParts(message, input, placement)] };
+  if (message.images.length === 0) {
+    const texts = [message.text, transcript].filter((text) => text.length > 0);
+    return { role: "user", content: texts.join("\n\n") };
+  }
+  return {
+    role: "user",
+    content: [
+      ...textParts(message.text),
+      ...imageParts(message, input, placement),
+      ...textParts(transcript),
+    ],
+  };
 }
 
 function turnWire(
@@ -163,7 +184,34 @@ function listsTools({ allowTools, model, tools }: BuildRequestInput): boolean {
   return allowTools && model.tools && tools.length > 0;
 }
 
-function wireHistory(view: SentView, input: BuildRequestInput): WireHistory {
+function offersListen(input: BuildRequestInput): boolean {
+  return listsTools(input) && input.audioCoverage?.canListen === true;
+}
+
+function sentTranscripts(view: SentView, input: BuildRequestInput): TranscriptTexts {
+  return transcriptTexts(view.sent, {
+    speech: input.speech,
+    video: input.chat.video,
+    capTokens: transcriptTokenCap(input.model),
+    listen: offersListen(input),
+  });
+}
+
+function sentCoverage(
+  input: BuildRequestInput,
+  { sentInFull }: TranscriptTexts,
+): AudioCoverage | undefined {
+  const { audioCoverage } = input;
+  if (audioCoverage === undefined) return undefined;
+  const { text, besideTranscript = text } = audioCoverage;
+  return { text: sentInFull ? besideTranscript : text, canListen: offersListen(input) };
+}
+
+function wireHistory(
+  view: SentView,
+  input: BuildRequestInput,
+  transcripts: TranscriptTexts,
+): WireHistory {
   const earlierImages = input.chat.settings.earlierImages ?? "describe";
   const placement: ImagePlacement = {
     holders: latestHolders(view.sent),
@@ -177,7 +225,8 @@ function wireHistory(view: SentView, input: BuildRequestInput): WireHistory {
   for (const block of sanitise(view.visible)) {
     if ("role" in block) {
       contextAt = messages.length;
-      messages.push(userWire(block, input, placement));
+      const transcript = transcripts.byMessage.get(block.id);
+      messages.push(userWire(block, input, placement, transcript));
     } else {
       messages.push(...turnWire(block, input, placement));
     }
@@ -214,12 +263,13 @@ function requestOptions(input: BuildRequestInput): Omit<ChatRequest, "model" | "
 export function buildRequest(input: BuildRequestInput): ChatRequest {
   const { chat } = input;
   const view = sentView(chat, input.messages);
-  const { messages, contextAt } = wireHistory(view, input);
+  const transcripts = sentTranscripts(view, input);
+  const { messages, contextAt } = wireHistory(view, input, transcripts);
   const context = buildContext(chat, {
     timeline: input.timeline,
     cast: input.cast,
     thoroughness: input.thoroughness,
-    audioCoverage: input.audioCoverage,
+    audioCoverage: sentCoverage(input, transcripts),
     story: view.story,
   });
   if (context.length > 0) {

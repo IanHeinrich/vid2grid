@@ -13,6 +13,7 @@ import { persistMessage } from "./app/persistMessage";
 import { browserLocks, joinTabs, type Tabs } from "./app/tabs";
 import { toolContext } from "./app/toolContext";
 import { initTurns, type Turns, type TurnsDeps } from "./app/turns";
+import { initVideoRemoval, type VideoRemoval } from "./app/videoRemoval";
 import { currentModel } from "./chat/models";
 import { openChatStore } from "./chat/store";
 import { queryElements, type AppElements } from "./dom";
@@ -91,8 +92,11 @@ interface App {
   connectionTest: ConnectionTest;
   opener: ChatOpener;
   modelList: ModelList;
+  removal: VideoRemoval;
   refresh(): void;
 }
+
+type UseCases = "opener" | "modelList" | "removal";
 
 function surface(app: App, action: string, work: Promise<unknown>): void {
   work.catch((error: unknown) => app.toast.show(`Could not ${action}: ${errorText(error)}`));
@@ -104,7 +108,7 @@ function refreshBalance(app: Pick<App, "balance">): void {
 }
 
 // On the status line, since a toast would end an Undo that is still open.
-function surfaceQuietly(app: App, action: string, work: Promise<unknown>): void {
+function surfaceQuietly(app: Pick<App, "status">, action: string, work: Promise<unknown>): void {
   work.catch((error: unknown) => {
     app.status.show(`Could not ${action}: ${errorText(error)}`, "error");
   });
@@ -114,6 +118,17 @@ const imagesOf = (app: () => App): Pick<ImageCleanup, "hold" | "release"> => ({
   hold: (use) => app().images.hold(use),
   release: (dropped) => app().images.release(dropped),
 });
+
+// Deleted only where nothing else uses them.
+function releaseCopies(app: Pick<App, "copies" | "status">, videoKeys: readonly string[]): void {
+  for (const fileKey of videoKeys) {
+    surfaceQuietly(app, "remove the stored video", app.copies.release(fileKey));
+  }
+}
+
+function removeVideo(app: App, { fileKey }: VideoAttachment): void {
+  surface(app, "remove the video", app.removal.remove(fileKey));
+}
 
 const confirm = (message: string) => window.confirm(message);
 
@@ -128,7 +143,8 @@ function conversationDeps(app: () => App, store: ChatStore, state: AppState): Co
         "save the message",
         persistMessage({ state, store, onChanged: () => app().usage.render() }, message),
       ),
-    onEdit: (message, text) => surface(app(), "edit the message", app().turns.edit(message, text)),
+    onEdit: (message, text, onUnsaved) =>
+      surface(app(), "edit the message", app().turns.edit(message, text, onUnsaved)),
     onReplay: () => surface(app(), "replay", app().turns.replay()),
     onKeepGoing: () => surface(app(), "keep going", app().turns.keepGoing()),
     onBranch: (message) => reportFailure(app(), "branch", app().actions.branch(message)),
@@ -138,6 +154,9 @@ function conversationDeps(app: () => App, store: ChatStore, state: AppState): Co
     videoView: () => app().video.view(),
     onPopOut: (seconds) => app().video.openPlayer(seconds),
     onReattach: () => surface(app(), "reattach the video", app().video.reattach()),
+    onRemoveVideo: (video) => removeVideo(app(), video),
+    removeBlocker: () => app().removal.blocker(),
+    removedVideos: () => state.currentChat?.removedVideos ?? [],
     showThinking: () => state.settings.showThinking,
     onPrefill: (text) => app().composer.prefill(text),
     focusComposer: () => app().composer.focus(),
@@ -197,11 +216,7 @@ function sidebarDeps(
       app().actions.invalidateUndo();
     },
     onDeleted: () => app().study.render(),
-    onDeleteFinal: (videoKeys) => {
-      for (const fileKey of videoKeys) {
-        surfaceQuietly(app(), "remove the stored video", app().copies.release(fileKey));
-      }
-    },
+    onDeleteFinal: (videoKeys) => releaseCopies(app(), videoKeys),
     onCurrentDeleted: () => openFallbackSafely(app()),
     onRenamed: () => app().chatSettings.render(),
     onOpenSettings: () => app().settingsDialog.open(),
@@ -227,8 +242,7 @@ function videoDeps(app: () => App, store: ChatStore, status: StatusLine): VideoP
       app().copies.save(file, video.fileKey);
       if (!replaced) return;
       app().study.render();
-      const released = app().copies.release(replaced.fileKey);
-      surfaceQuietly(app(), "remove the stored video", released);
+      releaseCopies(app(), [replaced.fileKey]);
     },
   };
 }
@@ -255,8 +269,12 @@ function studyDeps(
       app().knowledge.open("timeline");
     },
     shownVideo: () => videoPicker.shown(),
+    removeBlocker: () => app().removal.blocker(),
+    onRemoveVideo: (video) => removeVideo(app(), video),
+    focusComposer: () => app().composer.focus(),
     onChanged: () => {
       app().video.render();
+      app().conversation.refreshVideos();
       refreshBalance(app());
     },
   };
@@ -280,8 +298,10 @@ function turnsDeps(
     onChatChanged: () => app().refresh(),
     onRunningChanged: () => {
       app().composer.render();
-      if (app().state.running) app().actions.invalidateUndo();
-      else refreshBalance(app());
+      if (app().state.running) {
+        app().actions.invalidateUndo();
+        app().removal.invalidateUndo();
+      } else refreshBalance(app());
     },
     onMessageSaved: () => app().usage.render(),
   };
@@ -304,6 +324,7 @@ function initFirstRun(
   const connectionTest = initConnectionTest(els, state, { onTested: () => welcome.render() });
   initBackup(els, {
     store,
+    images: imagesOf(app),
     toast: { show: (text) => app().toast.show(text) },
     download: downloadBlob,
     onRestored: () => reloadChats(app()),
@@ -410,8 +431,14 @@ function initStored(
   { app, tabs }: { app: () => App; tabs: Tabs },
 ): Pick<App, "copies" | "images" | "settingsDialog"> {
   const onProgress = () => app().video.render();
-  const copies = initVideoCopies(els, state, { store, status, confirm, onProgress });
-  const images = createImageCleanup(state, { store, tabs });
+  const images = createImageCleanup(state, {
+    store,
+    tabs,
+    onVideosFreed: (videoKeys) =>
+      surfaceQuietly(app(), "remove the stored video", app().copies.releaseWaiting(videoKeys)),
+  });
+  const isHeld = (fileKey: string) => images.holdsVideo(fileKey);
+  const copies = initVideoCopies(els, state, { store, status, confirm, isHeld, onProgress });
   const unusedImages = initUnusedImages(els, { images, confirm });
   const deps = settingsDialogDeps(app, copies, unusedImages);
   return { copies, images, settingsDialog: initSettingsDialog(els, state, deps) };
@@ -449,7 +476,7 @@ function wire(
   });
   const chatSettings = initChatSettings(els, state, chatSettingsDeps(store, toast, refresh));
   const sidebar = initSidebar(els, state, sidebarDeps(self, store, status, toast));
-  const base: Omit<App, "opener" | "modelList"> = {
+  const base: Omit<App, UseCases> = {
     state,
     store,
     status,
@@ -473,10 +500,16 @@ function wire(
   return app;
 }
 
-function initUseCases(app: Omit<App, "opener" | "modelList">): Pick<App, "opener" | "modelList"> {
+function initUseCases(app: Omit<App, UseCases>): Pick<App, UseCases> {
   return {
     opener: createChatOpener(app),
     modelList: createModelList({ ...app, listModels, refreshBalance: () => refreshBalance(app) }),
+    removal: initVideoRemoval(app.state, {
+      ...app,
+      isStudying: (chatId) => app.study.isRunningIn(chatId),
+      onFinal: (videoKeys) => releaseCopies(app, videoKeys),
+      onChanged: app.refresh,
+    }),
   };
 }
 

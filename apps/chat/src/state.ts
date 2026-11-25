@@ -97,9 +97,18 @@ export async function updateChat(
 }
 
 export function removeChat(state: WritableAppState, id: string): void {
+  removeDraft(state, id);
+  unlistChat(state, id);
+}
+
+export function removeDraft(state: WritableAppState, chatId: string): void {
+  clearPending(state, chatId);
+  setOverviewStatus(state, chatId, null);
+}
+
+// Keeps the message being written, for a chat whose delete may yet fail.
+export function unlistChat(state: WritableAppState, id: string): void {
   state.chats = state.chats.filter((chat) => chat.id !== id);
-  clearPending(state, id);
-  setOverviewStatus(state, id, null);
   if (state.currentChat?.id === id) setCurrentChat(state, null, []);
 }
 

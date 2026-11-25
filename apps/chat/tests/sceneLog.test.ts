@@ -193,6 +193,68 @@ describe("scene log editing", () => {
   });
 });
 
+describe("scene log once the video is removed", () => {
+  async function removeVideo(): Promise<void> {
+    await openChat([], null);
+  }
+
+  function editor(): HTMLInputElement {
+    const text = els.sceneLog.list.querySelector<HTMLInputElement>(".note-text-input");
+    if (!text) throw new Error("No editor");
+    return text;
+  }
+
+  it("drops a condensed preview", async () => {
+    await openChat(notes);
+    const log = panel(replyWith("[0:05] Merged"));
+    els.sceneLog.condenseButton.click();
+    await vi.waitFor(() => expect(els.sceneLog.preview.hidden).toBe(false));
+    await removeVideo();
+    log.render();
+    expect(els.sceneLog.preview.hidden).toBe(true);
+    els.sceneLog.acceptButton.click();
+    await openChat([]);
+    log.render();
+    expect(els.sceneLog.preview.hidden).toBe(true);
+    expect(await savedLog()).toEqual([]);
+  });
+
+  it("ignores a condense that finishes later", async () => {
+    let finish: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => (finish = resolve));
+    await openChat(notes);
+    panel(async function* () {
+      await gate;
+      yield { type: "text", delta: "[0:05] Merged" };
+      yield { type: "done", finishReason: "stop" };
+    });
+    els.sceneLog.condenseButton.click();
+    await removeVideo();
+    finish();
+    await vi.waitFor(() => expect(els.sceneLog.status.textContent).toBe(""));
+    expect(els.sceneLog.preview.hidden).toBe(true);
+  });
+
+  it.each([
+    ["drawn again", true],
+    ["not drawn again yet", false],
+  ])("saves nothing from a note editor that was open, %s", async (_when, drawn) => {
+    await openChat([]);
+    const log = panel();
+    els.sceneLog.addButton.click();
+    const text = editor();
+    text.value = "the boat leaves";
+    await removeVideo();
+    if (drawn) {
+      log.render();
+      expect(els.sceneLog.list.querySelector(".note-text-input")).toBeNull();
+    }
+    text.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await Promise.resolve();
+    expect(await savedLog()).toEqual([]);
+  });
+});
+
 describe("scene log edit keys and focus", () => {
   it("does not save on the Enter that confirms an IME composition", async () => {
     await openChat([]);

@@ -27,6 +27,12 @@ describe.each([
     expect([...idsIn({ messages, refs })].sort()).toEqual(all);
   });
 
+  it("reads a message that carried a transcript", () => {
+    const transcript = { fileKey: "k", spans: [{ startSeconds: 0, endSeconds: 60 }] };
+    const messages = [user("u", "hi", { audio: true, transcript, images: [uploadRef("p1")] })];
+    expect([...idsIn({ messages })]).toEqual(["p1"]);
+  });
+
   it("reads images and swipes wherever they are, assistant messages included", () => {
     const alternates = [{ messages: [tool("t", "c", [sheet("s2", 0, 1)])], createdAt: 1 }];
     const odd = as({ ...assistant("a", "hi"), images: [uploadRef("p", "big")], alternates });
@@ -89,6 +95,30 @@ describe("checkedVideoKeys", () => {
     ];
     expect([...checkedVideoKeys(chats(video("a")), messages)]).toEqual(["a", "b", "d"]);
     expect([...checkedVideoKeys(chats(undefined), [])]).toEqual([]);
+  });
+
+  it("does not count a video removed from its chat as in use", () => {
+    const removed = { ...user("u", "hi"), removedVideo: video("a") };
+    const messages = [as(removed), as({ ...removed, video: video("b") })];
+    expect([...checkedVideoKeys([], messages)]).toEqual(["b"]);
+  });
+
+  it("reads the removed videos a chat keeps, without counting them as in use", () => {
+    const kept = [{ id: "c", removedVideos: [{ video: video("a"), throughCreatedAt: 1 }] }];
+    expect([...checkedVideoKeys(kept as unknown as Chat[], [])]).toEqual([]);
+  });
+
+  it.each([["a"], [[{}]], [[{ video: video(3) }]], [[null]]])(
+    "refuses the list of removed videos %j",
+    (value) => {
+      const kept = [{ id: "c", removedVideos: value }] as unknown as Chat[];
+      expect(() => checkedVideoKeys(kept, [])).toThrow(REFUSED);
+    },
+  );
+
+  it.each([[video(3)], [{}], ["a"], [null]])("refuses the removed video %j", (value) => {
+    const messages = [as({ ...user("u", "hi"), removedVideo: value })];
+    expect(() => checkedVideoKeys([], messages)).toThrow(REFUSED);
   });
 
   it.each([[video(3)], [{}], ["a"], [null]])("refuses the video %j", (value) => {

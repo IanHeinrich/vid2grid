@@ -4,6 +4,7 @@ import { exportBackup, type Backup } from "../src/chat/exportChat";
 import { createMemoryStore } from "../src/chat/store";
 import type { AppElements } from "../src/dom";
 import type { ChatStore } from "../src/types";
+import { idleImages } from "./support/images";
 import { initBackup } from "../src/ui/settings/backup";
 import { mountPage } from "./support/page";
 
@@ -14,6 +15,7 @@ let els: AppElements;
 let store: ChatStore;
 let toast: { show: ReturnType<typeof vi.fn> };
 let download: ReturnType<typeof vi.fn<(blob: Blob, filename: string) => void>>;
+let images: ReturnType<typeof idleImages>;
 let onRestored: ReturnType<typeof vi.fn<() => Promise<void>>>;
 
 // jsdom's Blob has no text(); a browser File does, and so does the Blob a Response makes.
@@ -59,7 +61,8 @@ beforeEach(async () => {
   toast = { show: vi.fn() };
   download = vi.fn<(blob: Blob, filename: string) => void>();
   onRestored = vi.fn(() => Promise.resolve());
-  initBackup(els, { store, toast, download, onRestored, now: () => NOW });
+  images = idleImages();
+  initBackup(els, { store, images, toast, download, onRestored, now: () => NOW });
   await seedChat();
 });
 
@@ -118,6 +121,41 @@ describe("restoring a backup", () => {
     );
     expect(onRestored).toHaveBeenCalledOnce();
     expect(await store.listChats()).toHaveLength(2);
+  });
+
+  it("holds what the backup refers to from before the first write until after the last", async () => {
+    const video = { name: "a.mp4", fileKey: "a", durationSeconds: 1, width: 1, height: 1 };
+    await store.putChat({ ...blankChat("m", "c2", 1), video });
+    const backup = await exportBackup(store, { includeImages: true });
+    const order: string[] = [];
+    images.hold.mockImplementation(() => {
+      order.push("hold");
+      return { letGo: () => order.push("let go"), final: vi.fn() };
+    });
+    for (const name of ["putImage", "putChat", "putMessage"] as const) {
+      const put = store[name].bind(store) as (...args: unknown[]) => Promise<never>;
+      store[name] = (...args: unknown[]) => {
+        order.push(name);
+        return put(...args);
+      };
+    }
+    chooseRestoreFile(await new Response(await readText(backup)).blob());
+    await vi.waitFor(() => expect(toast.show).toHaveBeenCalled());
+    expect(order).toEqual(["hold", "putImage", "putChat", "putMessage", "putChat", "let go"]);
+    const [held] = images.hold.mock.calls[0] ?? [];
+    expect(held?.messages).toMatchObject([{ id: "u1" }]);
+    expect(held?.videoKeys).toEqual(["a"]);
+  });
+
+  it("lets go when a write fails, and says what failed", async () => {
+    const letGo = vi.fn();
+    images.hold.mockReturnValue({ letGo, final: vi.fn() });
+    const backup = await exportBackup(store, { includeImages: false });
+    store.putMessage = () => Promise.reject(new Error("Disk full"));
+    chooseRestoreFile(await new Response(await readText(backup)).blob());
+    await vi.waitFor(() => expect(toast.show).toHaveBeenCalled());
+    expect(toast.show).toHaveBeenCalledWith("Could not restore the backup: Disk full");
+    expect(letGo).toHaveBeenCalledTimes(1);
   });
 
   it("shows an error toast for a file that is not a backup", async () => {

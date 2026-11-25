@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { seenSpans, unseenCitations } from "../src/chat/coverage";
+import { instantSpans, seenSpans, unseenCitations } from "../src/chat/coverage";
 import type {
   AssistantMessage,
   ChatMessage,
@@ -115,6 +115,11 @@ describe("unseenCitations", () => {
   it("counts bracketed and parenthesised times, not clock times in prose", () => {
     const text = "At 5:30 the next morning she left (0:20), and at [0:30].";
     expect(unseenCitations(text, spans)).toEqual([20, 30]);
+  });
+
+  it("takes an instant as seen only within half a second", () => {
+    const read = [...spans, ...instantSpans([10, 14])];
+    expect(unseenCitations("At [0:10], [0:12] and [0:14].", read)).toEqual([12]);
   });
 
   it("finds nothing unseen without citations", () => {

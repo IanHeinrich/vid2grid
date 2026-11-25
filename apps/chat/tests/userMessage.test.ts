@@ -69,6 +69,47 @@ describe("keep going, continuations and running", () => {
     expect(tags.map((tag) => tag.textContent)).toEqual(["Audio"]);
   });
 
+  it("says how far the transcript sent with a message went, on a continuation too", () => {
+    const conversation = initConversation(els, deps());
+    const transcript = { fileKey: "beach-key", spans: [{ startSeconds: 0, endSeconds: 2530 }] };
+    conversation.reset([
+      user("u1", "What is said?", { audio: true, transcript }),
+      assistant("a1", "Plenty."),
+      user("u2", "Keep going", { audio: true, continuation: true, transcript }),
+      assistant("a2", "More."),
+      user("u3", "And now?", { audio: true }),
+    ]);
+    const tags = [...list().querySelectorAll<HTMLElement>(".transcript-tag")];
+    expect(tags.map((tag) => tag.textContent)).toEqual([
+      "Transcript to 42:10 sent",
+      "Transcript to 42:10 sent",
+    ]);
+    expect(tags[0]?.title).toContain("0:00 to 42:10");
+  });
+
+  it("keeps focus on the same control when the message is shown again", () => {
+    const conversation = initConversation(els, deps());
+    const message = user("u1", "What is said?", { audio: true });
+    conversation.reset([message, assistant("a1", "Plenty.")]);
+    const [before] = buttonsLabelled("Copy message");
+    before?.focus();
+    expect(document.activeElement).toBe(before);
+    const transcript = { fileKey: "beach-key", spans: [{ startSeconds: 0, endSeconds: 60 }] };
+    conversation.show({ ...message, transcript });
+    const [after] = buttonsLabelled("Copy message");
+    expect(after).not.toBe(before);
+    expect(document.activeElement).toBe(after);
+  });
+
+  it("leaves focus elsewhere alone when a message is shown again", () => {
+    const conversation = initConversation(els, deps());
+    const message = user("u1", "What is said?");
+    conversation.reset([message]);
+    els.composer.messageInput.focus();
+    conversation.show({ ...message });
+    expect(document.activeElement).toBe(els.composer.messageInput);
+  });
+
   it("disables the actions while a turn runs", () => {
     const conversation = initConversation(els, deps());
     conversation.reset(exchanges());
@@ -110,6 +151,74 @@ describe("editing", () => {
     expect(editor()?.value).toBe("One, half typed");
     expect(editor()?.closest(".message")?.textContent).toContain("One");
     expect(buttonsLabelled("Save")[0]?.disabled).toBe(true);
+  });
+
+  describe("that could not be saved", () => {
+    function save(edit: number, text: string): void {
+      buttonsLabelled("Edit message")[edit]?.click();
+      const textarea = editor();
+      if (!textarea) throw new Error("No editor");
+      textarea.value = text;
+      buttonsLabelled("Save")[0]?.click();
+    }
+
+    function refuse(call: number): void {
+      const onUnsaved = spies.onEdit.mock.calls[call]?.[2] as (() => void) | undefined;
+      onUnsaved?.();
+    }
+
+    it("comes back once the editor opened meanwhile closes, which keeps its own text", () => {
+      const conversation = initConversation(els, deps());
+      conversation.reset(exchanges());
+      save(0, "One, edited");
+      buttonsLabelled("Edit message")[1]?.click();
+      const other = editor();
+      if (!other) throw new Error("No editor");
+      other.value = "First, half typed";
+      refuse(0);
+      expect(editor()?.value).toBe("First, half typed");
+      buttonsLabelled("Cancel")[0]?.click();
+      expect(editor()?.value).toBe("One, edited");
+      buttonsLabelled("Cancel")[0]?.click();
+      expect(editor()).toBeNull();
+    });
+
+    it("comes back after another edit is saved, then that one when it is refused too", () => {
+      const conversation = initConversation(els, deps());
+      conversation.reset(exchanges());
+      save(0, "One, edited");
+      save(1, "First, edited");
+      refuse(0);
+      expect(editor()?.value).toBe("One, edited");
+      refuse(1);
+      expect(editor()?.value).toBe("One, edited");
+      buttonsLabelled("Cancel")[0]?.click();
+      expect(editor()?.value).toBe("First, edited");
+    });
+
+    it("comes back each time its chat is shown, until it is saved or cancelled", () => {
+      const conversation = initConversation(els, deps());
+      conversation.reset(exchanges());
+      save(0, "One, edited");
+      conversation.reset([user("x1", "Another chat")]);
+      refuse(0);
+      expect(editor()).toBeNull();
+      for (let shown = 0; shown < 2; shown++) {
+        conversation.reset(exchanges());
+        expect(editor()?.value).toBe("One, edited");
+        conversation.reset([user("x1", "Another chat")]);
+        expect(editor()).toBeNull();
+      }
+      conversation.reset(exchanges());
+      buttonsLabelled("Save")[0]?.click();
+      expect(spies.onEdit).toHaveBeenLastCalledWith(
+        expect.objectContaining({ id: "u1" }),
+        "One, edited",
+        expect.any(Function),
+      );
+      conversation.reset(exchanges());
+      expect(editor()).toBeNull();
+    });
   });
 
   it("refuses to save an assistant reply as empty", () => {

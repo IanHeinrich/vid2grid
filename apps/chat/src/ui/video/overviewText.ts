@@ -23,6 +23,10 @@ export function overviewText(status: OverviewStatus | undefined): string {
   }
 }
 
+export function removeVideoTitle(video: VideoAttachment | undefined): string {
+  return video ? `Take ${video.name} out of this chat. The messages stay.` : "";
+}
+
 export function videoSummary(video: VideoAttachment): string {
   return `${video.name} · ${formatTimestamp(video.durationSeconds)}`;
 }

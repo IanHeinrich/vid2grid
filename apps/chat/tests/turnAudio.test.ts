@@ -58,6 +58,28 @@ describe("turnAudio", () => {
     expect(audio.listen).toBeUndefined();
   });
 
+  it("gives the speech heard, even while the video's file is not loaded", async () => {
+    const heard: VideoAudio = {
+      fileKey: "heard-key",
+      labels: [],
+      backgroundLabels: [],
+      speechSpans: [{ startSeconds: 0, endSeconds: 60 }],
+      soundSpans: [],
+      speech: [{ start: 1, end: 3, text: "Hello." }],
+      events: [],
+      updatedAt: 1,
+    };
+    const loaded = input({ fileKey: "heard-key" });
+    await loaded.store.putAudio(heard);
+    expect((await turnAudio(loaded.base)).speech).toEqual(heard);
+    const unloaded = input({ fileKey: undefined, chatVideoKey: "heard-key" });
+    await unloaded.store.putAudio(heard);
+    expect(await turnAudio(unloaded.base)).toMatchObject({ on: false, speech: heard });
+    const off = input({ on: false, fileKey: "heard-key" });
+    await off.store.putAudio(heard);
+    expect((await turnAudio(off.base)).speech).toBeUndefined();
+  });
+
   it("shows analysis progress and clears only what it showed", async () => {
     const { base, status } = input();
     const { progress } = await turnAudio(base);

@@ -125,6 +125,57 @@ describe("joinTabs", () => {
     expect(await openNames(locks)).toHaveLength(2);
   });
 
+  it("answers as a joined tab once a join that took too long goes through", async () => {
+    const locks = sharedLocks();
+    let finish: () => void = () => undefined;
+    void locks.request(CLEANUP_LOCK, () => new Promise<void>((resolve) => (finish = resolve)));
+    const late = await joinTabs(locks, 5);
+    const work = vi.fn(() => Promise.resolve("swept"));
+    expect(late.supported).toBe(false);
+    expect(await late.whileAlone(work)).toEqual({ refused: "unsupported" });
+    finish();
+    await settled();
+    expect(late.supported).toBe(true);
+    expect(await late.whileAlone(work)).toEqual({ done: "swept" });
+    const other = await joinTabs(locks);
+    expect(await late.whileAlone(work)).toEqual({ refused: "otherTabs" });
+    expect(await other.whileAlone(work)).toEqual({ refused: "otherTabs" });
+    expect(work).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs nothing until it holds its own lock and has had the cleanup one", async () => {
+    const locks = sharedLocks();
+    const request = locks.request.bind(locks) as (...args: unknown[]) => Promise<unknown>;
+    const grants: (() => void)[] = [];
+    const delayed = async (...args: unknown[]): Promise<unknown> => {
+      await new Promise<void>((resolve) => grants.push(resolve));
+      return request(...args);
+    };
+    locks.request = delayed;
+    const late = await joinTabs(locks, 5);
+    const work = vi.fn(() => Promise.resolve());
+    for (const granted of [0, 1]) {
+      expect(grants).toHaveLength(granted + 1);
+      expect(late.supported).toBe(false);
+      expect(await late.whileAlone(work)).toEqual({ refused: "unsupported" });
+      grants[granted]?.();
+      await settled();
+    }
+    expect(work).not.toHaveBeenCalled();
+    expect(late.supported).toBe(true);
+  });
+
+  it("stays a tab that runs nothing when a late join fails", async () => {
+    const locks = sharedLocks();
+    let fail: (error: Error) => void = () => undefined;
+    locks.request = () => new Promise((_, reject) => (fail = reject));
+    const late = await joinTabs(locks, 5);
+    fail(new Error("AbortError"));
+    await settled();
+    expect(late.supported).toBe(false);
+    expect(await late.whileAlone(() => Promise.resolve())).toEqual({ refused: "unsupported" });
+  });
+
   it("stops waiting for locks that never answer", async () => {
     const locks = sharedLocks();
     locks.request = () => new Promise(() => undefined);

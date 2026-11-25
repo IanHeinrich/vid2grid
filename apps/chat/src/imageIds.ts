@@ -106,15 +106,24 @@ export function checkedImageIds(holder: ImageHolder): Set<string> {
   return readIds(holder, refuse);
 }
 
+function checkedFileKey(video: unknown): string {
+  const fileKey = isRecord(video) ? video["fileKey"] : undefined;
+  return typeof fileKey === "string" ? fileKey : refuse("A stored video");
+}
+
+// A video removed from its chat is read like any other, but is not in use.
 export function checkedVideoKeys(
   chats: readonly Chat[],
   messages: readonly ChatMessage[],
 ): Set<string> {
   const keys = [...chats, ...messages].flatMap((holder: unknown) => {
-    const video = isRecord(holder) ? holder["video"] : null;
-    if (video === undefined) return [];
-    const fileKey = isRecord(video) ? video["fileKey"] : undefined;
-    return typeof fileKey === "string" ? [fileKey] : refuse("A stored video");
+    if (!isRecord(holder)) return refuse("A stored video");
+    const { video, removedVideo, removedVideos } = holder;
+    if (removedVideo !== undefined) checkedFileKey(removedVideo);
+    for (const removed of listIn(removedVideos, "A stored video", refuse)) {
+      checkedFileKey(isRecord(removed) ? removed["video"] : undefined);
+    }
+    return video === undefined ? [] : [checkedFileKey(video)];
   });
   return new Set(keys);
 }

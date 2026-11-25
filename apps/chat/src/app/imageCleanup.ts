@@ -1,7 +1,7 @@
 import { videoKeysOf } from "../chat/store";
 import { checkedImageUse, imageUse, joinUses, type ImageHolder } from "../imageIds";
 import { pendingHolder, type AppState } from "../state";
-import type { ImageRelease, ImageUse, UnusedImages } from "../types";
+import type { AskedWhen, ImageRelease, ImageUse, UnusedImages } from "../types";
 import type { TabRefusal, Tabs } from "./tabs";
 
 export interface HeldImages {
@@ -18,12 +18,14 @@ export type SweepResult = { deleted: UnusedImages } | { refused: SweepRefusal };
 export interface ImageCleanup {
   // Keeps what an undo, or work between two saves, could still bring back.
   hold(holder: ImageHolder): HeldImages;
+  // Whether something held could bring back a use of the video.
+  holdsVideo(fileKey: string): boolean;
   // Skipped while a reply runs or another tab is open, whose unsaved images cannot be seen here.
   release(dropped: ImageHolder): Promise<void>;
   countUnused(): Promise<UnusedImages>;
   // Counted again for a deletion, or why there can be none now.
   countToDelete(): Promise<{ counted: UnusedImages } | { refused: SweepRefusal }>;
-  // False when this tab cannot say whether other tabs are open.
+  // False when this tab cannot say whether other tabs are open, or cannot yet.
   readonly canDelete: boolean;
   deleteUnused(counted: UnusedImages): Promise<SweepResult>;
 }
@@ -31,6 +33,8 @@ export interface ImageCleanup {
 export interface ImageCleanupDeps {
   store: ImageRelease;
   tabs: Tabs;
+  // A hold or an unsent message no longer needs these videos, though something else may.
+  onVideosFreed?(videoKeys: readonly string[]): void;
 }
 
 interface CleanupContext {
@@ -43,10 +47,13 @@ export function createImageCleanup(state: AppState, deps: ImageCleanupDeps): Ima
   const ctx: CleanupContext = { state, deps, held: new Set() };
   return {
     hold: (holder) => hold(ctx, holder),
+    holdsVideo: (fileKey) => [...ctx.held].some((held) => held.videoKeys?.includes(fileKey)),
     release: (dropped) => release(ctx, dropped),
     countUnused: () => deps.store.countUnusedImages(() => unsavedUse(ctx)),
     countToDelete: () => countToDelete(ctx),
-    canDelete: deps.tabs.supported,
+    get canDelete() {
+      return deps.tabs.supported;
+    },
     deleteUnused: (counted) => deleteUnused(ctx, counted),
   };
 }
@@ -56,11 +63,17 @@ function hold(ctx: CleanupContext, holder: ImageHolder): HeldImages {
   const entry = { ...holder };
   ctx.held.add(entry);
   return {
-    letGo: () => ctx.held.delete(entry),
+    letGo: () => {
+      if (ctx.held.delete(entry)) videosFreed(ctx, entry);
+    },
     final: () => {
       if (ctx.held.delete(entry)) void release(ctx, entry);
     },
   };
+}
+
+function videosFreed({ deps }: CleanupContext, { videoKeys = [] }: ImageHolder): void {
+  if (videoKeys.length > 0) deps.onVideosFreed?.(videoKeys);
 }
 
 function unsavedUse({ state, held }: CleanupContext): ImageUse {
@@ -75,21 +88,29 @@ function unsavedUse({ state, held }: CleanupContext): ImageUse {
 
 async function release(ctx: CleanupContext, holder: ImageHolder): Promise<void> {
   const { store, tabs } = ctx.deps;
+  videosFreed(ctx, holder);
   const running = () => ctx.state.runningChats.size > 0;
   try {
     const dropped = imageUse(holder);
     if (dropped.images.size === 0 && dropped.videos.size === 0) return;
-    const unsaved = (inTime: () => boolean) =>
-      running() || !inTime() ? undefined : unsavedUse(ctx);
     const refused =
       running() ||
       "refused" in
-        (await tabs.whileAlone((inTime) => store.releaseImages(dropped, () => unsaved(inTime))));
+        (await tabs.whileAlone((inTime) =>
+          store.releaseImages(dropped, (when) =>
+            running() || tooLate(when, inTime) ? undefined : unsavedUse(ctx),
+          ),
+        ));
     // Still told, so a sweep no longer takes them for images about to be saved.
     if (refused) await store.releaseImages(dropped, () => undefined);
   } catch {
     // The images stay, and the count in Settings says what stops them from being deleted.
   }
+}
+
+// Once begun, a deletion holds back what any other tab reads, so slow reads need not stop it.
+function tooLate(when: AskedWhen, inTime: () => boolean): boolean {
+  return when !== "inside" && !inTime();
 }
 
 function blocker({ state, held }: CleanupContext): SweepRefusal | undefined {
@@ -112,8 +133,8 @@ async function deleteUnused(ctx: CleanupContext, counted: UnusedImages): Promise
   const refused = blocker(ctx);
   if (refused) return { refused };
   const result = await tabs.whileAlone((inTime) =>
-    store.deleteUnusedImages(counted, () =>
-      blocker(ctx) || !inTime() ? undefined : unsavedUse(ctx),
+    store.deleteUnusedImages(counted, (when) =>
+      blocker(ctx) || tooLate(when, inTime) ? undefined : unsavedUse(ctx),
     ),
   );
   if ("refused" in result) return result;

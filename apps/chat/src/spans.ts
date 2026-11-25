@@ -20,3 +20,13 @@ export function mergeSpans<T extends Span>(spans: readonly T[], gapSeconds: numb
   }
   return merged;
 }
+
+export function sameSpans(a: readonly Span[], b: readonly Span[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every(
+      (span, index) =>
+        span.startSeconds === b[index]?.startSeconds && span.endSeconds === b[index]?.endSeconds,
+    )
+  );
+}

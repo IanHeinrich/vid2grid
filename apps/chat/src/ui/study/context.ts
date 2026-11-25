@@ -39,6 +39,10 @@ export interface StudyDeps {
   // Plays a moment of a video other than the attached one.
   seekVideo(seconds: number, video: VideoAttachment): void;
   openTimeline(): void;
+  // Why the video cannot be removed now, or undefined.
+  removeBlocker(): string | undefined;
+  onRemoveVideo(video: VideoAttachment): void;
+  focusComposer(): void;
   onChanged(): void;
   shownVideo?: () => ChatVideo | undefined;
   analyseAudio?: AnalyseAudio;
@@ -92,6 +96,7 @@ export interface StudyMenu {
   menu: HTMLElement;
   restart: HTMLButtonElement;
   zoom: HTMLButtonElement;
+  remove: HTMLButtonElement;
 }
 
 export interface AudioNote {

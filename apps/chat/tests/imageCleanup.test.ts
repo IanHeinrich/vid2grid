@@ -1,16 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { initMessageActions, type MessageActions } from "../src/app/messageActions";
-import { joinTabs, type Tabs } from "../src/app/tabs";
+import { createImageCleanup } from "../src/app/imageCleanup";
+import { CLEANUP_LOCK, joinTabs, type Tabs } from "../src/app/tabs";
 import { initTurns, type Turns } from "../src/app/turns";
 import { blankChat } from "../src/chat/chats";
+import { BACKUP_FORMAT, BACKUP_VERSION, importBackup } from "../src/chat/exportChat";
+import { createMemoryStore } from "../src/chat/store";
 import type { AppElements } from "../src/dom";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import {
   addPending,
   createAppState,
+  removeChat,
   removePendingVideo,
   replaceChat,
   setCurrentChat,
+  setOverviewStatus,
   setPendingVideo,
   setRunning,
   type AppState,
@@ -21,7 +26,15 @@ import { initToast, type Toast } from "../src/ui/shared/toast";
 import { initSidebar } from "../src/ui/shell/sidebar";
 import { sheetCacheKey, zoomCacheKey } from "../src/video/sheetCache";
 import { assistant, sheet, tool, user } from "./support/factories";
-import { cleanupFor, isStored, saveImage, stores, uploadRef, zoomRef } from "./support/images";
+import {
+  aloneTabs,
+  cleanupFor,
+  isStored,
+  saveImage,
+  stores,
+  uploadRef,
+  zoomRef,
+} from "./support/images";
 import { settled, sharedLocks } from "./support/locks";
 import { mountPage } from "./support/page";
 import { replyWith } from "./support/streams";
@@ -162,6 +175,30 @@ async function openState(open: () => Promise<ChatStore>): Promise<void> {
   toast = initToast(els, { set: (run) => timers.push(run), clear: vi.fn() });
 }
 
+describe("videos in holds", () => {
+  beforeEach(() => openState(() => Promise.resolve(createMemoryStore())));
+
+  it("says whether any hold names a video, and when one stops needing it", async () => {
+    const freed = vi.fn();
+    images = createImageCleanup(state, { store, tabs: aloneTabs, onVideosFreed: freed });
+    const [first, second] = [
+      images.hold({ videoKeys: ["v"] }),
+      images.hold({ videoKeys: ["v", "w"] }),
+    ];
+    images.hold({ messages: [] }).letGo();
+    expect(images.holdsVideo("v")).toBe(true);
+    first.final();
+    expect(images.holdsVideo("v")).toBe(true);
+    expect(freed.mock.calls).toEqual([[["v"]]]);
+    second.letGo();
+    second.letGo();
+    expect(images.holdsVideo("v")).toBe(false);
+    expect(freed.mock.calls).toEqual([[["v"]], [["v", "w"]]]);
+    await images.release({ videoKeys: ["pending"] });
+    expect(freed).toHaveBeenLastCalledWith(["pending"]);
+  });
+});
+
 describe.each(stores)("%s: deleting a chat", (_name, open) => {
   beforeEach(() => openState(open));
 
@@ -238,6 +275,93 @@ describe.each(stores)("%s: deleting a chat", (_name, open) => {
     expect(onOpen).not.toHaveBeenCalled();
     expect(await sweepNow()).toBe(0);
     expect(await stored(id)).toEqual([true]);
+  });
+
+  it("puts its unsent attachments back too when deleting it fails", async () => {
+    const ids = [await saveImage(store), await saveImage(store)];
+    const [unsent = "", cached = ""] = ids;
+    await store.putSheets(SHEETS_KEY, [sheet(cached, 0, 1)]);
+    await seed("a", []);
+    setPendingVideo(state, "a", VIDEO);
+    addPending(state, "a", { kind: "overview", refs: [sheet(cached, 0, 1)] });
+    addPending(state, "a", { kind: "image", ref: uploadRef(unsent) });
+    const ready = { kind: "ready", fileKey: VIDEO.fileKey, sheets: 1 } as const;
+    setOverviewStatus(state, "a", ready);
+    const draft = state.pending.get("a");
+    const swept: unknown[] = [];
+    const late = { kind: "image", ref: uploadRef("late") } as const;
+    const listMessages = store.listMessages.bind(store);
+    store.listMessages = async (chatId) => {
+      swept.push(await sweepNow());
+      return listMessages(chatId);
+    };
+    store.deleteChat = async () => {
+      await images.release({ refs: [uploadRef(unsent)], videoKeys: [VIDEO.fileKey] });
+      swept.push(await sweepNow());
+      addPending(state, "a", late);
+      throw new Error("Disk full");
+    };
+    sidebar();
+    els.sidebar.chatList.querySelector<HTMLElement>('[data-chat-id="a"] .chat-delete')?.click();
+    await vi.waitFor(() => expect(els.toast.text.textContent).toContain("Disk full"));
+    expect(swept).toEqual([0, "undo"]);
+    expect(state.pending.get("a")).toEqual([...(draft ?? []), late]);
+    expect(state.overviews.get("a")).toEqual(ready);
+    expect(await sweepNow()).toBe(0);
+    expect(await stored(...ids)).toEqual([true, true]);
+    expect(await store.getSheets(SHEETS_KEY)).toHaveLength(1);
+  });
+
+  it("drops what a refused save put back once Undo has gone, and deletes it", async () => {
+    const [late, sheets] = [await saveImage(store), await saveImage(store)];
+    await store.putSheets(SHEETS_KEY, [sheet(sheets, 0, 1)]);
+    await seed("a", []);
+    sidebar();
+    await deleteFromSidebar("a");
+    addPending(state, "a", { kind: "image", ref: uploadRef(late) });
+    setPendingVideo(state, "a", VIDEO);
+    setOverviewStatus(state, "a", { kind: "ready", fileKey: VIDEO.fileKey, sheets: 1 });
+    expect(await stored(late, sheets)).toEqual([true, true]);
+    expireToast();
+    expect(state.pending.size).toBe(0);
+    expect(state.overviews.size).toBe(0);
+    expect(await stored(late, sheets)).toEqual([false, false]);
+    expect(await store.getSheets(SHEETS_KEY)).toBeUndefined();
+  });
+
+  it.each(["Undo", "a restored backup"])(
+    "keeps what is being written in it when %s has brought it back",
+    async (by) => {
+      const late = await saveImage(store);
+      const chat = await seed("a", []);
+      sidebar();
+      await deleteFromSidebar("a");
+      const draft = { kind: "image", ref: uploadRef(late) } as const;
+      addPending(state, "a", draft);
+      if (by === "Undo") {
+        els.toast.action.click();
+        await vi.waitFor(() => expect(state.chats).toHaveLength(1));
+      } else {
+        await store.putChat(chat);
+        replaceChat(state, chat);
+      }
+      expireToast();
+      expect(await stored(late)).toEqual([true]);
+      expect(state.pending.get("a")).toEqual([draft]);
+      expect(await sweepNow()).toBe(0);
+    },
+  );
+
+  it("deletes its unsent images once it is brought back without them", async () => {
+    const id = await saveImage(store);
+    await seed("a", []);
+    addPending(state, "a", { kind: "image", ref: uploadRef(id) });
+    sidebar();
+    await deleteFromSidebar("a");
+    expect(await stored(id)).toEqual([true]);
+    els.toast.action.click();
+    await vi.waitFor(async () => expect(await stored(id)).toEqual([false]));
+    expect(await sweepNow()).toBe(0);
   });
 
   it("deletes its unsent images and those kept for zooming too", async () => {
@@ -372,6 +496,51 @@ describe.each(stores)("%s: deleting a message", (_name, open) => {
     expect(await stored(shared, own)).toEqual([true, false]);
   });
 
+  it("says so when Undo finds the chat deleted in another tab, and keeps no images for it", async () => {
+    const id = await saveImage(store);
+    await openNew(looked(id));
+    const reply = state.messages.at(-1);
+    if (reply) await actions().remove(reply);
+    await store.deleteChat("chat");
+    els.toast.action.click();
+    await vi.waitFor(() =>
+      expect(silent.show).toHaveBeenCalledWith(
+        "Could not undo: This chat has been deleted.",
+        "error",
+      ),
+    );
+    expect(await store.listMessages("chat")).toEqual([]);
+    expect(await stored(id)).toEqual([false]);
+  });
+
+  it("drops its video's cached sheets once Undo has gone", async () => {
+    const id = await saveImage(store);
+    await store.putSheets(SHEETS_KEY, [sheet(id, 0, 1)]);
+    await openNew([user("U", "hi", { video: VIDEO })]);
+    const [sent] = state.messages;
+    if (sent) await actions().remove(sent);
+    await images.release({ videoKeys: [VIDEO.fileKey] });
+    expect(await stored(id)).toEqual([true]);
+    expect(await store.getSheets(SHEETS_KEY)).toHaveLength(1);
+    expireToast();
+    expect(await stored(id)).toEqual([false]);
+    expect(await store.getSheets(SHEETS_KEY)).toBeUndefined();
+  });
+
+  it("keeps its video's cached sheets while its chat or another still uses the video", async () => {
+    const id = await saveImage(store);
+    await store.putSheets(SHEETS_KEY, [sheet(id, 0, 1)]);
+    await seed("b", [user("U", "hi", { video: VIDEO })]);
+    await openNew([user("U1", "hi", { video: VIDEO })], { video: VIDEO });
+    const [sent] = state.messages;
+    if (sent) await actions().remove(sent);
+    await store.deleteChat("b");
+    removeChat(state, "b");
+    expireToast();
+    expect(await stored(id)).toEqual([true]);
+    expect(await store.getSheets(SHEETS_KEY)).toHaveLength(1);
+  });
+
   it("drops a deleted upload's cached zooms with it", async () => {
     const ids = [await saveImage(store), await saveImage(store)];
     const [upload = "", zoom = ""] = ids;
@@ -384,6 +553,85 @@ describe.each(stores)("%s: deleting a message", (_name, open) => {
     expireToast();
     expect(await stored(...ids)).toEqual([false, false]);
     expect(await store.getSheets(key)).toBeUndefined();
+  });
+});
+
+describe.each(stores)("%s: restoring a backup without images", (_name, open) => {
+  beforeEach(() => openState(open));
+
+  function backupOf(chat: Chat, messages: unknown[]): Promise<Blob> {
+    const backup = {
+      format: BACKUP_FORMAT,
+      version: BACKUP_VERSION,
+      exportedAt: 1,
+      chats: [{ chat, messages }],
+      timelines: [],
+      images: [],
+    };
+    return new Response(JSON.stringify(backup)).blob();
+  }
+
+  async function restore(file: Blob, afterFirstMessage: () => Promise<void>): Promise<void> {
+    const putMessage = store.putMessage.bind(store);
+    let first = true;
+    store.putMessage = async (chatId, message) => {
+      await putMessage(chatId, message);
+      if (first) await afterFirstMessage();
+      first = false;
+    };
+    await importBackup(store, file, { hold: (holder) => images.hold(holder) });
+  }
+
+  it("refuses to sweep while messages are still to be written", async () => {
+    const id = await saveImage(store);
+    const chat = await seed("a", looked(id));
+    await store.deleteChat("a");
+    removeChat(state, "a");
+    expect(await unusedCount()).toBe(1);
+    const counted = await images.countUnused();
+    const swept: unknown[] = [];
+    await restore(await backupOf(chat, looked(id)), async () => {
+      swept.push(await sweepNow(), await images.deleteUnused(counted));
+    });
+    expect(swept).toEqual(["undo", { refused: "undo" }]);
+    expect(await sweepNow()).toBe(0);
+    expect(await stored(id)).toEqual([true]);
+  });
+
+  it("keeps what is still to be written when an Undo expires meanwhile", async () => {
+    const [shown, cached] = [await saveImage(store), await saveImage(store)];
+    await store.putSheets(SHEETS_KEY, [sheet(cached, 0, 1)]);
+    const messages = [...looked(shown), user("V", "more", { createdAt: 9, video: VIDEO })];
+    const chat = await seed("a", messages);
+    sidebar();
+    await deleteFromSidebar("a");
+    await restore(await backupOf(chat, messages), async () => {
+      expireToast();
+      expect(await stored(shown, cached)).toEqual([true, true]);
+    });
+    expect(await stored(shown, cached)).toEqual([true, true]);
+    expect(await store.getSheets(SHEETS_KEY)).toHaveLength(1);
+    expect(await sweepNow()).toBe(0);
+  });
+
+  it("lets go of a malformed backup, which fails with its own error", async () => {
+    const id = await saveImage(store);
+    const chat = await seed("a", looked(id));
+    await store.deleteChat("a");
+    removeChat(state, "a");
+    const odd = [
+      { ...user("odd", "hi"), video: 3, alternates: [null] },
+      { ...user("odder", "hi"), video: null, images: [{ id: "x", source: { kind: "clip" } }] },
+    ];
+    const file = await backupOf(chat, [user("U", "hi"), ...odd]);
+    const restoring = restore(file, async () => {
+      expect(await sweepNow()).toBe("undo");
+      await images.release({ refs: [sheet(id, 0, 1)] });
+      expect(await stored(id)).toEqual([true]);
+    });
+    await expect(restoring).rejects.toThrow("Cannot read properties of null");
+    expect(await sweepNow()).toBe(1);
+    expect(await stored(id)).toEqual([false]);
   });
 });
 
@@ -418,6 +666,16 @@ describe.each(stores)("%s: replies rewritten", (_name, open) => {
     expect((await store.listMessages("chat")).map(({ role }) => role)).toContain("tool");
     expect(await sweepNow()).toBe(0);
     expect(await stored(id)).toEqual([true]);
+  });
+
+  it("says so when the chat was deleted in another tab, and saves nothing to it", async () => {
+    await openNew(looked(await saveImage(store)));
+    await store.deleteChat("chat");
+    const [first] = state.messages;
+    if (first?.role === "user") await turns().edit(first, "look again");
+    expect(silent.show).toHaveBeenCalledWith("This chat has been deleted.", "error");
+    expect(await store.listMessages("chat")).toEqual([]);
+    expect(state.running).toBe(false);
   });
 
   it("refuses to sweep between the saves of a switched reply", async () => {
@@ -530,8 +788,9 @@ describe.each(stores)("%s: what only this tab holds", (_name, open) => {
 
   async function orphan(): Promise<string> {
     const id = await saveImage(store);
+    await store.putChat(blankChat("model", "gone", 1));
     await store.putMessage("gone", tool("T", "c", [sheet(id, 0, 1)]));
-    await store.deleteMessages("gone", ["T"]);
+    await store.deleteChat("gone");
     return id;
   }
 
@@ -625,6 +884,42 @@ describe.each(stores)("%s: what only this tab holds", (_name, open) => {
     expect(await stored(id)).toEqual([true]);
   });
 
+  it("deletes what it began to in time, however long the reads then take", async () => {
+    const ids = [await orphan(), await orphan()];
+    const [swept = "", released = ""] = ids;
+    await openNew([]);
+    const inTimeOnce = () => {
+      const answers = [true];
+      return () => answers.shift() ?? false;
+    };
+    images = cleanupFor(state, store, {
+      supported: true,
+      whileAlone: async (work) => ({ done: await work(inTimeOnce()) }),
+    });
+    await images.release({ refs: [sheet(released, 0, 1)] });
+    expect(await stored(...ids)).toEqual([true, false]);
+    const counted = await images.countUnused();
+    expect(await images.deleteUnused(counted)).toMatchObject({ deleted: { images: [swept] } });
+    expect(await stored(swept)).toEqual([false]);
+  });
+
+  it("can delete once a join that took too long goes through", async () => {
+    const id = await orphan();
+    const locks = sharedLocks();
+    let finish: () => void = () => undefined;
+    void locks.request(CLEANUP_LOCK, () => new Promise<void>((resolve) => (finish = resolve)));
+    images = cleanupFor(state, store, await joinTabs(locks, 5));
+    expect(images.canDelete).toBe(false);
+    expect(await sweepNow()).toBe("unsupported");
+    await images.release({ refs: [sheet(id, 0, 1)] });
+    expect(await stored(id)).toEqual([true]);
+    finish();
+    await settled();
+    expect(images.canDelete).toBe(true);
+    expect(await sweepNow()).toBe(1);
+    expect(await stored(id)).toEqual([false]);
+  });
+
   it("is refused when another tab opens after the count", async () => {
     const id = await orphan();
     const locks = sharedLocks();
@@ -643,7 +938,7 @@ describe.each(stores)("%s: what only this tab holds", (_name, open) => {
     const asked: unknown[] = [];
     const releaseImages = store.releaseImages.bind(store);
     store.releaseImages = (dropped, unsaved) => {
-      asked.push(unsaved());
+      asked.push(unsaved("before"));
       return releaseImages(dropped, unsaved);
     };
     setRunning(state, true);
