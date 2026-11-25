@@ -259,11 +259,11 @@ its cells are captured, and up to the encoder's `concurrency` sheets encode at
 once, so memory stays at the sheets in flight whatever the video's length. The
 browser's WebCodecs capture adds its own bounds: it reads the file in ranges and
 skips what no planned frame needs. The Node capture seeks past long gaps between
-planned frames. Neither changes the frames picked or their order. Step 1's rule
-is core's too: `createFrameMatcher` decides which planned frames each decoded
-frame fills, and `isKeyframePlan` decides when a capture may decode keyframes
-alone. The capture port receives the `VideoInfo` the plan was built from for that
-decision.
+planned frames. Neither changes the order of the frames, or, apart from the
+known limitations below, which are picked. Step 1's rule is core's too:
+`createFrameMatcher` decides which planned frames each decoded frame fills, and
+`isKeyframePlan` decides when a capture may decode keyframes alone. The capture
+port receives the `VideoInfo` the plan was built from for that decision.
 
 **One documented deviation.** The browser's `<video>` fallback (used when
 WebCodecs or the ISO-BMFF demuxer cannot handle the file) sets `currentTime`,
@@ -277,7 +277,8 @@ the same at-or-after rule in its own per-frame loop.
 ffmpeg's MPEG-TS demuxer can, makes the hosts that seek through ffmpeg pick
 frames late, because the frames before the landing point are never decoded. In
 Node this reaches only a plan's first frames: it checks every later seek, and
-decodes through from the first when one lands late.
+decodes through from the first when one lands late. When a seeking ffmpeg
+crashes, Node decodes the rest of the plan from the start of the file.
 
 A file whose timestamps are out of order, such as an MP4 made by joining clips
 with B-frames with `concat -c copy`, can give Node a frame one off from the one
