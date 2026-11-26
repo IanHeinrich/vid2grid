@@ -25,6 +25,12 @@ import type {
 } from "../types";
 import { instantSpans, seenSpans, unseenCitations } from "./coverage";
 import { pinsExceedCap } from "./imageSelection";
+import {
+  onlyToolMarkup,
+  refusedWithoutTools,
+  withTextCalls,
+  writtenAnswer,
+} from "./leakedToolCalls";
 import type { Looker } from "./looking";
 import { lookBeforeRound } from "./lookingTurn";
 import { buildRequest } from "./request";
@@ -112,6 +118,7 @@ export interface TurnOutcome {
   hitRoundLimit?: true;
   strippedToolMarkup?: true;
   answeredNow?: AnswerNowReason;
+  triedToLookAgain?: true;
 }
 
 export interface Turn {
@@ -132,8 +139,14 @@ export interface Turn {
   dataUrls: Map<string, string>;
 }
 
-interface RoundResult extends Streamed {
+interface Sent extends Streamed {
+  prepared: PreparedRequest;
+}
+
+export interface RoundResult extends Sent {
   answeredNow?: AnswerNowReason;
+  // Asked again for a written answer, the model still only tried to call a tool.
+  triedToLookAgain?: true;
 }
 
 export interface PreparedRequest {
@@ -170,8 +183,16 @@ export async function runTurn(deps: TurnDeps): Promise<TurnOutcome> {
   try {
     for (let round = 0; round < maxRounds; round++) {
       if (deps.signal.aborted) return STOPPED;
-      const { message: reply, ending, answeredNow } = await runRound(turn, round);
-      const settled = settleReply(reply, ending, { round, maxRounds, answeredNow });
+      const result = await askForWrittenAnswer(turn, await runRound(turn, round), round);
+      const { ending, answeredNow } = result;
+      const triedToLookAgain = result.triedToLookAgain === true;
+      const reply = withTextCalls(turn, result);
+      const settled = settleReply(reply, ending, {
+        round,
+        maxRounds,
+        answeredNow,
+        triedToLookAgain,
+      });
       const { outcome } = settled;
       const message = outcome ? withReceipt(turn, settled.message, round) : settled.message;
       if (worthSaving(message, ending)) {
@@ -225,26 +246,59 @@ async function answerNow(
   return { ...streamed, answeredNow: reason };
 }
 
+// Asked once more with no tools listed or described, so a template has nothing to invite a call.
+async function askForWrittenAnswer(
+  turn: Turn,
+  first: RoundResult,
+  round: number,
+): Promise<RoundResult> {
+  if (!onlyToolMarkup(first)) return first;
+  const answeringNow = first.answeredNow !== undefined;
+  const finalRound = round === turn.maxRounds - 1;
+  const prepared = await prepareRequest(turn, { finalRound, answeringNow, withTools: false });
+  const carried = first.message.reasoningCutShort
+    ? { cut: first.message }
+    : { continues: first.message };
+  const second = await streamAssistant(turn, prepared, round, { watch: !answeringNow, ...carried });
+  if (refusedWithoutTools(second)) {
+    turn.imagesSent -= requestImageCount(prepared.request);
+    return first;
+  }
+  if (second.ending.kind !== "cut")
+    return writtenAnswer(first, { ...second, prepared }, [first.message]);
+  const third = await answerNow(turn, round, second.ending.reason, second.message);
+  return writtenAnswer(first, third, [first.message, second.message]);
+}
+
 async function streamPrepared(
   turn: Turn,
   round: number,
   answeringNow: boolean,
   options: StreamOptions,
-): Promise<Streamed> {
-  const finalRound = round === turn.maxRounds - 1;
-  const prepared = await prepareRequest(turn, finalRound, answeringNow);
+): Promise<Sent> {
+  const shape: RequestShape = {
+    finalRound: round === turn.maxRounds - 1,
+    answeringNow,
+    withTools: true,
+  };
+  const prepared = await prepareRequest(turn, shape);
   const streamed = await streamAssistant(turn, prepared, round, options);
-  if (!refusedTools(turn, prepared.request, streamed)) return streamed;
+  if (!refusedTools(turn, prepared.request, streamed)) return { ...streamed, prepared };
   turn.toolsRefused = true;
   turn.imagesSent -= requestImageCount(prepared.request);
   try {
     await lookBeforeRound(turn);
   } catch (error) {
     const aborted = turn.deps.signal.aborted;
-    return { ...streamed, ending: aborted ? { kind: "aborted" } : { kind: "failed", error } };
+    const ending: StreamEnding = aborted ? { kind: "aborted" } : { kind: "failed", error };
+    return { ...streamed, prepared, ending };
   }
-  const withoutTools = await prepareRequest(turn, finalRound, answeringNow);
-  return streamAssistant(turn, withoutTools, round, { ...options, retried: streamed.message });
+  const withoutTools = await prepareRequest(turn, shape);
+  const retried = await streamAssistant(turn, withoutTools, round, {
+    ...options,
+    retried: streamed.message,
+  });
+  return { ...retried, prepared: withoutTools };
 }
 
 // Any HTTP error, since llama.cpp answers 500 to a request listing tools it cannot take.
@@ -263,12 +317,13 @@ interface RoundPosition {
   round: number;
   maxRounds: number;
   answeredNow: AnswerNowReason | undefined;
+  triedToLookAgain: boolean;
 }
 
 function settleReply(
   reply: AssistantMessage,
   ending: StreamEnding,
-  { round, maxRounds, answeredNow }: RoundPosition,
+  { round, maxRounds, answeredNow, triedToLookAgain }: RoundPosition,
 ): { message: AssistantMessage; outcome?: TurnOutcome } {
   const lastRound = round === maxRounds - 1;
   const finalRound = lastRound || answeredNow !== undefined;
@@ -277,7 +332,8 @@ function settleReply(
   const forcedToAnswer =
     answeredNow === undefined && lastRound && (round > 0 || reply.toolCalls.length > 0);
   const endsTurn = ending.kind === "complete" && (finalRound || reply.toolCalls.length === 0);
-  const offerKeepGoing = forcedToAnswer || stripped || answeredNow !== undefined;
+  const offerKeepGoing =
+    forcedToAnswer || stripped || answeredNow !== undefined || triedToLookAgain;
   const message: AssistantMessage = {
     ...reply,
     text,
@@ -288,8 +344,9 @@ function settleReply(
   const outcome: TurnOutcome = {
     status: "done",
     ...(forcedToAnswer ? { hitRoundLimit: true as const } : {}),
-    ...(stripped ? { strippedToolMarkup: true as const } : {}),
+    ...(stripped && !triedToLookAgain ? { strippedToolMarkup: true as const } : {}),
     ...(answeredNow ? { answeredNow } : {}),
+    ...(triedToLookAgain ? { triedToLookAgain: true as const } : {}),
   };
   return { message, outcome };
 }
@@ -311,10 +368,16 @@ function errorOutcome(error: unknown): TurnOutcome {
   return { status: "error", error: errorText(error) };
 }
 
+interface RequestShape {
+  finalRound: boolean;
+  answeringNow: boolean;
+  // Off for the written-answer retry, which neither lists the tools nor describes them.
+  withTools: boolean;
+}
+
 async function prepareRequest(
   turn: Turn,
-  finalRound: boolean,
-  answeringNow: boolean,
+  { finalRound, answeringNow, withTools }: RequestShape,
 ): Promise<PreparedRequest> {
   const { deps, messages } = turn;
   const kept = keptImages(turn.chat, messages, deps.model.maxImages);
@@ -331,7 +394,7 @@ async function prepareRequest(
     tools: deps.tools,
     toolGuidance: deps.toolGuidance,
     veniceParameters: deps.veniceParameters,
-    allowTools: deps.runTool !== undefined && !turn.toolsRefused,
+    allowTools: withTools && deps.runTool !== undefined && !turn.toolsRefused,
     finalRound,
     thoroughness: turn.thoroughness,
     ...(answeringNow ? { answerNow: true } : {}),

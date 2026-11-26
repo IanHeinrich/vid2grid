@@ -41,6 +41,34 @@ describe("stripToolMarkup", () => {
     expect(stripToolMarkup("<|tool_calls_section_begin|>Seen.").text).toBe("Seen.");
   });
 
+  it("strips Gemma tool call and tool response blocks, closed or cut off", () => {
+    const call = "<|tool_call>call:look{end:60,frames:30,start:45}<tool_call|>";
+    expect(stripToolMarkup(call)).toEqual({ text: "", stripped: true });
+    expect(stripToolMarkup(`Checking.\n\n${call}${call}\n\nThen more.`)).toEqual({
+      text: "Checking.\n\nThen more.",
+      stripped: true,
+    });
+    expect(stripToolMarkup('Seen.<|tool_call>call:look{note:<|"|>a, b<|"|>').text).toBe("Seen.");
+    expect(
+      stripToolMarkup("<|tool_response>response:look{ok:true}<tool_response|>Seen.").text,
+    ).toBe("Seen.");
+  });
+
+  it("leaves Gemma markup quoted in code alone", () => {
+    const quoted =
+      "Gemma writes `<|tool_call>` and then the call, so the rest stays.\n\n```\n<|tool_call>call:look{start:1}<tool_call|>\n```\n\nAnd `<tool_call|>` ends it.";
+    expect(stripToolMarkup(quoted)).toEqual({ text: quoted, stripped: false });
+    expect(stripToolMarkup(`${quoted}<|tool_call>call:look{}`)).toEqual({
+      text: quoted,
+      stripped: true,
+    });
+  });
+
+  it("strips stray Gemma closing tags", () => {
+    expect(stripToolMarkup("Seen.<tool_call|>")).toEqual({ text: "Seen.", stripped: true });
+    expect(stripToolMarkup("Seen.<tool_response|>").text).toBe("Seen.");
+  });
+
   it("keeps the text around markup in the middle", () => {
     const leaked =
       'First part.\n\n<｜DSML｜calls><｜DSML｜invoke name="look"></｜DSML｜invoke></｜DSML｜calls>\n\nSecond part.';

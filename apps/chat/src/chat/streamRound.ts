@@ -46,6 +46,8 @@ export interface StreamOptions {
   watch: boolean;
   // The stream this one retries: its id and reasoning carry over, marked as cut short.
   cut?: AssistantMessage;
+  // The stream this one carries on from: its id and reasoning carry over.
+  continues?: AssistantMessage;
   // A stream the server refused, whose id this one takes over.
   retried?: AssistantMessage;
 }
@@ -84,10 +86,10 @@ function applyEvent(parts: StreamedParts, event: StreamEvent): boolean {
 function streamedMessage(
   base: Pick<AssistantMessage, "id" | "createdAt" | "role">,
   parts: StreamedParts,
-  cut: AssistantMessage | undefined,
+  { cut, continues }: StreamOptions,
 ): AssistantMessage {
   const split = splitThink(parts.text, parts.reasoning);
-  const thought = joinReasoning(cut?.reasoning ?? "", split.reasoning);
+  const thought = joinReasoning((cut ?? continues)?.reasoning ?? "", split.reasoning);
   return {
     ...base,
     text: split.text,
@@ -102,16 +104,17 @@ export async function streamAssistant(
   turn: Turn,
   { request, estimatedTokens }: PreparedRequest,
   round: number,
-  { watch, cut, retried }: StreamOptions,
+  options: StreamOptions,
 ): Promise<Streamed> {
   const { deps } = turn;
+  const { watch, cut, continues, retried } = options;
   turn.imagesSent += requestImageCount(request);
-  const earlier = cut ?? retried;
+  const earlier = cut ?? continues ?? retried;
   const base = earlier
     ? { id: earlier.id, createdAt: earlier.createdAt, role: "assistant" as const }
     : { id: turn.newId(), createdAt: turn.now(), role: "assistant" as const };
   const parts: StreamedParts = { text: "", reasoning: "", toolCalls: [] };
-  const current = () => streamedMessage(base, parts, cut);
+  const current = () => streamedMessage(base, parts, options);
   const streamed = (ending: StreamEnding): Streamed => ({
     message: current(),
     producedNothing: isEmpty(parts),

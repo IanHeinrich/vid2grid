@@ -351,6 +351,305 @@ describe("runTurn leaked tool markup", () => {
   });
 });
 
+const gemmaLook = "<|tool_call>call:look{end:60,frames:30,start:45}<tool_call|>";
+const gemmaLookArguments = '{"end":60,"frames":30,"start":45}';
+
+const askTool: ToolSchema = {
+  type: "function",
+  function: { name: "ask", description: "Ask", parameters: {} },
+};
+
+function recordingRunner(ran: ToolCall[]): RunTool {
+  return (call) => {
+    ran.push(call);
+    return Promise.resolve({ text: "Sheet grid_0001.", images: [sheet] });
+  };
+}
+
+describe("runTurn Gemma tool calls written as text", () => {
+  it("runs them with fresh ids and keeps only the prose before them", async () => {
+    const ran: ToolCall[] = [];
+    const invented = '<|tool_response>response:look{text:<|"|>A cat.<|"|>}<tool_response|>';
+    const { deps, requests, persisted } = setup(
+      [
+        events({ type: "text", delta: `Let me look.\n${gemmaLook}\n${invented}\nIt is a cat.` }),
+        events({ type: "text", delta: "A wave hits." }),
+      ],
+      { runTool: recordingRunner(ran) },
+    );
+    expect(await runTurn(deps)).toEqual({ status: "done" });
+    const call: ToolCall = { id: "m2", name: "look", arguments: gemmaLookArguments };
+    expect(ran).toEqual([call]);
+    expect(persisted.map((message) => message.role)).toEqual(["assistant", "tool", "assistant"]);
+    expect(persisted[0]).toMatchObject({ text: "Let me look.", toolCalls: [call] });
+    expect(persisted[1]).toMatchObject({ toolCallId: "m2" });
+    expect(requests[1]?.messages).toContainEqual({
+      role: "assistant",
+      content: "Let me look.",
+      tool_calls: [
+        { id: "m2", type: "function", function: { name: "look", arguments: call.arguments } },
+      ],
+    });
+  });
+
+  it("runs two calls with Gemma strings and nested values", async () => {
+    const ran: ToolCall[] = [];
+    const text =
+      '<|tool_call>call:ask{question:<|"|>Who waves, and why?<|"|>,pictures:[<|"|>p1<|"|>]}<tool_call|>' +
+      "<|tool_call>call:look{start:0,end:30,area:{x:1,y:2}}<tool_call|>";
+    const { deps, persisted } = setup(
+      [events({ type: "text", delta: text }), events({ type: "text", delta: "A wave." })],
+      { runTool: recordingRunner(ran), tools: [askTool, lookTool] },
+    );
+    expect(await runTurn(deps)).toEqual({ status: "done" });
+    expect(ran.map((call) => [call.name, JSON.parse(call.arguments) as unknown])).toEqual([
+      ["ask", { question: "Who waves, and why?", pictures: ["p1"] }],
+      ["look", { start: 0, end: 30, area: { x: 1, y: 2 } }],
+    ]);
+    expect(persisted[0]).toMatchObject({ text: "" });
+  });
+
+  it("runs a call whose closing tag the stream never sent", async () => {
+    const ran: ToolCall[] = [];
+    const { deps } = setup(
+      [
+        events({ type: "text", delta: "<|tool_call>call:look{start:45,end:60}" }),
+        events({ type: "text", delta: "A wave." }),
+      ],
+      { runTool: recordingRunner(ran) },
+    );
+    expect(await runTurn(deps)).toEqual({ status: "done" });
+    expect(ran).toEqual([{ id: "m2", name: "look", arguments: '{"start":45,"end":60}' }]);
+  });
+
+  it.each([
+    ["cut off inside its arguments", "<|tool_call>call:look{start:45,en"],
+    ["to a tool that was not offered", "<|tool_call>call:zoom{x:1}<tool_call|>"],
+  ])("strips a call %s and ends with the existing notice", async (_why, markup) => {
+    const ran: ToolCall[] = [];
+    const { deps, requests, persisted } = setup(
+      [events({ type: "text", delta: `Checking.${markup}` })],
+      { runTool: recordingRunner(ran) },
+    );
+    expect(await runTurn(deps)).toEqual({ status: "done", strippedToolMarkup: true });
+    expect(ran).toEqual([]);
+    expect(requests).toHaveLength(1);
+    expect(persisted).toEqual([
+      expect.objectContaining({ text: "Checking.", toolCalls: [], stoppedAtRoundLimit: true }),
+    ]);
+  });
+
+  it("does not run or strip a call quoted in code", async () => {
+    const ran: ToolCall[] = [];
+    const text = `Gemma calls look like \`${gemmaLook}\`, or start with \`<|tool_call>\` alone.`;
+    const { deps, persisted } = setup([events({ type: "text", delta: text })], {
+      runTool: recordingRunner(ran),
+    });
+    expect(await runTurn(deps)).toEqual({ status: "done" });
+    expect(ran).toEqual([]);
+    expect(persisted[0]).toMatchObject({ text });
+  });
+
+  it("runs only the real tool calls when a reply has both", async () => {
+    const ran: ToolCall[] = [];
+    const { deps } = setup(
+      [
+        events({ type: "text", delta: gemmaLook }, { type: "toolCalls", calls: [lookCall] }),
+        events({ type: "text", delta: "A wave." }),
+      ],
+      { runTool: recordingRunner(ran) },
+    );
+    expect(await runTurn(deps)).toEqual({ status: "done" });
+    expect(ran).toEqual([lookCall]);
+  });
+});
+
+describe("runTurn written answer after a final-round call", () => {
+  const usage = { promptTokens: 3000, completionTokens: 20 };
+  const finalRound = (retry: Round) =>
+    setup(
+      [
+        events({ type: "toolCalls", calls: [lookCall] }),
+        events({ type: "text", delta: gemmaLook }, { type: "usage", usage }),
+        retry,
+      ],
+      { runTool: lookRunner(), maxRounds: 2 },
+    );
+
+  it("asks once more with no tools listed or described, as the same message", async () => {
+    const { deps, requests, persisted, emitted } = finalRound(
+      events({ type: "text", delta: "A dog." }, { type: "usage", usage }),
+    );
+    expect(await runTurn(deps)).toEqual({ status: "done", hitRoundLimit: true });
+    expect(requests).toHaveLength(3);
+    expect(requests[1]).toMatchObject({ tools: [lookTool], tool_choice: "none" });
+    expect(requests[2]).not.toHaveProperty("tools");
+    expect(requests[2]).not.toHaveProperty("tool_choice");
+    expect(JSON.stringify(requests[1]?.messages[0])).toContain("Use look.");
+    expect(JSON.stringify(requests[2]?.messages[0])).not.toContain("Use look.");
+    expect(requests[2]?.messages.slice(1)).toEqual(requests[1]?.messages.slice(1));
+    expect(requests[2]?.messages.at(-1)).toEqual({ role: "user", content: FINAL_NOTE });
+    expect(persisted.map((message) => message.role)).toEqual(["assistant", "tool", "assistant"]);
+    expect(persisted[2]).toMatchObject({
+      id: "m3",
+      text: "A dog.",
+      stoppedAtRoundLimit: true,
+      usage: { promptTokens: 6000, completionTokens: 40 },
+      receipt: { rounds: 2 },
+    });
+    const starts = emitted.flatMap((e) => (e.type === "assistantStart" ? [e.message.id] : []));
+    expect(starts).toEqual(["m1", "m3", "m3"]);
+  });
+
+  it("asks for a written answer after Answer now too", async () => {
+    const answerNow = new AbortController();
+    answerNow.abort();
+    const { deps, requests, persisted } = setup(
+      [events({ type: "text", delta: gemmaLook }), events({ type: "text", delta: "A dog." })],
+      { runTool: lookRunner(), answerNow: answerNow.signal },
+    );
+    expect(await runTurn(deps)).toEqual({ status: "done", answeredNow: "user" });
+    expect(requests[0]).toMatchObject({ tool_choice: "none" });
+    expect(requests[1]).not.toHaveProperty("tools");
+    expect(requests[1]).not.toHaveProperty("tool_choice");
+    expect(requests[1]?.messages.at(-1)).toEqual({ role: "user", content: ANSWER_NOW_NOTE });
+    expect(persisted).toEqual([expect.objectContaining({ text: "A dog." })]);
+  });
+
+  it("falls back to the stripped outcome when the server refuses the request", async () => {
+    const { deps, requests, persisted } = finalRound(async function* () {
+      await Promise.resolve();
+      throw new ApiError(500, "tool calls in history need tools");
+      yield { type: "done", finishReason: null };
+    });
+    expect(await runTurn(deps)).toEqual({
+      status: "done",
+      hitRoundLimit: true,
+      strippedToolMarkup: true,
+    });
+    expect(requests).toHaveLength(3);
+    expect(persisted.at(-1)).toMatchObject({
+      text: "",
+      stoppedAtRoundLimit: true,
+      usage,
+      receipt: { imagesSent: 1 },
+    });
+  });
+
+  it("offers Keep going with its own notice when the written answer is empty too", async () => {
+    const { deps, requests, persisted } = finalRound(events({ type: "text", delta: gemmaLook }));
+    expect(await runTurn(deps)).toEqual({
+      status: "done",
+      hitRoundLimit: true,
+      triedToLookAgain: true,
+    });
+    expect(requests).toHaveLength(3);
+    expect(persisted.at(-1)).toMatchObject({ text: "", stoppedAtRoundLimit: true });
+  });
+
+  it("stops when the user stops the written-answer request", async () => {
+    const { deps, requests } = finalRound(async function* (signal, controller) {
+      await Promise.resolve();
+      yield { type: "reasoning", delta: "Hm." };
+      controller.abort();
+      await waitForAbort(signal);
+    });
+    expect(await runTurn(deps)).toEqual({ status: "stopped" });
+    expect(requests).toHaveLength(3);
+  });
+
+  it("carries the first attempt's reasoning into the written answer", async () => {
+    const { deps, persisted } = setup(
+      [
+        events({ type: "toolCalls", calls: [lookCall] }),
+        events({ type: "reasoning", delta: "Look again?" }, { type: "text", delta: gemmaLook }),
+        events({ type: "reasoning", delta: "No, answer." }, { type: "text", delta: "A dog." }),
+      ],
+      { runTool: lookRunner(), maxRounds: 2 },
+    );
+    expect(await runTurn(deps)).toEqual({ status: "done", hitRoundLimit: true });
+    expect(persisted.at(-1)).toMatchObject({
+      text: "A dog.",
+      reasoning: "Look again?\n\nNo, answer.",
+    });
+    expect(persisted.at(-1)).not.toHaveProperty("reasoningCutShort");
+  });
+
+  it("keeps reasoning that Answer now cut short", async () => {
+    const answerNow = new AbortController();
+    const { deps, requests, persisted } = setup(
+      [
+        async function* (signal) {
+          await Promise.resolve();
+          yield { type: "reasoning", delta: "Let me look again." };
+          answerNow.abort();
+          await waitForAbort(signal);
+        },
+        events({ type: "text", delta: gemmaLook }),
+        events({ type: "text", delta: "A dog." }),
+      ],
+      { runTool: lookRunner(), answerNow: answerNow.signal },
+    );
+    expect(await runTurn(deps)).toEqual({ status: "done", answeredNow: "user" });
+    expect(requests).toHaveLength(3);
+    expect(requests[2]).not.toHaveProperty("tools");
+    expect(requests[2]?.messages.at(-1)).toEqual({ role: "user", content: ANSWER_NOW_NOTE });
+    expect(persisted).toEqual([
+      expect.objectContaining({
+        text: "A dog.",
+        reasoning: "Let me look again.",
+        reasoningCutShort: true,
+      }),
+    ]);
+  });
+
+  it("lets Answer now cut the written-answer request on an ordinary last round", async () => {
+    const answerNow = new AbortController();
+    const { deps, requests, persisted } = setup(
+      [
+        events({ type: "text", delta: gemmaLook }),
+        async function* (signal) {
+          await Promise.resolve();
+          yield { type: "reasoning", delta: "Thinking." };
+          answerNow.abort();
+          await waitForAbort(signal);
+        },
+        events({ type: "text", delta: "A dog." }),
+      ],
+      { runTool: lookRunner(), maxRounds: 1, answerNow: answerNow.signal },
+    );
+    expect(await runTurn(deps)).toEqual({ status: "done", answeredNow: "user" });
+    expect(requests).toHaveLength(3);
+    expect(requests[2]).toMatchObject({ tool_choice: "none" });
+    expect(requests[2]?.messages.at(-1)).toEqual({ role: "user", content: ANSWER_NOW_NOTE });
+    expect(persisted).toEqual([
+      expect.objectContaining({
+        id: "m1",
+        text: "A dog.",
+        reasoning: "Thinking.",
+        reasoningCutShort: true,
+      }),
+    ]);
+  });
+
+  it("does not ask again when text remains beside the markup", async () => {
+    const { deps, requests, persisted } = setup(
+      [
+        events({ type: "toolCalls", calls: [lookCall] }),
+        events({ type: "text", delta: `So far a dog.\n${gemmaLook}` }),
+      ],
+      { runTool: lookRunner(), maxRounds: 2 },
+    );
+    expect(await runTurn(deps)).toEqual({
+      status: "done",
+      hitRoundLimit: true,
+      strippedToolMarkup: true,
+    });
+    expect(requests).toHaveLength(2);
+    expect(persisted.at(-1)).toMatchObject({ text: "So far a dog.", stoppedAtRoundLimit: true });
+  });
+});
+
 describe("runTurn requestStart", () => {
   it("reports each round's image count and token estimate before streaming", async () => {
     const { deps, requests, emitted } = setup(

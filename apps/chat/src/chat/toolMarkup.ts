@@ -1,3 +1,5 @@
+import { outsideCode } from "./codeSpans";
+
 // DeepSeek's special tokens use a fullwidth bar, and a lower one-eighth block in place of spaces.
 const BAR = "[\\uFF5C|]";
 const SEP = "[\\u2581_ ]";
@@ -24,11 +26,20 @@ const LEAKED_TOOL_MARKUP = [
   /<\|\s*\/?\s*tool\w*\s*\|>/gi,
 ];
 
+// Gemma 4 puts the bar after "<" in an opening tag and before ">" in a closing one.
+// Stripped only outside code, where a model quoting its own format is left alone.
+const GEMMA_MARKUP = [
+  /<\|\s*(tool_call|tool_response)\s*>[\s\S]*?(?:<\s*\1\s*\|>|$)/gi,
+  /<\s*tool_(?:call|response)\s*\|>/gi,
+];
+
+function stripAll(text: string, patterns: readonly RegExp[]): string {
+  return patterns.reduce((current, pattern) => current.replace(pattern, ""), text);
+}
+
 export function stripToolMarkup(text: string): { text: string; stripped: boolean } {
-  const cleaned = LEAKED_TOOL_MARKUP.reduce(
-    (current, pattern) => current.replace(pattern, ""),
-    text,
-  );
+  const withoutGemma = outsideCode(text, (prose) => stripAll(prose, GEMMA_MARKUP));
+  const cleaned = stripAll(withoutGemma, LEAKED_TOOL_MARKUP);
   if (cleaned === text) return { text, stripped: false };
   return { text: cleaned.replace(/\n{3,}/g, "\n\n").trim(), stripped: true };
 }
