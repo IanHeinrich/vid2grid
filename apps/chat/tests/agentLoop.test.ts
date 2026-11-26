@@ -367,11 +367,12 @@ function recordingRunner(ran: ToolCall[]): RunTool {
 }
 
 describe("runTurn Gemma tool calls written as text", () => {
-  it("runs them with fresh ids and keeps the prose around them", async () => {
+  it("runs them with fresh ids and keeps only the prose before them", async () => {
     const ran: ToolCall[] = [];
+    const invented = '<|tool_response>response:look{text:<|"|>A cat.<|"|>}<tool_response|>';
     const { deps, requests, persisted } = setup(
       [
-        events({ type: "text", delta: `Let me look.\n${gemmaLook}\nBack soon.` }),
+        events({ type: "text", delta: `Let me look.\n${gemmaLook}\n${invented}\nIt is a cat.` }),
         events({ type: "text", delta: "A wave hits." }),
       ],
       { runTool: recordingRunner(ran) },
@@ -380,11 +381,11 @@ describe("runTurn Gemma tool calls written as text", () => {
     const call: ToolCall = { id: "m2", name: "look", arguments: gemmaLookArguments };
     expect(ran).toEqual([call]);
     expect(persisted.map((message) => message.role)).toEqual(["assistant", "tool", "assistant"]);
-    expect(persisted[0]).toMatchObject({ text: "Let me look.\n\nBack soon.", toolCalls: [call] });
+    expect(persisted[0]).toMatchObject({ text: "Let me look.", toolCalls: [call] });
     expect(persisted[1]).toMatchObject({ toolCallId: "m2" });
     expect(requests[1]?.messages).toContainEqual({
       role: "assistant",
-      content: "Let me look.\n\nBack soon.",
+      content: "Let me look.",
       tool_calls: [
         { id: "m2", type: "function", function: { name: "look", arguments: call.arguments } },
       ],
@@ -438,6 +439,17 @@ describe("runTurn Gemma tool calls written as text", () => {
     ]);
   });
 
+  it("does not run or strip a call quoted in code", async () => {
+    const ran: ToolCall[] = [];
+    const text = `Gemma calls look like \`${gemmaLook}\`, or start with \`<|tool_call>\` alone.`;
+    const { deps, persisted } = setup([events({ type: "text", delta: text })], {
+      runTool: recordingRunner(ran),
+    });
+    expect(await runTurn(deps)).toEqual({ status: "done" });
+    expect(ran).toEqual([]);
+    expect(persisted[0]).toMatchObject({ text });
+  });
+
   it("runs only the real tool calls when a reply has both", async () => {
     const ran: ToolCall[] = [];
     const { deps } = setup(
@@ -464,17 +476,18 @@ describe("runTurn written answer after a final-round call", () => {
       { runTool: lookRunner(), maxRounds: 2 },
     );
 
-  it("asks once more without tools for a written answer, as the same message", async () => {
+  it("asks once more with no tools listed or described, as the same message", async () => {
     const { deps, requests, persisted, emitted } = finalRound(
       events({ type: "text", delta: "A dog." }, { type: "usage", usage }),
     );
     expect(await runTurn(deps)).toEqual({ status: "done", hitRoundLimit: true });
     expect(requests).toHaveLength(3);
     expect(requests[1]).toMatchObject({ tools: [lookTool], tool_choice: "none" });
-    const written = { ...requests[1] };
-    delete written.tools;
-    delete written.tool_choice;
-    expect(requests[2]).toEqual(written);
+    expect(requests[2]).not.toHaveProperty("tools");
+    expect(requests[2]).not.toHaveProperty("tool_choice");
+    expect(JSON.stringify(requests[1]?.messages[0])).toContain("Use look.");
+    expect(JSON.stringify(requests[2]?.messages[0])).not.toContain("Use look.");
+    expect(requests[2]?.messages.slice(1)).toEqual(requests[1]?.messages.slice(1));
     expect(requests[2]?.messages.at(-1)).toEqual({ role: "user", content: FINAL_NOTE });
     expect(persisted.map((message) => message.role)).toEqual(["assistant", "tool", "assistant"]);
     expect(persisted[2]).toMatchObject({
@@ -543,6 +556,80 @@ describe("runTurn written answer after a final-round call", () => {
     });
     expect(await runTurn(deps)).toEqual({ status: "stopped" });
     expect(requests).toHaveLength(3);
+  });
+
+  it("carries the first attempt's reasoning into the written answer", async () => {
+    const { deps, persisted } = setup(
+      [
+        events({ type: "toolCalls", calls: [lookCall] }),
+        events({ type: "reasoning", delta: "Look again?" }, { type: "text", delta: gemmaLook }),
+        events({ type: "reasoning", delta: "No, answer." }, { type: "text", delta: "A dog." }),
+      ],
+      { runTool: lookRunner(), maxRounds: 2 },
+    );
+    expect(await runTurn(deps)).toEqual({ status: "done", hitRoundLimit: true });
+    expect(persisted.at(-1)).toMatchObject({
+      text: "A dog.",
+      reasoning: "Look again?\n\nNo, answer.",
+    });
+    expect(persisted.at(-1)).not.toHaveProperty("reasoningCutShort");
+  });
+
+  it("keeps reasoning that Answer now cut short", async () => {
+    const answerNow = new AbortController();
+    const { deps, requests, persisted } = setup(
+      [
+        async function* (signal) {
+          await Promise.resolve();
+          yield { type: "reasoning", delta: "Let me look again." };
+          answerNow.abort();
+          await waitForAbort(signal);
+        },
+        events({ type: "text", delta: gemmaLook }),
+        events({ type: "text", delta: "A dog." }),
+      ],
+      { runTool: lookRunner(), answerNow: answerNow.signal },
+    );
+    expect(await runTurn(deps)).toEqual({ status: "done", answeredNow: "user" });
+    expect(requests).toHaveLength(3);
+    expect(requests[2]).not.toHaveProperty("tools");
+    expect(requests[2]?.messages.at(-1)).toEqual({ role: "user", content: ANSWER_NOW_NOTE });
+    expect(persisted).toEqual([
+      expect.objectContaining({
+        text: "A dog.",
+        reasoning: "Let me look again.",
+        reasoningCutShort: true,
+      }),
+    ]);
+  });
+
+  it("lets Answer now cut the written-answer request on an ordinary last round", async () => {
+    const answerNow = new AbortController();
+    const { deps, requests, persisted } = setup(
+      [
+        events({ type: "text", delta: gemmaLook }),
+        async function* (signal) {
+          await Promise.resolve();
+          yield { type: "reasoning", delta: "Thinking." };
+          answerNow.abort();
+          await waitForAbort(signal);
+        },
+        events({ type: "text", delta: "A dog." }),
+      ],
+      { runTool: lookRunner(), maxRounds: 1, answerNow: answerNow.signal },
+    );
+    expect(await runTurn(deps)).toEqual({ status: "done", answeredNow: "user" });
+    expect(requests).toHaveLength(3);
+    expect(requests[2]).toMatchObject({ tool_choice: "none" });
+    expect(requests[2]?.messages.at(-1)).toEqual({ role: "user", content: ANSWER_NOW_NOTE });
+    expect(persisted).toEqual([
+      expect.objectContaining({
+        id: "m1",
+        text: "A dog.",
+        reasoning: "Thinking.",
+        reasoningCutShort: true,
+      }),
+    ]);
   });
 
   it("does not ask again when text remains beside the markup", async () => {

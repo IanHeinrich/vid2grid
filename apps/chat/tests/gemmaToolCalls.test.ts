@@ -14,6 +14,25 @@ describe("parseGemmaToolCalls", () => {
     ).toEqual({
       kind: "calls",
       calls: [{ name: "look", arguments: '{"end":60,"frames":30,"start":45}' }],
+      before: "",
+    });
+  });
+
+  it("gives the text before the first call, and nothing after it", () => {
+    const text =
+      'Let me look.\n<|tool_call>call:look{start:0}<tool_call|>\n<|tool_response>response:look{text:<|"|>A cat.<|"|>}<tool_response|>\nA cat.';
+    expect(parseGemmaToolCalls(text)).toMatchObject({ kind: "calls", before: "Let me look.\n" });
+  });
+
+  it("leaves calls quoted in code alone, and reads a real one after them", () => {
+    const quoted =
+      "Write `<|tool_call>` then:\n```\n<|tool_call>call:look{start:1}<tool_call|>\n```\n";
+    expect(parseGemmaToolCalls(quoted)).toEqual({ kind: "none" });
+    const parsed = parseGemmaToolCalls(`${quoted}Now.<|tool_call>call:look{start:2}<tool_call|>`);
+    expect(parsed).toEqual({
+      kind: "calls",
+      calls: [{ name: "look", arguments: '{"start":2}' }],
+      before: `${quoted}Now.`,
     });
   });
 

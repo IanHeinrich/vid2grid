@@ -1,10 +1,9 @@
 import { ApiError } from "../api/http";
 import { addUsage } from "../api/usage";
-import type { AssistantMessage, ChatRequest } from "../types";
+import type { AssistantMessage, ChatRequest, TokenUsage } from "../types";
 import type { RoundResult, Turn } from "./agentLoop";
 import { parseGemmaToolCalls } from "./gemmaToolCalls";
-import { streamAssistant, type Streamed } from "./streamRound";
-import { requestImageCount } from "./tokenEstimate";
+import type { Streamed } from "./streamRound";
 import { stripToolMarkup } from "./toolMarkup";
 
 function callableTools({ tools, tool_choice }: ChatRequest): ReadonlySet<string> {
@@ -13,6 +12,7 @@ function callableTools({ tools, tool_choice }: ChatRequest): ReadonlySet<string>
 }
 
 // Local servers sometimes pass a model's native call syntax through as text instead of parsing it.
+// Only the text before the first call stays: after it, the model may answer a response it made up.
 export function withTextCalls(
   turn: Turn,
   { message, ending, prepared }: RoundResult,
@@ -23,51 +23,35 @@ export function withTextCalls(
   const callable = callableTools(prepared.request);
   if (!parsed.calls.every((call) => callable.has(call.name))) return message;
   const toolCalls = parsed.calls.map((call) => ({ id: turn.newId(), ...call }));
-  return { ...message, text: stripToolMarkup(message.text).text, toolCalls };
+  return { ...message, text: stripToolMarkup(parsed.before).text.trim(), toolCalls };
 }
 
-function onlyToolMarkup({ message, ending, prepared }: RoundResult): boolean {
+export function onlyToolMarkup({ message, ending, prepared }: RoundResult): boolean {
   if (ending.kind !== "complete" || prepared.request.tool_choice !== "none") return false;
   const { text, stripped } = stripToolMarkup(message.text);
   return stripped && text === "";
 }
 
-// With no tools listed, a chat template has nothing to invite a call with.
-function withoutTools(request: ChatRequest): ChatRequest {
-  const written = { ...request };
-  delete written.tools;
-  delete written.tool_choice;
-  return written;
-}
-
 // A template may need the tools listed to render the history's tool calls, and refuse without them.
-function refused({ ending, producedNothing }: Streamed): boolean {
+export function refusedWithoutTools({ ending, producedNothing }: Streamed): boolean {
   return ending.kind === "failed" && producedNothing && ending.error instanceof ApiError;
 }
 
-export async function askForWrittenAnswer(
-  turn: Turn,
+export function writtenAnswer(
   first: RoundResult,
-  round: number,
-): Promise<RoundResult> {
-  if (!onlyToolMarkup(first)) return first;
-  const prepared = { ...first.prepared, request: withoutTools(first.prepared.request) };
-  const second = await streamAssistant(turn, prepared, round, {
-    watch: false,
-    retried: first.message,
-  });
-  if (refused(second)) {
-    turn.imagesSent -= requestImageCount(prepared.request);
-    return first;
-  }
-  const usage = addUsage(first.message.usage, second.message.usage);
-  const message = { ...second.message, ...(usage ? { usage } : {}) };
-  const unanswered = second.ending.kind === "complete" && stripToolMarkup(message.text).text === "";
+  answer: RoundResult,
+  spent: readonly AssistantMessage[],
+): RoundResult {
+  const usage = [...spent, answer.message].reduce<TokenUsage | undefined>(
+    (total, message) => addUsage(total, message.usage),
+    undefined,
+  );
+  const message = { ...answer.message, ...(usage ? { usage } : {}) };
+  const unanswered = answer.ending.kind === "complete" && stripToolMarkup(message.text).text === "";
   return {
-    ...second,
-    message,
-    prepared,
     ...(first.answeredNow ? { answeredNow: first.answeredNow } : {}),
+    ...answer,
+    message,
     ...(unanswered ? { triedToLookAgain: true as const } : {}),
   };
 }

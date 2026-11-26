@@ -54,6 +54,16 @@ describe("stripToolMarkup", () => {
     ).toBe("Seen.");
   });
 
+  it("leaves Gemma markup quoted in code alone", () => {
+    const quoted =
+      "Gemma writes `<|tool_call>` and then the call, so the rest stays.\n\n```\n<|tool_call>call:look{start:1}<tool_call|>\n```\n\nAnd `<tool_call|>` ends it.";
+    expect(stripToolMarkup(quoted)).toEqual({ text: quoted, stripped: false });
+    expect(stripToolMarkup(`${quoted}<|tool_call>call:look{}`)).toEqual({
+      text: quoted,
+      stripped: true,
+    });
+  });
+
   it("strips stray Gemma closing tags", () => {
     expect(stripToolMarkup("Seen.<tool_call|>")).toEqual({ text: "Seen.", stripped: true });
     expect(stripToolMarkup("Seen.<tool_response|>").text).toBe("Seen.");

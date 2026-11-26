@@ -1,9 +1,10 @@
 import type { ToolCall } from "../types";
+import { splitCode } from "./codeSpans";
 
 export type GemmaCall = Pick<ToolCall, "name" | "arguments">;
 
 export type GemmaToolCalls =
-  { kind: "none" } | { kind: "calls"; calls: GemmaCall[] } | { kind: "unparsed" };
+  { kind: "none" } | { kind: "calls"; calls: GemmaCall[]; before: string } | { kind: "unparsed" };
 
 // Gemma 4 writes <|tool_call>call:NAME{key:value}<tool_call|>, with strings between <|"|> marks.
 const OPEN = /<\|\s*tool_call\s*>/i;
@@ -142,18 +143,30 @@ function blockCalls(block: string): GemmaCall[] {
   return found;
 }
 
+interface CallBlocks {
+  // Everything before the first call, code included.
+  before: string;
+  blocks: string[];
+}
+
 // A block with no closing tag is a stream that ended early; it still parses if its braces closed.
-function callBlocks(text: string): string[] {
-  const [, ...blocks] = text.split(OPEN);
-  return blocks.map((block) => block.split(CLOSE)[0] ?? "");
+// A call quoted in code is the model showing the format, not using it.
+function callBlocks(text: string): CallBlocks {
+  const found: CallBlocks = { before: "", blocks: [] };
+  for (const part of splitCode(text)) {
+    const [prose = "", ...opened] = part.code ? [part.text] : part.text.split(OPEN);
+    if (found.blocks.length === 0) found.before += prose;
+    found.blocks.push(...opened.map((block) => block.split(CLOSE)[0] ?? ""));
+  }
+  return found;
 }
 
 export function parseGemmaToolCalls(text: string): GemmaToolCalls {
-  const blocks = callBlocks(text);
+  const { before, blocks } = callBlocks(text);
   if (blocks.length === 0) return { kind: "none" };
   try {
     const calls = blocks.flatMap(blockCalls);
-    return calls.length > 0 ? { kind: "calls", calls } : { kind: "unparsed" };
+    return calls.length > 0 ? { kind: "calls", calls, before } : { kind: "unparsed" };
   } catch (error) {
     if (error instanceof GemmaSyntaxError) return { kind: "unparsed" };
     throw error;

@@ -25,7 +25,12 @@ import type {
 } from "../types";
 import { instantSpans, seenSpans, unseenCitations } from "./coverage";
 import { pinsExceedCap } from "./imageSelection";
-import { askForWrittenAnswer, withTextCalls } from "./leakedToolCalls";
+import {
+  onlyToolMarkup,
+  refusedWithoutTools,
+  withTextCalls,
+  writtenAnswer,
+} from "./leakedToolCalls";
 import type { Looker } from "./looking";
 import { lookBeforeRound } from "./lookingTurn";
 import { buildRequest } from "./request";
@@ -241,14 +246,42 @@ async function answerNow(
   return { ...streamed, answeredNow: reason };
 }
 
+// Asked once more with no tools listed or described, so a template has nothing to invite a call.
+async function askForWrittenAnswer(
+  turn: Turn,
+  first: RoundResult,
+  round: number,
+): Promise<RoundResult> {
+  if (!onlyToolMarkup(first)) return first;
+  const answeringNow = first.answeredNow !== undefined;
+  const finalRound = round === turn.maxRounds - 1;
+  const prepared = await prepareRequest(turn, { finalRound, answeringNow, withTools: false });
+  const carried = first.message.reasoningCutShort
+    ? { cut: first.message }
+    : { continues: first.message };
+  const second = await streamAssistant(turn, prepared, round, { watch: !answeringNow, ...carried });
+  if (refusedWithoutTools(second)) {
+    turn.imagesSent -= requestImageCount(prepared.request);
+    return first;
+  }
+  if (second.ending.kind !== "cut")
+    return writtenAnswer(first, { ...second, prepared }, [first.message]);
+  const third = await answerNow(turn, round, second.ending.reason, second.message);
+  return writtenAnswer(first, third, [first.message, second.message]);
+}
+
 async function streamPrepared(
   turn: Turn,
   round: number,
   answeringNow: boolean,
   options: StreamOptions,
 ): Promise<Sent> {
-  const finalRound = round === turn.maxRounds - 1;
-  const prepared = await prepareRequest(turn, finalRound, answeringNow);
+  const shape: RequestShape = {
+    finalRound: round === turn.maxRounds - 1,
+    answeringNow,
+    withTools: true,
+  };
+  const prepared = await prepareRequest(turn, shape);
   const streamed = await streamAssistant(turn, prepared, round, options);
   if (!refusedTools(turn, prepared.request, streamed)) return { ...streamed, prepared };
   turn.toolsRefused = true;
@@ -260,7 +293,7 @@ async function streamPrepared(
     const ending: StreamEnding = aborted ? { kind: "aborted" } : { kind: "failed", error };
     return { ...streamed, prepared, ending };
   }
-  const withoutTools = await prepareRequest(turn, finalRound, answeringNow);
+  const withoutTools = await prepareRequest(turn, shape);
   const retried = await streamAssistant(turn, withoutTools, round, {
     ...options,
     retried: streamed.message,
@@ -335,10 +368,16 @@ function errorOutcome(error: unknown): TurnOutcome {
   return { status: "error", error: errorText(error) };
 }
 
+interface RequestShape {
+  finalRound: boolean;
+  answeringNow: boolean;
+  // Off for the written-answer retry, which neither lists the tools nor describes them.
+  withTools: boolean;
+}
+
 async function prepareRequest(
   turn: Turn,
-  finalRound: boolean,
-  answeringNow: boolean,
+  { finalRound, answeringNow, withTools }: RequestShape,
 ): Promise<PreparedRequest> {
   const { deps, messages } = turn;
   const kept = keptImages(turn.chat, messages, deps.model.maxImages);
@@ -355,7 +394,7 @@ async function prepareRequest(
     tools: deps.tools,
     toolGuidance: deps.toolGuidance,
     veniceParameters: deps.veniceParameters,
-    allowTools: deps.runTool !== undefined && !turn.toolsRefused,
+    allowTools: withTools && deps.runTool !== undefined && !turn.toolsRefused,
     finalRound,
     thoroughness: turn.thoroughness,
     ...(answeringNow ? { answerNow: true } : {}),
