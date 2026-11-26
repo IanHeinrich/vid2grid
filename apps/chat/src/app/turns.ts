@@ -64,6 +64,8 @@ import { turnLooker, turnLooking } from "./turnLooking";
 export const KEEP_GOING_TEXT = "Keep going: continue investigating from your notes, then answer.";
 const STRIPPED_NOTE =
   "The model tried to keep calling tools after its limit; you can let it keep going.";
+const LOOKED_AGAIN_NOTE =
+  "The model tried to look again instead of answering; you can let it keep going.";
 export const ANSWERED_NOW_NOTES: Record<AnswerNowReason, string> = {
   user: "Answered without further thinking.",
   loop: "Thinking was going in circles, so it was cut short.",
@@ -372,6 +374,7 @@ function answerNotice(outcome: TurnOutcome): string | undefined {
   const notes = [
     outcome.answeredNow ? ANSWERED_NOW_NOTES[outcome.answeredNow] : "",
     outcome.strippedToolMarkup ? STRIPPED_NOTE : "",
+    outcome.triedToLookAgain ? LOOKED_AGAIN_NOTE : "",
   ].filter((note) => note !== "");
   return notes.length > 0 ? notes.join(" ") : undefined;
 }

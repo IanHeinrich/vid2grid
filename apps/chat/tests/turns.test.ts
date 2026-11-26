@@ -364,6 +364,15 @@ describe("keep going and round budgets", () => {
     );
   });
 
+  it("notes when the model tried to look again instead of answering", async () => {
+    await seed([U1]);
+    vi.mocked(runTurn).mockResolvedValueOnce({ status: "done", triedToLookAgain: true });
+    await turns().run(() => Promise.resolve({}));
+    expect(status.show).toHaveBeenCalledWith(
+      "The model tried to look again instead of answering; you can let it keep going.",
+    );
+  });
+
   it("notes when a reply answered without further thinking", async () => {
     await seed([U1]);
     vi.mocked(runTurn).mockResolvedValueOnce({ status: "done", answeredNow: "loop" });

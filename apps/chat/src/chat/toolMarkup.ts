@@ -18,10 +18,13 @@ const LEAKED_TOOL_MARKUP = [
     "gi",
   ),
   /<(tool_calls?|function_calls)>[\s\S]*?(?:<\/\1>|$)/gi,
+  // Gemma 4 puts the bar after "<" in an opening tag and before ">" in a closing one.
+  /<\|\s*(tool_call|tool_response)\s*>[\s\S]*?(?:<\s*\1\s*\|>|$)/gi,
   /<\|\s*(tool\w*?)(?:_begin)?\s*\|>[\s\S]*?<\|\s*(?:\/\s*\1|\1_end)\s*\|>/gi,
   new RegExp(`${DSML_ANY}[^>]*>`, "gi"),
   new RegExp(`<${BAR}\\s*tool${SEP}[^>]*?${BAR}>`, "gi"),
   /<\|\s*\/?\s*tool\w*\s*\|>/gi,
+  /<\s*tool_(?:call|response)\s*\|>/gi,
 ];
 
 export function stripToolMarkup(text: string): { text: string; stripped: boolean } {
